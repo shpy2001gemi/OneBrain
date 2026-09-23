@@ -3,6 +3,16 @@
 This is the compact product-planning view. It intentionally separates code and
 test evidence from user-facing orchestration and release qualification.
 
+2026-09-23 update: OBP-PROD-001..004, API, CLI, Web and Desktop are merged
+through D-034. Task 18 has a [local acceptance/preflight package](outputs/OBP_QA_001_ACCEPTANCE_V1.md);
+independent consumer-network and exact-candidate P5 evidence remain outstanding.
+The older evidence snapshot at the end is historical, not a qualification of
+this candidate. Local Web support does not implement a browser peer carrier.
+
+The expired-descriptor blocker now has a [tested local lifecycle correction](outputs/OBP_QA_001_RELAY_RENEWAL_FIX.md).
+Remote runtime and staging remain unchanged; corrected immutable candidate and
+fresh V2 evidence are pending, so no capability is promoted to qualified.
+
 Legend: `Implemented` = code and focused evidence exist; `Core only` = reusable
 implementation exists but the normal product lifecycle/surfaces do not yet own
 it; `Designed` = contract/architecture exists but its named gate is open;
@@ -22,7 +32,7 @@ it; `Designed` = contract/architecture exists but its named gate is open;
 | Manual relay/peer invitation | Implemented core | Canonical URL/file/QR-compatible envelopes |
 | Authenticated PEX discovery | Implemented core | Only a live authenticated opposite peer can be a PEX source |
 | Discovery from rendezvous/DHT/cache | Implemented core | Bounded merge without global membership/completeness |
-| Automatic discovery/reservation refresh in normal product | Core only | Must be wired into node-owned lifecycle |
+| Automatic discovery/reservation refresh in normal product | Implemented, default-off | Merged node-owned lifecycle, bounded host dependencies and explicit execution grant; real-network acceptance pending |
 | Legacy `onebrain-seed` | Legacy | TCP/JSON prototype; do not claim as production vNext seed |
 
 ## Connectivity and NAT
@@ -83,8 +93,8 @@ it; `Designed` = contract/architecture exists but its named gate is open;
 | Bounded one-hop distributed KQL | Implemented, default-off | Private Need stays local; public delta may produce quarantined proposal |
 | Public UseEvidence prepare/confirm | Implemented, default-off | Explicit consent; no truth/Benefit/reward inference |
 | vNext REST/private WS/CLI/Desktop-Web KQL/PoMV surfaces | Implemented | Existing product integration lane |
-| Reachability Manager in normal `OneBrainNode` lifecycle | Core only | Main productization gap |
-| Relay/bootstrap management API and UI | Planned | Tasks in this package |
+| Reachability Manager in normal `OneBrainNode` lifecycle | Implemented, default-off | Shared node owner; local lifecycle/discovery/routing tests; no live-host activation |
+| Relay/bootstrap management API and UI | Implemented, host-provisioned | Merged API/CLI/Web/Desktop projections; intake/grants remain trusted in-process host responsibilities |
 | Automatic seed-independent desktop experience | Planned | Requires product orchestration and acceptance |
 | Linux three-host production-reference | Evidence recorded | Owner-waiver scope and explicit limitations |
 | Windows/macOS outbound-first product qualification | Designed/pending | Must not inherit Linux qualification |

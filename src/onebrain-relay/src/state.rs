@@ -11,6 +11,8 @@ const NONCES: TableDefinition<&[u8], &[u8]> = TableDefinition::new("consumed_non
 const RESERVATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("reservations");
 const REVOCATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("revocations");
 const RENDEZVOUS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("rendezvous_records");
+pub(crate) const CANDIDATE_KEY: &[u8] = b"candidate-v1";
+pub(crate) const ACTIVATION_KEY: &[u8] = b"descriptor-activation-v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DurableStateKind {
@@ -98,6 +100,75 @@ impl DurableRelayState {
             .map_err(|_| DurableStateError::Corrupt)?
             .map(|value| value.value().to_vec()))
     }
+
+    /// Replace only the descriptor floor and fence its old activation together.
+    /// The caller validates the signed contiguous successor before this CAS.
+    pub(crate) fn advance_descriptor(
+        &self,
+        expected: Option<&[u8]>,
+        successor: &[u8],
+    ) -> Result<(), DurableStateError> {
+        if successor.is_empty() {
+            return Err(DurableStateError::Invalid);
+        }
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        {
+            let mut descriptors = write
+                .open_table(DESCRIPTOR)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            let current = descriptors
+                .get(CANDIDATE_KEY)
+                .map_err(|_| DurableStateError::Corrupt)?
+                .map(|value| value.value().to_vec());
+            if current.as_deref() != expected {
+                return Err(DurableStateError::Replay);
+            }
+            descriptors
+                .insert(CANDIDATE_KEY, successor)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            // This is a lifecycle marker, not a control-message replay floor.
+            // Removing it also fences an older binary that only checks presence.
+            write
+                .open_table(CONTROL)
+                .map_err(|_| DurableStateError::Corrupt)?
+                .remove(ACTIVATION_KEY)
+                .map_err(|_| DurableStateError::Corrupt)?;
+        }
+        write.commit().map_err(|_| DurableStateError::Corrupt)
+    }
+
+    pub(crate) fn activate_current_descriptor(
+        &self,
+        expected: &[u8],
+        probe_digest: &[u8; 32],
+    ) -> Result<(), DurableStateError> {
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        {
+            let descriptors = write
+                .open_table(DESCRIPTOR)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            let current = descriptors
+                .get(CANDIDATE_KEY)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            if current.as_ref().map(|value| value.value()) != Some(expected) {
+                return Err(DurableStateError::Replay);
+            }
+            let mut binding = Vec::from(blake3::hash(expected).as_bytes().as_slice());
+            binding.extend_from_slice(probe_digest);
+            write
+                .open_table(CONTROL)
+                .map_err(|_| DurableStateError::Corrupt)?
+                .insert(ACTIVATION_KEY, binding.as_slice())
+                .map_err(|_| DurableStateError::Corrupt)?;
+        }
+        write.commit().map_err(|_| DurableStateError::Corrupt)
+    }
 }
 
 fn initialize_tables(database: &Database) -> Result<(), DurableStateError> {
@@ -151,6 +222,68 @@ impl std::error::Error for DurableStateError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn descriptor_cas_has_one_winner_and_stale_activation_cannot_cross_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("relay.redb");
+        let state = std::sync::Arc::new(DurableRelayState::initialize(&path).unwrap());
+        state.advance_descriptor(None, b"first").unwrap();
+        state
+            .activate_current_descriptor(b"first", &[1; 32])
+            .unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let mut workers = Vec::new();
+        for successor in [b"second-a", b"second-b"] {
+            let state = state.clone();
+            let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                state.advance_descriptor(Some(b"first"), successor)
+            }));
+        }
+        barrier.wait();
+        let results: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| **result == Err(DurableStateError::Replay))
+                .count(),
+            1
+        );
+        assert_eq!(
+            state.activate_current_descriptor(b"first", &[2; 32]),
+            Err(DurableStateError::Replay)
+        );
+        assert_eq!(
+            state
+                .get(DurableStateKind::ControlFloor, ACTIVATION_KEY)
+                .unwrap(),
+            None
+        );
+        let winner = state
+            .get(DurableStateKind::DescriptorFloor, CANDIDATE_KEY)
+            .unwrap()
+            .unwrap();
+        drop(state);
+        let reopened = DurableRelayState::open(&path).unwrap();
+        assert_eq!(
+            reopened
+                .get(DurableStateKind::DescriptorFloor, CANDIDATE_KEY)
+                .unwrap(),
+            Some(winner)
+        );
+        assert_eq!(
+            reopened
+                .get(DurableStateKind::ControlFloor, ACTIVATION_KEY)
+                .unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn create_new_state_survives_reopen_and_replay_rejects() {

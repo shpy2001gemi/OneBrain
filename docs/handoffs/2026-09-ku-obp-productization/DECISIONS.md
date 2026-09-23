@@ -1,5 +1,16 @@
 # Decisions and claim boundary
 
+## D-035 — Accept relay renewal correction and create QA candidate
+
+On 2026-09-23 the owner answered “tôi đồng ý duyệt” to the reviewed
+OBP-QA-001 relay renewal correction and explicit request to create a new commit
+candidate on `codex/obp-qa-001-nat-canary`, rebuild and prepare fresh V2 authority.
+This authorizes committing the retained QA package and correction on that branch.
+Do not ask again for that review, candidate commit, D-029, SSH execution or the
+same-key September 23–30 policy renewal. Keep old staging and attempts intact.
+No merge, remote Git publication, default rollout or task 19 is included.
+Signed session/faults still require the complete fresh exact-candidate V2 gate.
+
 ## D-034 — Merge and publish OBP-DESK-001
 
 After accepting Desktop review under D-033, the owner explicitly instructed

@@ -5,6 +5,53 @@
 
 ## Current checkpoint
 
+- 2026-09-23 D-035: owner approved the reviewed relay renewal correction and
+  creation of a new local immutable QA candidate, followed by rebuild and fresh
+  exact-candidate authority preparation. The reviewed source hashes still match
+  both final verification reports. Keep the retained QA branch and all old runs;
+  no push/merge or task 19. Candidate/build outcomes follow only after execution.
+
+- 2026-09-23 QA continuation: [relay renewal correction](outputs/OBP_QA_001_RELAY_RENEWAL_FIX.md)
+  is locally implemented for review on the retained QA branch. Canonical same-key
+  successor, atomic candidate/activation fencing, exact-byte publication recovery
+  and persisted-descriptor startup are covered. Windows and local Linux: 40 relay
+  tests each; node integration/matrix 32; Python 86 passed/one skipped; vNext,
+  format and whitespace pass. All source/log commitments verify. No commit,
+  push, merge, remote replacement or signed P5 session. Next: review/new immutable
+  candidate, then fresh exact-candidate V2 authority and independent-network
+  evidence. OBP-QA-001 remains `Blocked`; OBP-MIG-001 is unstarted.
+
+- 2026-09-23 approved P5 follow-up: owner accepted all proposals; same-key policy
+  renewal applied. Fresh `fc65f08` Base request and remeasured Registry binding
+  signed/verified; operational bundle 02 verified on all three hosts. The current
+  blocker is [relay descriptor renewal](outputs/OBP_QA_001_P5_RENEWAL_BLOCKER.md):
+  existing descriptors expired, while exact-candidate CLI only supports first
+  export and cannot preserve the descriptor chain on renewal. Binary repro fails
+  closed; no state reset/service replacement or production fault performed.
+  OBP-QA-001 remains `Blocked`. Earlier approval-pending entries are historical.
+
+- 2026-09-23 P5 follow-up: owner authorized reuse of the existing three hosts,
+  SSH upload and remote execution. [Upload/execution evidence](outputs/OBP_QA_001_P5_UPLOAD.md):
+  exact `fc65f08` source-free bundle built and canonical manifest verified;
+  pinned SSH, upload and artifact checks passed on all three hosts. Both native
+  single-host preflights passed on each host (six runs), qualification false.
+  Installed candidates differ; no service/generation/identity was replaced.
+  [V2 authority recovered](outputs/OBP_QA_001_RECOVERED_P5_AUTHORITY.md) from the
+  sibling release archive; old signatures/keys verify. The policy expired on
+  September 17; a same-key September 23–30 renewal proposal awaits approval.
+  OBP-QA-001 remains `Blocked`; no production fault or Git publication occurred.
+
+- 2026-09-23 OBP-QA-001 — `Blocked` on
+  `codex/obp-qa-001-nat-canary`, original clean main `fc65f08` verified equal
+  to remote main. All retained branches preserved. Versioned
+  [acceptance scenarios](outputs/OBP_QA_001_ACCEPTANCE_V1.md) and fixed local
+  preflight collector added. [Local evidence](outputs/OBP_QA_001_PREFLIGHT.md):
+  all 13 groups pass, with one Linux-only Python skip and one ignored model test;
+  22 supplemental P5 tests and report integrity verification pass. Independent
+  consumer networks, relay-host faults and exact-candidate P5 evidence are not
+  supplied or executed. No qualification, live-host activation or Git publication.
+  The D-034 Planned pointer below is historical.
+
 - D-034 closure: accepted Desktop implementation `410a6a0` merged without
   conflicts as `7e4fc14e9ba4082e425d474ef9f7da26129106b0`. Fresh checks passed:
   six Desktop integration tests, 89 Web tests, 35 Python tests and vNext validator.
@@ -172,14 +219,14 @@
 - 2026-09-08 owner follow-up: [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md); two requested sources tested locally with Qwen3 8b/1.7b and a separate 3b reviewer. Semantic defects remain explicitly reported; prototype proposals are not canonical KU or integrated Web behavior. Shared preflight now brings span/number/structural compilation errors into the bounded repair allowance.
 - Local follow-up: [schema diagnostics and repair feedback](outputs/KU_WEB_001_SCHEMA_DIAGNOSTICS.md) implemented and tested after owner authorization; these follow-up edits remain uncommitted.
 - Real Vietnamese follow-up remains unsuccessful on the current Web/host Candidate path: the two exact owner sources failed `duplicate_id` (379.26s, water) and `oneof` (451.29s, car) in the 2026-09-08 rebuilt-host API tests. Both test reservations were canceled; neither yielded a validated preview or saved/shared KU. Number/span preflight now reaches the existing repair allowance; earlier `unsupported_number` evidence remains historical. See the [model-portability report](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md) for separate proposal results and remaining semantic representation gaps.
-- Current task: `OBP-QA-001` — `Planned` (Desktop merged under D-034).
-- Current branch: `main` in the original workspace; Desktop/Web/CLI/API branches retained.
+- Current task: `OBP-QA-001` — `Blocked` (local preflight passed; independent-network evidence missing).
+- Current branch: `codex/obp-qa-001-nat-canary` in the original workspace; prior branches retained.
 - Completed review branch: `codex/obp-prod-004-routing`, implementation `8f7d327`.
 - Retained baseline: `437dba0`, merged at `3216f1d` under D-027; now published.
 - Last merge: `7e4fc14` (OBP-DESK-001, D-034).
-- Next action: OBP-QA-001 when requested, from updated main on its declared branch.
-  Read task 18 and accepted Desktop/Web/API/lifecycle evidence. Keep networking
-  default-off and distinguish local preflight from independent-network evidence.
+- Next action: review the local relay renewal correction and authorize a new immutable
+  candidate; then rebuild/rebind V2 authority and collect the missing independent-network evidence.
+  Keep task 18 current, networking default-off and task 19 unstarted.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -205,7 +252,7 @@
 | 15 | `OBP-CLI-001` | Merged | `codex/obp-cli-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md); implementation `e0dcc7d`, merge `04bcb30`, D-031. |
 | 16 | `OBP-WEB-001` | Merged | `codex/obp-web-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md); implementation `cade635`, merge `7f49eeb`, D-032. |
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
-| 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | â€” |
+| 18 | `OBP-QA-001` | Blocked | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | [Local preflight](outputs/OBP_QA_001_PREFLIGHT.md) passed; independent-network/P5 evidence missing. |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | â€” |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
@@ -718,6 +765,19 @@ After owner-approved merge:
    the owner requested cleanup.
 
 ## Blocker protocol
+
+### 2026-09-23 — OBP-QA-001
+
+Local preflight is complete; product acceptance is not. The current task has no
+verified two-consumer independent-network/two-relay environment or scoped test
+host assembly/execution authority. No independent-host fault or native GUI/OS
+journey was run. P5 production-reference also lacks this candidate's signed
+request/inventory, three physical hosts, provider/topology evidence, receipts
+and complete fault/oracle collection. Historical Linux qualification cannot
+promote this candidate/platform. See [scenarios](outputs/OBP_QA_001_ACCEPTANCE_V1.md)
+and [measured local results](outputs/OBP_QA_001_PREFLIGHT.md). Do not enable live
+networking to fill this gap; task 19 remains Planned. All changes are local,
+uncommitted and retained on the QA branch.
 
 ### 2026-09-20 â€” KU-SEM-001 (historical gate; D-024 defers further work)
 

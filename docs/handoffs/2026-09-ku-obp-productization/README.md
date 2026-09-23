@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-DESK-001 merged (D-034); OBP-QA-001 Planned**
+> Status: **OBP-QA-001 Blocked: local preflight passed; independent-network evidence missing**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,7 +9,15 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest closure (D-034): accepted Desktop implementation `410a6a0` merged as
+Current QA work: [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md) separates
+local preflight from independent-network product evidence and exact-candidate
+P5 qualification. Resume the retained QA branch; task 19 remains unstarted.
+
+Latest continuation: [local relay renewal correction and evidence](outputs/OBP_QA_001_RELAY_RENEWAL_FIX.md)
+is ready for review. A new immutable candidate and fresh V2 bindings are still
+required before remote use; old staging/runs and all prior local changes remain.
+
+Previous closure (D-034): accepted Desktop implementation `410a6a0` merged as
 `7e4fc14`. Main and the retained Desktop branch are published in this closure.
 See [Desktop evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md) and
 [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). The live host remains unchanged.
@@ -62,7 +70,7 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Planned; Desktop merged under D-034.
+**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Blocked; local preflight passed, independent-network evidence outstanding.
 The API dependency was satisfied by `7d37a30` under D-030; CLI is now merged
 at `04bcb30` under D-031. Read the accepted API and private-WS contracts plus
 current Web design rules before further edits. Current Web evidence supersedes

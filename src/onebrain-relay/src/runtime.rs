@@ -13,11 +13,11 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signature, Signer, SigningKey};
 use onebrain_protocol::{
-    encode_reachability_object, reachability_signing_bytes, HostAddressV1, ProtocolVersionV1,
-    ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayDescriptorV1, RelayEndpointV1,
-    RelayTransportV1, MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
+    decode_reachability_object, encode_reachability_object, reachability_signing_bytes,
+    HostAddressV1, ProtocolVersionV1, ReachabilityObjectV1, ReachabilitySignatureRoleV1,
+    RelayDescriptorV1, RelayEndpointV1, RelayTransportV1, MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -30,7 +30,7 @@ use crate::{
 
 const MAX_CONFIG_BYTES: u64 = 65_536;
 const STATE_FILE: &str = "relay-state.redb";
-const ACTIVATION_KEY: &[u8] = b"descriptor-activation-v1";
+use crate::state::{ACTIVATION_KEY, CANDIDATE_KEY};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -181,8 +181,38 @@ pub fn export_candidate_descriptor(
     output: &Path,
 ) -> Result<[u8; 32], RuntimeError> {
     let config = verify_config(config_path)?;
+    // Reject an occupied path before committing a new floor. Never overwrite a
+    // retained descriptor (including a symlink or a partial historical export).
+    if std::fs::symlink_metadata(output).is_ok() {
+        return Err(RuntimeError::OutputExists);
+    }
     let signing_key = read_signing_key(&config.signer_locator)?;
+    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    let previous = state
+        .get(DurableStateKind::DescriptorFloor, CANDIDATE_KEY)
+        .map_err(|_| RuntimeError::State)?;
     let mut descriptor = descriptor_from_config(&config, &signing_key)?;
+    if let Some(bytes) = previous.as_deref() {
+        let prior = stored_descriptor(bytes, &config, &signing_key)?;
+        if config.descriptor_sequence == prior.sequence {
+            // Recover a committed candidate after publication failure. Automatic
+            // timestamps must not re-sign equal sequence into a descriptor fork.
+            validate_candidate_config(&prior, &config)?;
+            publish_descriptor(output, bytes)?;
+            return Ok(*blake3::hash(bytes).as_bytes());
+        }
+        if prior.sequence.checked_add(1) != Some(config.descriptor_sequence)
+            || descriptor.issued_at < prior.issued_at
+            || descriptor.expires_at <= prior.expires_at
+        {
+            return Err(RuntimeError::Descriptor);
+        }
+        descriptor.previous_descriptor_blake3 = Some(*blake3::hash(bytes).as_bytes());
+    } else if config.descriptor_sequence != 1 {
+        return Err(RuntimeError::Descriptor);
+    }
+    validate_descriptor_freshness(&descriptor)?;
     descriptor.relay_signature = signing_key
         .sign(
             &reachability_signing_bytes(
@@ -194,13 +224,13 @@ pub fn export_candidate_descriptor(
         .to_bytes();
     let bytes = encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(descriptor))
         .map_err(|_| RuntimeError::Descriptor)?;
-    write_create_new(output, &bytes)?;
     let digest = *blake3::hash(&bytes).as_bytes();
-    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
-        .map_err(|_| RuntimeError::State)?;
     state
-        .create_new(DurableStateKind::DescriptorFloor, b"candidate-v1", &bytes)
+        .advance_descriptor(previous.as_deref(), &bytes)
         .map_err(|_| RuntimeError::State)?;
+    // The database is authoritative. If publication fails, retain the floor
+    // and recover these exact bytes; never roll it back or create a fork.
+    publish_descriptor(output, &bytes)?;
     Ok(digest)
 }
 
@@ -212,9 +242,13 @@ pub fn activate_descriptor(
     let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
         .map_err(|_| RuntimeError::State)?;
     let bytes = state
-        .get(DurableStateKind::DescriptorFloor, b"candidate-v1")
+        .get(DurableStateKind::DescriptorFloor, CANDIDATE_KEY)
         .map_err(|_| RuntimeError::State)?
         .ok_or(RuntimeError::Descriptor)?;
+    let descriptor =
+        stored_descriptor(&bytes, &config, &read_signing_key(&config.signer_locator)?)?;
+    validate_candidate_config(&descriptor, &config)?;
+    validate_descriptor_freshness(&descriptor)?;
     let descriptor_digest = *blake3::hash(&bytes).as_bytes();
     let probe_bytes = read_bounded(probe_set_path)?;
     let probes: RelayActivationProbeSetV1 =
@@ -222,21 +256,19 @@ pub fn activate_descriptor(
     validate_probe_set(&config, &probes, descriptor_digest)?;
     let digest = *blake3::hash(&probe_bytes).as_bytes();
     state
-        .create_new(DurableStateKind::ControlFloor, ACTIVATION_KEY, &digest)
+        .activate_current_descriptor(&bytes, &digest)
         .map_err(|_| RuntimeError::State)?;
     Ok(digest)
 }
 
 pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeError> {
-    let config = validate_serve(config_path, preflight_only)?;
+    let (config, durable, descriptor) = validate_serve(config_path, preflight_only)?;
     let signing_key = read_signing_key(&config.signer_locator)?;
-    let descriptor = descriptor_from_config(&config, &signing_key)?;
     let identity = relay_identity_certificate(&signing_key, &descriptor)
         .map_err(|_| RuntimeError::DataPlane)?;
-    let durable = Arc::new(
-        DurableRelayState::open(&config.data_root.join(STATE_FILE))
-            .map_err(|_| RuntimeError::State)?,
-    );
+    // Retain the same exclusive database owner from activation validation through
+    // listener shutdown; a second process cannot renew underneath this service.
+    let durable = Arc::new(durable);
     let service = Arc::new(
         RelayProductionService::new(
             signing_key,
@@ -283,19 +315,125 @@ pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeErro
     })
 }
 
-fn validate_serve(config_path: &Path, preflight_only: bool) -> Result<RelayConfigV1, RuntimeError> {
+fn validate_serve(
+    config_path: &Path,
+    preflight_only: bool,
+) -> Result<(RelayConfigV1, DurableRelayState, RelayDescriptorV1), RuntimeError> {
     let config = verify_config(config_path)?;
     let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
         .map_err(|_| RuntimeError::State)?;
-    if !preflight_only
-        && state
-            .get(DurableStateKind::ControlFloor, ACTIVATION_KEY)
-            .map_err(|_| RuntimeError::State)?
-            .is_none()
+    let key = read_signing_key(&config.signer_locator)?;
+    let bytes = state
+        .get(DurableStateKind::DescriptorFloor, CANDIDATE_KEY)
+        .map_err(|_| RuntimeError::State)?;
+    let descriptor = match bytes {
+        Some(bytes) => {
+            let descriptor = stored_descriptor(&bytes, &config, &key)?;
+            validate_candidate_config(&descriptor, &config)?;
+            validate_descriptor_freshness(&descriptor)?;
+            if !preflight_only {
+                let activation = state
+                    .get(DurableStateKind::ControlFloor, ACTIVATION_KEY)
+                    .map_err(|_| RuntimeError::State)?
+                    .ok_or(RuntimeError::NotActivated)?;
+                if activation.len() != 64 || activation[..32] != *blake3::hash(&bytes).as_bytes() {
+                    return Err(RuntimeError::NotActivated);
+                }
+            }
+            descriptor
+        }
+        None if preflight_only => descriptor_from_config(&config, &key)?,
+        None => return Err(RuntimeError::NotActivated),
+    };
+    Ok((config, state, descriptor))
+}
+
+fn stored_descriptor(
+    bytes: &[u8],
+    config: &RelayConfigV1,
+    key: &SigningKey,
+) -> Result<RelayDescriptorV1, RuntimeError> {
+    let object = decode_reachability_object(bytes).map_err(|_| RuntimeError::Descriptor)?;
+    let ReachabilityObjectV1::RelayDescriptor(descriptor) = &object else {
+        return Err(RuntimeError::Descriptor);
+    };
+    key.verifying_key()
+        .verify_strict(
+            &reachability_signing_bytes(&object, ReachabilitySignatureRoleV1::RelayDescriptor)
+                .map_err(|_| RuntimeError::Descriptor)?,
+            &Signature::from_bytes(&descriptor.relay_signature),
+        )
+        .map_err(|_| RuntimeError::Identity)?;
+    let expected = descriptor_from_config(config, key)?;
+    if descriptor.relay_public_key != expected.relay_public_key
+        || descriptor.relay_node_id != expected.relay_node_id
+        || descriptor.endpoints != expected.endpoints
+        || descriptor.supported_transports != expected.supported_transports
+        || descriptor.protocol_versions != expected.protocol_versions
+        || descriptor.capacity_policy_digest != expected.capacity_policy_digest
     {
-        return Err(RuntimeError::NotActivated);
+        return Err(RuntimeError::Descriptor);
     }
-    Ok(config)
+    Ok(descriptor.clone())
+}
+
+fn validate_candidate_config(
+    descriptor: &RelayDescriptorV1,
+    config: &RelayConfigV1,
+) -> Result<(), RuntimeError> {
+    if descriptor.sequence != config.descriptor_sequence
+        || ((config.descriptor_issued_at != 0 || config.descriptor_expires_at != 0)
+            && (descriptor.issued_at != config.descriptor_issued_at
+                || descriptor.expires_at != config.descriptor_expires_at))
+    {
+        return Err(RuntimeError::Descriptor);
+    }
+    Ok(())
+}
+
+fn validate_descriptor_freshness(descriptor: &RelayDescriptorV1) -> Result<(), RuntimeError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| RuntimeError::Descriptor)?
+        .as_secs();
+    if descriptor.issued_at > now || descriptor.expires_at <= now {
+        return Err(RuntimeError::Descriptor);
+    }
+    Ok(())
+}
+
+/// Publish only complete bytes, without replacing any prior output. A random
+/// sibling is private until the durable candidate is committed and fully synced.
+fn publish_descriptor(path: &Path, bytes: &[u8]) -> Result<(), RuntimeError> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut nonce = [0u8; 16];
+    OsRng.fill_bytes(&mut nonce);
+    let suffix: String = nonce.iter().map(|byte| format!("{byte:02x}")).collect();
+    let temporary = parent.join(format!(".onebrain-relay-descriptor-{suffix}.tmp"));
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&temporary).map_err(|_| RuntimeError::Io)?;
+    let result = (|| {
+        file.write_all(bytes).map_err(|_| RuntimeError::Io)?;
+        file.sync_all().map_err(|_| RuntimeError::Io)?;
+        std::fs::hard_link(&temporary, path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                RuntimeError::OutputExists
+            } else {
+                RuntimeError::Io
+            }
+        })?;
+        sync_parent(path)
+    })();
+    drop(file);
+    // This path was created by this invocation, never supplied by an operator.
+    let _ = std::fs::remove_file(&temporary);
+    result
 }
 
 async fn run_udp_listener(
@@ -493,20 +631,28 @@ fn validate_probe_set(
     if probes.format != 1 || decode_hex32(&probes.descriptor_blake3)? != descriptor_digest {
         return Err(RuntimeError::ProbeSet);
     }
-    let mut hosts = BTreeSet::new();
-    let mut covered = BTreeSet::new();
+    let mut coverage = vec![BTreeSet::new(); config.advertised_endpoints.len()];
+    let mut transcripts = BTreeSet::new();
     for probe in &probes.probes {
         if !probe.success
+            || probe.source_host_id.is_empty()
+            || probe.source_host_id.len() > 64
+            || !probe
+                .source_host_id
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
             || probe.endpoint_index >= config.advertised_endpoints.len()
             || probe.transport != config.advertised_endpoints[probe.endpoint_index].transport
             || decode_hex32(&probe.transcript_blake3)? == [0; 32]
+            || !transcripts.insert(probe.transcript_blake3.as_str())
         {
             return Err(RuntimeError::ProbeSet);
         }
-        hosts.insert(probe.source_host_id.as_str());
-        covered.insert(probe.endpoint_index);
+        if !coverage[probe.endpoint_index].insert(probe.source_host_id.as_str()) {
+            return Err(RuntimeError::ProbeSet);
+        }
     }
-    if hosts.len() < 2 || covered.len() != config.advertised_endpoints.len() {
+    if coverage.iter().any(|hosts| hosts.len() < 2) {
         return Err(RuntimeError::ProbeSet);
     }
     Ok(())
@@ -576,6 +722,11 @@ fn write_create_new(path: &Path, bytes: &[u8]) -> Result<(), RuntimeError> {
 
 fn sync_parent(path: &Path) -> Result<(), RuntimeError> {
     let parent = path.parent().ok_or(RuntimeError::Io)?;
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
     #[cfg(unix)]
     {
         File::open(parent)
@@ -816,8 +967,8 @@ mod tests {
             max_reservations_per_target: 3,
             max_rendezvous_records: 64,
             descriptor_sequence: 1,
-            descriptor_issued_at: 100,
-            descriptor_expires_at: 700,
+            descriptor_issued_at: 0,
+            descriptor_expires_at: 0,
             log_destination: directory.path().join("relay.log"),
         };
         std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
@@ -828,7 +979,7 @@ mod tests {
         );
         validate_serve(&config_path, true).unwrap();
         assert_eq!(
-            validate_serve(&config_path, false).unwrap_err(),
+            validate_serve(&config_path, false).err().unwrap(),
             RuntimeError::NotActivated
         );
         let descriptor_path = directory.path().join("descriptor.cbor");
@@ -862,7 +1013,15 @@ mod tests {
         let valid_probe_path = directory.path().join("valid-probes.json");
         std::fs::write(&valid_probe_path, serde_json::to_vec(&valid).unwrap()).unwrap();
         activate_descriptor(&config_path, &valid_probe_path).unwrap();
-        validate_serve(&config_path, false).unwrap();
+        let (_, state, served) = validate_serve(&config_path, false).unwrap();
+        assert_eq!(
+            encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(served)).unwrap(),
+            std::fs::read(&descriptor_path).unwrap()
+        );
+        // A running service retains the database lock used for validation.
+        assert!(DurableRelayState::open(&data_root.join(STATE_FILE)).is_err());
+        drop(state);
+        assert!(DurableRelayState::open(&data_root.join(STATE_FILE)).is_ok());
     }
 
     fn encode_hex(bytes: &[u8]) -> String {

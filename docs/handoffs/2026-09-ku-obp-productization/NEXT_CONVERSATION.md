@@ -1,63 +1,93 @@
-# Next conversation — OBP product acceptance
+# Next conversation — OBP-QA-001 relay renewal review / independent-network evidence
 
-OBP-DESK-001 is accepted and merged under D-034: implementation `410a6a0`,
-merge `7e4fc14`. Main and the retained Desktop branch are published in this closure.
-Web `7f49eeb`, CLI `04bcb30` and API `7d37a30` remain ancestors. D-029 transport
-approval remains satisfied; do not ask again. API/node/CLI code is unchanged.
+Owner acceptance D-035 supersedes the review/commit-pending text below: the owner
+approved the correction and new local candidate commit on this same branch,
+followed by rebuild and fresh authority preparation. Do not request it again.
+Git push/merge and promotion of qualification remain outside that approval.
 
-Use original `C:/Users/shpy2/Documents/OneBrain` on main. Inspect Git status and
-preserve subsequent changes and all retained branches.
+Latest continuation: a [local relay renewal correction](outputs/OBP_QA_001_RELAY_RENEWAL_FIX.md)
+is implemented and validated on Windows and local Linux. It uses the existing
+export/activate/serve commands, preserves unrelated durable state, atomically
+advances/fences the descriptor and safely recovers publication failure. No new
+immutable candidate exists: all edits remain on the retained QA branch, without
+commit/push/merge or remote replacement. Read that report first. The next gate is
+owner review and permission to create a new immutable candidate, then rebuilt
+exact-candidate bindings and fresh V2 evidence. Do not reuse `fc65f08` authority
+for the corrected bytes. D-029, SSH and the same-key policy renewal stay approved.
+
+OBP-QA-001 is Blocked on independent-network evidence; all 13 local preflight
+groups passed within the recorded skip/fixture limits. Work is on `codex/obp-qa-001-nat-canary` in the
+original `C:/Users/shpy2/Documents/OneBrain` working tree. Preserve its local
+changes and every retained branch. Do not switch/reset to main to resume.
+Starting main `fc65f08` was clean and matched remote main; Desktop merge
+`7e4fc14`, CLI `04bcb30`, Web `7f49eeb` and API `7d37a30` are ancestors.
+D-029 is accepted and must not be asked again.
+
+Latest owner instruction authorizes reuse of the three existing hosts, SSH upload
+and remote execution for scoped P5. This supersedes the earlier no-remote boundary
+below. Read [P5 upload/execution](outputs/OBP_QA_001_P5_UPLOAD.md) first. The same
+`fc65f08` bundle is staged on all three hosts; artifact verification and six
+single-host native preflights passed. Installed services remain unchanged.
+The V2 authority was found in the sibling release archive; read the
+[recovery audit](outputs/OBP_QA_001_RECOVERED_P5_AUTHORITY.md). Historical signatures
+and role keys verify. The owner approved the same-key September 23–30 renewal;
+it is applied. Do not ask again for renewal, file locations, SSH permission or
+D-029. Read the latest [renewal/execution blocker](outputs/OBP_QA_001_P5_RENEWAL_BLOCKER.md):
+fresh signed Base request and Registry binding are verified; operational bundle
+02 is verified on all hosts. P5 inventory/run is blocked by expired existing
+relay descriptors and missing state-preserving renewal in `fc65f08`. An isolated
+binary reproduction confirms the failure. Do not run the historical state-reset
+script or relabel stale probes. Fixing runtime requires a new immutable candidate;
+no Git publication or remote runtime changes have been made. The local correction
+above supersedes the earlier no-runtime-edits checkpoint.
 
 ## Read set
 
 1. AGENTS.md, [PROGRESS](PROGRESS.md), [DECISIONS](DECISIONS.md), [README](README.md).
-2. [Task 18 — OBP-QA-001](tasks/18-OBP-QA-001.md) and
-   [capability status](CAPABILITY_STATUS.md).
-3. [Desktop projection](../../specs/vnext/OBP_LOCAL_DESKTOP_PROJECTION_V1.md),
-   [Desktop evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md),
-   [Desktop host/build notes](../../../src/onebrain-desktop/README.md).
-4. [Web projection](../../specs/vnext/OBP_LOCAL_WEB_PROJECTION_V1.md),
-   [Web evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md),
-   [API/private WS](../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md),
-   [product contract](../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md),
-   [API evidence](outputs/OBP_API_001_IMPLEMENTATION.md),
-   [CLI evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md).
-5. Applicable runtime ownership/lifecycle/concurrency/budget/rollback contracts,
-   outbound-first acceptance and P5/production evidence rules named by task 18.
+2. [Task 18](tasks/18-OBP-QA-001.md), [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md)
+   and [local evidence](outputs/OBP_QA_001_PREFLIGHT.md).
+3. Accepted Desktop/Web/CLI/API projections, private-WS section 7 of
+   [local API](../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md), their implementation
+   evidence and [Desktop host notes](../../../src/onebrain-desktop/README.md).
+4. Product/runtime ownership, lifecycle, concurrency, budget, rollback and
+   outbound-first contracts; P5 V2 qualification/preflight, preserved V1 and
+   operator evidence rules linked by acceptance v1.
 
-## Next task and boundaries
+## Remaining task
 
-OBP-QA-001 is Planned, dependency-ready. When requested, use
-`codex/obp-qa-001-nat-canary` from updated main. This closure starts no QA work.
-Single-machine or loopback simulation is preflight, never independent-network
-production evidence. Follow the task's exact host/network/provider requirements;
-report missing evidence without inventing qualification.
+Complete task 18 only with verified independent-network evidence. Ten scenario
+procedures and the local collector are ready. Local passing tests do not prove
+consumer NAT, independent relay operation, real relay shutdown, native WebView
+parity, real sleep/network switch or production qualification.
 
-Desktop supervises one node-owned service with memory-only local credentials.
-Windows lifecycle events fence execution; explicit Restart reconstructs the
-process. Durable identity, disabled generations and pending intent remain with
-the node. Unknown commands retain their original recovery context; restart and
-WS hints never replay mutations. Host provisioning stays explicitly in-process.
+The two-consumer product lane needs two independent consumer networks and two
+independently configured vNext relays, supported explicit host assembly and
+scoped execution authority. A P5 production-reference claim separately needs
+three physical Linux hosts and the complete exact-candidate signed request,
+inventory, topology/provider evidence, receipts, faults and exit oracles. Do not
+reuse historical provider attestation or downgrade the P5 topology to two hosts.
+SSH and OS/artifact readiness are now verified, but qualifying authority and
+cross-host evidence are still missing; staged preflight is not qualification.
 
-Fresh closure checks: six Desktop integration tests, 89 Web tests, 35 Python tests
-and vNext validator. Earlier feature-off, receipt, Web build/lint and Windows Tauri
-debug asset evidence retains its scope. Native OS hooks are wired; real sleep/
-network-switch, native WebView E2E, signed installers, other-OS networking and NAT
-qualification remain unclaimed. Read the Desktop evidence limits before QA.
+Use the existing node-owned service. Stock Desktop is unavailable without its
+trusted in-process bindings. No new provisioning endpoint, raw payload API,
+second outbox/planner or client-side failover is authorized. Unknown commands
+retain their original key/context and reconcile without replay.
 
-Preserve OneBrainLocal, Registry, jobs, keys and Ollama. Keep D-024 tuning Deferred.
-Do not activate networking or alter a live host merely to advance this handoff.
-Mobile, v2 host activation, default rollout and legacy removal are outside scope.
-
-## Copy into a new conversation
+Preserve OneBrainLocal, Registry, jobs, keys and Ollama. Keep D-024 tuning
+Deferred and networking default-off. Scoped SSH staging/execution on the existing
+P5 hosts is authorized; production faults still require the canonical signed
+admission inputs. Do not commit/push/merge, start task 19,
+implement mobile or remove legacy code merely to complete this handoff.
 
 ```text
-Hãy đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
-trên working tree gốc C:/Users/shpy2/Documents/OneBrain.
-OBP-DESK-001 đã merge tại 7e4fc14 và push theo D-034; API/node/CLI giữ nguyên.
-Đọc PROGRESS, task 18, Desktop/Web/API/private-WS và các acceptance/P5 contracts,
-kiểm tra git status, giữ mọi thay đổi rồi thực hiện OBP-QA-001 đúng scope.
-Phân biệt preflight local với evidence hai host/network độc lập; không tự nhận
-qualification. D-029 đã duyệt, không hỏi lại. Không tuning model, tự bật networking
-hay thay đổi live host. Mọi surface dùng chung node-owned service.
+Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
+trong working tree gốc. Giữ mọi thay đổi trên codex/obp-qa-001-nat-canary.
+Đọc acceptance v1, preflight evidence và PROGRESS rồi tiếp tục OBP-QA-001.
+Preflight local không phải qualification. Cần evidence hai consumer/network
+độc lập và hai relay; P5 production-reference vẫn có gate ba host riêng.
+D-029 và SSH ba host đã duyệt, không hỏi lại. Đọc record P5 upload/execution;
+giữ staging và các run cũ. Cần bộ authority V2 trước signed session/faults.
+Không bật networking mặc định hay tuning.
+Mọi surface dùng chung node-owned service; chưa bắt đầu OBP-MIG-001.
 ```
