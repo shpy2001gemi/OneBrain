@@ -78,6 +78,54 @@ neither the placeholder nor the mutable `current` selector. Both selected
 relay hosts bind TCP 443, so the reviewed unit grants only
 `CAP_NET_BIND_SERVICE`; runner-a does not install the relay unit.
 
+## Existing relay descriptor renewal
+
+The existing `export-candidate-descriptor --config <config> --output <new-path>`
+mode supports the canonical contiguous successor rule. This is an offline
+lifecycle operation under the relay's exclusive database lock, not an automatic
+background renewal or permission to stop a production relay.
+
+For a retained relay, keep the same identity, data root, endpoint set, transports
+and signed capacity policy. Do not rerun `generate-identity` or `initialize-state`,
+move the REDb database aside, or clear any replay/nonce/reservation state. Preserve
+the old configuration, descriptor files and failed attempts. Use an independently
+reviewed config copy with `descriptor_sequence` exactly one greater than the
+stored candidate. Use explicit current issue/expiry values within the existing
+30-minute ceiling, or both zero for automatic current time. The renewed expiry
+must advance; the stored predecessor may already be expired. Changed identity or
+advertised configuration requires a separate lifecycle procedure, not this renewal.
+
+Export signs the successor with the exact stored predecessor digest. Its atomic
+database commit advances only the candidate and removes the old activation marker;
+other control/replay floors and reservation/revocation/rendezvous records survive.
+The complete descriptor is then published create-new by a synced sibling file and
+no-clobber hard link. Existing outputs, including partial historical exports, are
+never overwritten. A filesystem without hard-link support fails publication.
+
+An export error after commit can leave a new durable candidate with no output.
+Recover by repeating export at the **same sequence and descriptor configuration**
+to a new output path. That republishes exact committed bytes, including the old
+timestamps/signature; it cannot extend expiry or create an equal-sequence fork.
+Do not increment again merely because publication failed. An expired recovered
+file remains an archive/recovery artifact and cannot activate or qualify.
+
+Within an authorized maintenance boundary: stop the owning service, export the
+successor, start the existing `serve --preflight-only` mode for fresh endpoint
+possession probes, stop that process to release the database, then run
+`activate-descriptor --config <config> --probe-set <fresh-probes>` and normal
+`serve`. The existing probe-set format must bind the current descriptor, with
+two distinct source hosts and distinct nonzero transcripts **for each endpoint**.
+The activation record binds descriptor and probe-set digests. A legacy unbound
+activation marker, stale probe set, expired descriptor or mismatched configuration
+cannot admit normal service startup. Startup uses the persisted descriptor and
+retains the same exclusive database owner through listener shutdown.
+
+These local probe-set summaries are trusted operator inputs, not proof of
+physical host independence. P5 still requires canonical verified remote probes,
+fresh topology/provider evidence, complete V2 authority and an immutable rebuilt
+candidate before its signed session/fault path. Local regression builds must not
+be installed under an old candidate's generation or signed bindings.
+
 ## P5 service and SSH boundary
 
 Create the service users `onebrain-p5-agent`,

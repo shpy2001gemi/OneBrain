@@ -1,5 +1,111 @@
 # Decisions and claim boundary
 
+## D-041 — Close functional QA and advance past consumer NAT qualification
+
+On 2026-09-24 the owner instructed: “hãy làm những việc cần làm để hoàn thành
+qualification consumer NAT . nếu 3 vps không đủ thì bỏ qua luôn để mà làm tiếp
+hoàn thành task hiện tại để làm task kế tiếp”. The two-VPS admission already
+establishes that the available VPS cannot demonstrate ordinary consumer NAT;
+there is also no supported product host assembly on them. Do not spend another
+run or weaken the scenario oracle to call them consumer hosts. Skip this
+qualification gate for the current task, while retaining the unrun scenarios
+and an explicit `consumer_nat_qualified=false` claim.
+
+This instruction closes OBP-QA-001 under the approved D-039/D-040 functional
+criteria and directs progression to its dependent task. Under D-010, finish
+the validated QA branch, publish it, merge it into main and then start
+OBP-MIG-001 on its declared branch. Record actual Git results only after they
+exist. The separate exact-candidate Linux P5 qualification remains intact.
+No default networking, model tuning, platform qualification or remote-state
+change is authorized by skipping consumer NAT.
+
+## D-040 — Accept OBP-QA-001 functional review
+
+On 2026-09-24 the owner stated “tôi duyêt review” after the D-039 functional
+acceptance result and test scope were presented. This accepts the OBP-QA-001
+functional review. Task 18 remains in `Review` until a separate Git closure
+instruction and actual closure occur. No commit, merge, push, qualification
+promotion or start of OBP-MIG-001 follows from this review acceptance.
+
+The result retains its stated limits: the two-consumer-network scenarios and
+native platform observations did not run, while the separate Linux P5 V2
+qualification on `c453f3e` remains valid. Networking stays default-off, and
+the three-host staging, runs and durable state remain preserved.
+
+## D-039 — Accept functional QA without strict external evidence
+
+On 2026-09-23 the owner decided: “code, test tính năng hoạt động đúng thiết kế
+là được, không cần nghiêm ngặt evident.” For OBP-QA-001, correct code and
+functional tests of the accepted design are sufficient for review. The strict
+two-consumer-network scenario collection in acceptance v1 is no longer a task
+completion prerequisite. Record the actual test result and scope plainly;
+local or VPS tests must not be described as ordinary consumer-NAT evidence.
+
+The separate exact-candidate Linux P5 three-host qualification remains valid
+and retains its own authority rules. This decision changes no protocol,
+node-owned service ownership, default-off networking, tuning or platform claim.
+Keep old staging and runs. OBP-MIG-001 remains unstarted in this continuation.
+See [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md).
+
+## D-038 — Use two existing VPS for the product scenario attempt
+
+On 2026-09-23, after being told the available three P5 machines are VPS rather
+than ordinary consumer hosts, the owner directed: “hãy dùng 2 trong 3 vps .
+3 vps đso đang ở mạng độc lập với nhau”. This selects the existing independent
+VPS networks for a scoped product staging attempt without requesting new SSH
+approval. It does not itself provide a node-owned product host assembly, Linux
+native Desktop lifecycle support or measurements of ordinary consumer NAT.
+The [remote admission result](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md)
+records those gates. Keep P5 qualification distinct, the accepted scenario
+oracles unchanged, default networking off and OBP-MIG-001 unstarted.
+
+## D-037 — Approve descriptor-history correction; prioritize real happy case
+
+On 2026-09-23 the owner accepted the concrete correction proposal and said
+“đồng ý duyệt. Mục tiêu mau chóng chạy happy case.” This extends task 18 to the
+shared verified-history admission path, probe/P5 input bindings and focused
+regressions in [the additive profile](../../specs/vnext/P5_DESCRIPTOR_HISTORY_ADMISSION_V1.md).
+Continue necessary local candidate preparation and previously authorized scoped
+three-host execution toward the happy case. Preserve failed runs and durable
+floors. No Git push/merge, default networking, tuning, mobile or task 19.
+Happy-case evidence must remain distinct from full qualification. Existing
+SSH/sudo, D-036 placement reuse and same-key policy approvals remain in force.
+
+## D-036 — Retain the owner-accepted three-physical-host placement evidence
+
+On 2026-09-23 the owner explicitly clarified:
+“trước đso đã chốt và gửi kèm thông tin 3 vps chạy trên 3 máy vật lý khác nhau rồi,
+bạn không cần phải lấy lại bằng chứng đó. Tôi đã quyết định nội dung này.”
+
+The existing three VPS placement on three separate physical machines is an
+owner-accepted fact for this continuation. Reuse the previously supplied placement
+information and retained evidence; do not require another provider contact,
+placement collection or owner confirmation. This supersedes handoff language
+treating new physical-placement evidence as an unresolved external prerequisite.
+
+Keep original evidence bytes, dates and provenance. This decision is not a new
+provider-issued document, a new measurement or provider-document verification.
+Retain `owner-telephone-verified-provider-document-pending`; bind the accepted
+evidence through the canonical V2 authority path for the current candidate.
+Do not weaken a verifier or relabel old probes as current evidence.
+
+Host-b clock correction, exact installed-generation/public exports, fresh relay
+successor descriptors and possession probes, complete signed V2 admission and
+actual session/fault/cleanup evidence remain technical work. The separate
+two-consumer-network product scenarios remain unexecuted. No qualification,
+default rollout, tuning, Git publication or OBP-MIG-001 follows from this decision.
+
+## D-035 — Accept relay renewal correction and create QA candidate
+
+On 2026-09-23 the owner answered “tôi đồng ý duyệt” to the reviewed
+OBP-QA-001 relay renewal correction and explicit request to create a new commit
+candidate on `codex/obp-qa-001-nat-canary`, rebuild and prepare fresh V2 authority.
+This authorizes committing the retained QA package and correction on that branch.
+Do not ask again for that review, candidate commit, D-029, SSH execution or the
+same-key September 23–30 policy renewal. Keep old staging and attempts intact.
+No merge, remote Git publication, default rollout or task 19 is included.
+Signed session/faults still require the complete fresh exact-candidate V2 gate.
+
 ## D-034 — Merge and publish OBP-DESK-001
 
 After accepting Desktop review under D-033, the owner explicitly instructed

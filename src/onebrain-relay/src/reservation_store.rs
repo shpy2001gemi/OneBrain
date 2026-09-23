@@ -259,8 +259,19 @@ impl ReservationStore {
         if self.reservations.contains_key(&request.reservation_id) {
             return Err(ReservationError::DuplicateReservationId);
         }
-        let previous = self.request_sequences.get(&request.target_node_id).copied();
-        if request.sequence == 0 || previous.is_some_and(|value| request.sequence != value + 1) {
+        let previous = match self.request_sequences.get(&request.target_node_id).copied() {
+            Some(value) => Some(value),
+            None => self
+                .durable
+                .as_ref()
+                .map(|state| state.highest_reservation_request_sequence(request.target_node_id.as_bytes()))
+                .transpose()
+                .map_err(|_| ReservationError::State)?
+                .flatten(),
+        };
+        if request.sequence == 0
+            || previous.is_some_and(|value| value.checked_add(1) != Some(request.sequence))
+        {
             return Err(ReservationError::Replay);
         }
         verify_control(
@@ -756,6 +767,31 @@ mod tests {
                 code: RelayDenialCodeV1::Capacity,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn durable_request_sequence_recovers_after_relay_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let durable = Arc::new(DurableRelayState::initialize(&directory.path().join("relay.redb")).unwrap());
+        let relay = SigningKey::from_bytes(&[71; 32]);
+        let client = SigningKey::from_bytes(&[72; 32]);
+        let first = authenticated_client(&relay, &client, [73; 32], [74; 32]);
+        let mut initial = ReservationStore::new_durable(relay.clone(), 4, 4, durable.clone()).unwrap();
+        assert!(matches!(
+            initial.reserve(request(&relay, &client, [75; 32], 1), &first, 110).unwrap(),
+            ReservationDecision::Granted(_)
+        ));
+        drop(initial);
+        let second = authenticated_client(&relay, &client, [76; 32], [77; 32]);
+        let mut recovered = ReservationStore::new_durable(relay.clone(), 4, 4, durable).unwrap();
+        assert_eq!(
+            recovered.reserve(request(&relay, &client, [78; 32], 1), &second, 110).unwrap_err(),
+            ReservationError::Replay
+        );
+        assert!(matches!(
+            recovered.reserve(request(&relay, &client, [79; 32], 2), &second, 110).unwrap(),
+            ReservationDecision::Granted(_)
         ));
     }
 

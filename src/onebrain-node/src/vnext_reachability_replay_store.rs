@@ -379,6 +379,24 @@ fn cache_identity(bytes: &[u8]) -> Result<(u8, [u8; 32], u64), RelayAdmissionErr
 }
 
 impl ReachabilityReplayStore for RedbReachabilityReplayStore {
+    fn descriptor_history(&self, history: &ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory, commit: bool) -> Result<(), RelayAdmissionError> {
+        let storage_key = sequence_key(history.key());
+        let mut write = self.database.begin_write().map_err(|_| RelayAdmissionError::StateUnavailable)?;
+        write.set_durability(Durability::Immediate);
+        {
+            let mut table = write.open_table(STATE).map_err(|_| RelayAdmissionError::StateUnavailable)?;
+            let current = table.get(storage_key.as_slice()).map_err(|_| RelayAdmissionError::StateUnavailable)?
+                .map(|v| decode_sequence(v.value())).transpose()?;
+            history.check_floor(current)?;
+            if commit {
+                let (seq, digest, expires) = history.terminal_floor();
+                let encoded = encode_sequence(seq,digest,expires);
+                table.insert(storage_key.as_slice(),encoded.as_slice()).map_err(|_| RelayAdmissionError::StateUnavailable)?;
+            }
+        }
+        if commit { write.commit().map_err(|_| RelayAdmissionError::StateUnavailable)?; }
+        Ok(())
+    }
     fn check_sequence_candidate(
         &self,
         key: ReachabilitySequenceKeyV1,
@@ -665,6 +683,42 @@ fn sync_parent(path: &Path) -> Result<(), RelayAdmissionError> {
 #[cfg(test)]
 mod recovery_tests {
     use super::*;
+
+    #[test]
+    fn descriptor_history_commit_is_atomic_and_survives_restart() {
+        use ed25519_dalek::{Signer, SigningKey};
+        use onebrain_protocol::*;
+        use ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory;
+        let key = SigningKey::from_bytes(&[17;32]);
+        let mut value = RelayDescriptorV1 { format:1,
+            relay_node_id:ku_net::vnext_session::principal_node_id(key.verifying_key().as_bytes()),
+            relay_public_key:*key.verifying_key().as_bytes(),
+            endpoints:vec![RelayEndpointV1 {transport:RelayTransportV1::TlsTcp443,host:HostAddressV1::Ipv4([8,8,8,8]),port:443}],
+            supported_transports:vec![RelayTransportV1::TlsTcp443],protocol_versions:vec![ProtocolVersionV1 {major:1,minor:0}],
+            capacity_policy_digest:[4;32],previous_descriptor_blake3:None,sequence:1,issued_at:100,expires_at:600,relay_signature:[0;64] };
+        let sign = |value: &mut RelayDescriptorV1| {
+            value.relay_signature=key.sign(&reachability_signing_bytes(&ReachabilityObjectV1::RelayDescriptor(value.clone()),ReachabilitySignatureRoleV1::RelayDescriptor).unwrap()).to_bytes();
+            encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(value.clone())).unwrap()
+        };
+        let first=sign(&mut value);
+        value.sequence=2;value.previous_descriptor_blake3=Some(*blake3::hash(&first).as_bytes());value.issued_at=1000;value.expires_at=1500;
+        let second=sign(&mut value);
+        let history=VerifiedDescriptorHistory::verify(&[first],&second,1000).unwrap();
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("history.redb");
+        {
+            let store=RedbReachabilityReplayStore::open(&path).unwrap();
+            store.descriptor_history(&history,false).unwrap();
+            assert!(store.check_sequence_candidate(history.key(),1,None).is_ok());
+            store.descriptor_history(&history,true).unwrap();
+        }
+        let store=RedbReachabilityReplayStore::open(&path).unwrap();
+        store.descriptor_history(&history,false).unwrap();
+        store.descriptor_history(&history,true).unwrap();
+        let (seq,digest,_)=history.terminal_floor();
+        store.compare_and_advance_sequence(history.key(),Some(digest),seq+1,[42;32],1600).unwrap();
+        assert!(store.descriptor_history(&history,true).is_err());
+        assert!(store.check_sequence_candidate(history.key(),4,Some([42;32])).is_ok());
+    }
 
     #[test]
     fn corrupted_pending_emission_is_rejected_on_read_and_restart() {

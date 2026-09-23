@@ -15,6 +15,7 @@ import hmac
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -699,12 +700,29 @@ def _inventory_host_configs(
     return tuple(hosts), receipt_keys, known_hosts
 
 
+class RelayDescriptorInputs(tuple):
+    """Canonical terminal strings with their inventory-bound history inputs."""
+    def __new__(cls, descriptors, histories):
+        value = super().__new__(cls, descriptors)
+        value.histories = histories
+        return value
+
+
+def _relay_descriptor_parameters(descriptors: tuple[str, ...]) -> dict[str, object]:
+    result: dict[str, object] = {"relay_descriptors": descriptors}
+    histories = getattr(descriptors, "histories", None)
+    if histories is not None:
+        result["relay_descriptor_histories"] = histories
+    return result
+
+
 def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, ...]:
     probes = inventory.get("public_probe_sets")
     if not isinstance(probes, list) or not 4 <= len(probes) <= 24:
         raise P5ExecutionError("inventory must carry bounded cross-host relay probe receipts")
     descriptors: dict[str, set[str]] = {}
     validity: dict[str, tuple[int, int]] = {}
+    histories: dict[str, list[str] | None] = {}
     for row in probes:
         value = row.get("relay_descriptor_hex") if isinstance(row, dict) else None
         if (
@@ -747,9 +765,29 @@ def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, 
         if value in validity and validity[value] != descriptor_validity:
             raise P5ExecutionError("relay descriptor validity metadata disagrees across probe receipts")
         validity[value] = descriptor_validity
+        history = row.get("descriptor_history_hex")
+        if history is not None:
+            if row.get("format") != 3 or not isinstance(history, list) or len(history) >= 16:
+                raise P5ExecutionError("invalid versioned descriptor history")
+            total = len(value) // 2
+            for item in history:
+                if not isinstance(item, str) or not item or len(item) % 2 or len(item) > 16384 or any(c not in "0123456789abcdef" for c in item):
+                    raise P5ExecutionError("invalid bounded history hex")
+                total += len(item) // 2
+            if total > 8192:
+                raise P5ExecutionError("descriptor history byte ceiling")
+        elif row.get("format") == 3:
+            raise P5ExecutionError("history receipt missing history")
+        if value in histories and histories[value] != history:
+            raise P5ExecutionError("descriptor history disagrees across probe receipts")
+        histories[value] = history
         descriptors.setdefault(value, set()).add(str(source_host))
     if not 2 <= len(descriptors) <= 3 or any(len(sources) < 2 for sources in descriptors.values()):
         raise P5ExecutionError("each relay descriptor requires two distinct remote probe hosts")
+    if any(history is not None for history in histories.values()):
+        if any(history is None for history in histories.values()):
+            raise P5ExecutionError("mixed history/legacy probe inputs")
+        return RelayDescriptorInputs(sorted(descriptors), histories)
     return tuple(sorted(descriptors))
 
 
@@ -1194,7 +1232,7 @@ def rehydrate_relay_ring(
                 controller,
                 agent_sequence,
                 "diagnose-relay-matrix",
-                {"relay_descriptors": relay_descriptors},
+                _relay_descriptor_parameters(relay_descriptors),
             )
             for host in hosts
         ),
@@ -1205,7 +1243,7 @@ def rehydrate_relay_ring(
     reserved = executor.execute_wave(
         agents,
         tuple(
-            _signed_agent_command(host, request, controller, agent_sequence, "ensure-reservations", {"relay_descriptors": relay_descriptors})
+            _signed_agent_command(host, request, controller, agent_sequence, "ensure-reservations", _relay_descriptor_parameters(relay_descriptors))
             for host in hosts
         ),
         deadline_monotonic_ns,
@@ -1701,7 +1739,7 @@ def run_production_preflight(
                 controller,
                 3,
                 "diagnose-relay-matrix",
-                {"relay_descriptors": relay_descriptors},
+                _relay_descriptor_parameters(relay_descriptors),
             )
             for host in hosts
         )
@@ -1715,7 +1753,7 @@ def run_production_preflight(
                 controller,
                 4,
                 "ensure-reservations",
-                {"relay_descriptors": relay_descriptors},
+                _relay_descriptor_parameters(relay_descriptors),
             )
             for host in hosts
         )
@@ -2337,9 +2375,11 @@ def _deterministic_raw_archive(root: Path, epoch: int) -> bytes:
     return encoded
 
 
-def _verified_child_receipts_from_raw(root: Path) -> list[dict[str, object]]:
+def _child_receipt_digests_from_raw(root: Path) -> list[dict[str, object]]:
     receipts: list[dict[str, object]] = []
     for path in sorted(root.glob("child-*.json")):
+        if path.is_symlink() or not path.is_file():
+            raise P5ExecutionError("persisted child receipt is not a regular file")
         encoded = path.read_bytes().rstrip(b"\n")
         try:
             value = json.loads(encoded)
@@ -2347,10 +2387,46 @@ def _verified_child_receipts_from_raw(root: Path) -> list[dict[str, object]]:
             raise P5ExecutionError(f"persisted child receipt is invalid: {path.name}") from error
         if not isinstance(value, dict) or canonical_json(value) != encoded:
             raise P5ExecutionError(f"persisted child receipt is noncanonical: {path.name}")
-        receipts.append(value)
-    if {str(value.get("host_id")) for value in receipts} != set(REQUIRED_HOSTS):
+        host_id = value.get("host_id")
+        sequence = value.get("sequence")
+        if (
+            host_id not in REQUIRED_HOSTS
+            or isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or path.name != f"child-{sequence:06d}-{host_id}.json"
+        ):
+            raise P5ExecutionError("persisted child receipt path/identity mismatch")
+        receipts.append({
+            "host_id": host_id,
+            "sequence": sequence,
+            "receipt_blake3": blake3.blake3(encoded).hexdigest(),
+        })
+    if {str(value["host_id"]) for value in receipts} != set(REQUIRED_HOSTS):
         raise P5ExecutionError("persisted child receipt coverage is incomplete")
     return receipts
+
+
+def assert_public_aggregate_privacy(aggregate: Mapping[str, object], inventory: Mapping[str, object]) -> None:
+    """Keep restricted receipt endpoints out of the signed public aggregate."""
+    forbidden_keys = {"peer_endpoints", "bind", "ssh_destination", "interface", "private_key", "password", "raw_error"}
+    ipv4 = re.compile(r"(?<![0-9A-Za-z])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9A-Za-z])")
+    hosts = inventory.get("hosts", [])
+    destinations = {
+        str(row["ssh_destination"]).split("@")[-1]
+        for row in hosts if isinstance(row, dict) and isinstance(row.get("ssh_destination"), str)
+    }
+    pending: list[object] = [aggregate]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if forbidden_keys.intersection(value):
+                raise P5ExecutionError("public P5 aggregate contains a restricted field")
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+        elif isinstance(value, str):
+            if ipv4.search(value) or any(destination and destination in value for destination in destinations):
+                raise P5ExecutionError("public P5 aggregate contains a host address")
 
 
 def build_signed_production_aggregate(
@@ -2387,7 +2463,7 @@ def build_signed_production_aggregate(
         routes.append(route)
     raw_manifest_blake3, raw_object_count = _raw_manifest(raw_root)
     aggregate: dict[str, object] = {
-        "child_receipts": _verified_child_receipts_from_raw(raw_root),
+        "child_receipt_digests": _child_receipt_digests_from_raw(raw_root),
         "cleanup_complete": cleanup_complete,
         "controller_public_key": controller.public_key().public_bytes_raw().hex(),
         "evidence_authority": _evidence_authority(inventory),
@@ -2409,6 +2485,7 @@ def build_signed_production_aggregate(
     aggregate["qualification"] = derive_qualification(aggregate)
     if not aggregate["qualification"]["multi_host_qualified"]:
         raise P5ExecutionError("real evidence does not derive production-reference qualification")
+    assert_public_aggregate_privacy(aggregate, inventory)
     aggregate_blake3 = blake3.blake3(canonical_json(aggregate)).hexdigest()
     aggregate["aggregate_blake3"] = aggregate_blake3
     aggregate["controller_signature"] = controller.sign(
@@ -2624,8 +2701,10 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("release-request", "release-signature", "base-policy", "base-gpg-home", "p5-request", "p5-signature", "p5-approval-policy", "inventory", "bundle-root", "registry-candidate-root"):
         verify.add_argument(f"--{name}", type=Path, required=True)
     run = commands.add_parser("run")
+    happy = commands.add_parser("run-happy-case")
     for name in ("release-request", "release-signature", "base-policy", "base-gpg-home", "p5-request", "p5-signature", "p5-approval-policy", "inventory", "controller-signing-key", "ssh-identity-key", "raw-evidence-recipient-private", "bundle-root", "registry-candidate-root", "evidence-root"):
         run.add_argument(f"--{name}", type=Path, required=True)
+        happy.add_argument(f"--{name}", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.mode == "generate-controller-key": _generate_ed25519(args.output_private, args.output_public)
@@ -2635,12 +2714,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "prepare-inventory": _write_create_new(args.output, canonical_json(prepare_inventory(args)) + b"\n")
         elif args.mode == "prepare-request": _write_create_new(args.output, canonical_json(prepare_request(args)) + b"\n")
         elif args.mode == "sign-request": _write_create_new(args.output, sign_request(args.p5_request, args.approval_policy, args.signing_key))
-        elif args.mode in {"verify-request", "run"}:
+        elif args.mode in {"verify-request", "run", "run-happy-case"}:
             verified_request = verify_p5_request(args.p5_request, args.p5_signature, args.p5_approval_policy, args.inventory)
             # Base OpenPGP verification remains a separate unchanged authority path.
             verify_base_authority(args)
-            if args.mode == "run":
-                run_production_preflight(args, verified_request, full_qualification=True)
+            if args.mode in {"run", "run-happy-case"}:
+                run_production_preflight(args, verified_request, full_qualification=args.mode == "run")
     except (OSError, ValueError, P5ExecutionError) as error:
         print(f"P5 V2 controller failed: {error}", file=__import__("sys").stderr); return 1
     return 0

@@ -27,6 +27,9 @@ use rand::RngCore;
 
 use crate::vnext_session::principal_node_id;
 
+mod descriptor_history;
+pub use descriptor_history::{DescriptorHistoryReplayStore, VerifiedDescriptorHistory};
+
 const MAX_RESOLVED_PER_ENDPOINT: usize = 8;
 const MAX_RESOLVED_PER_OBJECT: usize = 32;
 const MAX_PENDING_DESCRIPTORS: usize = 32;
@@ -558,6 +561,10 @@ pub enum ReachabilityNonceDomainV1 {
 }
 
 pub trait ReachabilityReplayStore: Send + Sync {
+    /// Atomic verified-history floor check/commit; unsupported stores fail closed.
+    fn descriptor_history(&self, _history: &VerifiedDescriptorHistory, _commit: bool) -> Result<(), RelayAdmissionError> {
+        Err(RelayAdmissionError::StateUnavailable)
+    }
     fn check_sequence_candidate(
         &self,
         key: ReachabilitySequenceKeyV1,
@@ -609,6 +616,12 @@ pub struct InMemoryReachabilityReplayStore {
 }
 
 impl ReachabilityReplayStore for InMemoryReachabilityReplayStore {
+    fn descriptor_history(&self, history: &VerifiedDescriptorHistory, commit: bool) -> Result<(), RelayAdmissionError> {
+        let mut state = self.sequences.lock().map_err(|_| RelayAdmissionError::StateUnavailable)?;
+        history.check_floor(state.get(&history.key()).copied())?;
+        if commit { state.insert(history.key(), history.terminal_floor()); }
+        Ok(())
+    }
     fn check_sequence_candidate(
         &self,
         key: ReachabilitySequenceKeyV1,
@@ -1008,6 +1021,7 @@ impl ReachabilityRecordAdmission for ReachabilityAdmission {
         proofs: &[RelayPossessionProofV1],
         now: u64,
     ) -> Result<ValidatedRelayDescriptor, RelayAdmissionError> {
+        freshness(pending.canonical.issued_at, pending.canonical.expires_at, now)?;
         let stored = self
             .pending_descriptors
             .get(&pending.digest)
