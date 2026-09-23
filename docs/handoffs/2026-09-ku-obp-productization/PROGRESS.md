@@ -5,6 +5,16 @@
 
 ## Current checkpoint
 
+- 2026-09-23 14:34 UTC [signed V2 happy case completed](outputs/OBP_QA_001_SIGNED_HAPPY_SUCCESS_20260923.md):
+  immutable `5b8dc3b` installed on a/b/c; fresh Base/Registry/P5 authority
+  verified, sequence-4 history and four cross-host probes passed. Signed
+  reservations, relay-only A→B→C→A ring and three marker exchanges completed,
+  followed by cleanup/finalization. Direct a/b/c checks found no session or
+  network state, active P5 agents/signers or TCP 443 listener; normal relays
+  remain fenced. Earlier generations, failures and cursor archives remain.
+  P5 13-fault/ten-oracle qualification and the two independent consumer-network
+  product lane remain outstanding. Task 18 Blocked, task 19 unstarted.
+
 - 2026-09-23 14:05 UTC [signed V2 happy-case attempt](outputs/OBP_QA_001_SIGNED_HAPPY_ATTEMPT_20260923.md):
   immutable `85adf65` installed on a/b/c, exact Base/Registry/bundle/P5
   authority verified, four sequence-3 cross-host probes passed. Signed

@@ -1,5 +1,18 @@
 # Next conversation — OBP-QA-001 relay renewal review / independent-network evidence
 
+**Latest signed result, 2026-09-23 14:34 UTC:** read
+[the completed signed happy case](outputs/OBP_QA_001_SIGNED_HAPPY_SUCCESS_20260923.md)
+first. Immutable `5b8dc3b` is installed on a/b/c; fresh exact V2 authority
+verified, sequence-4 descriptor history and four cross-host probes passed.
+Session `bb6d48ec` completed prepare, reachability, reservations, relay-only
+A→B→C→A ring, all three marker exchanges, cleanup and finalization. The two
+temporary listeners are stopped and direct a/b/c checks found no remaining
+P5 session/network state or TCP 443 listener. Earlier generations/runs and
+cursor bytes are preserved. This is a happy case, **not** the 13-fault P5
+production qualification or the independent two-consumer-network product
+acceptance. Task 18 remains Blocked on those separate evidence lanes; task 19
+has not started. Keep the same branch, default-off networking and no tuning.
+
 **Latest signed attempt, 2026-09-23 14:05 UTC:** read
 [the signed happy-case attempt and cleanup](outputs/OBP_QA_001_SIGNED_HAPPY_ATTEMPT_20260923.md)
 first. Candidate `85adf65` was installed on a/b/c, complete V2 authority
