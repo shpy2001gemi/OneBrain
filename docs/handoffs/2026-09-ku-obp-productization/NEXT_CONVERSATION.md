@@ -1,4 +1,21 @@
-# Next conversation — OBP-QA-001 relay renewal review / independent-network evidence
+# Next conversation — OBP-QA-001 independent consumer-network evidence
+
+**Latest result, 2026-09-23 15:26 UTC:** read the
+[Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
+first. Exact candidate `c453f3e` was installed on the three approved hosts;
+fresh V2 authority and four cross-host probes passed. The signed relay-only
+ring, selected-relay failure/alternate recovery, all 13 faults and ten exit
+oracles completed. The independent verifier returned
+`multi_host_qualified=true`; the public aggregate contains digest references
+only and its privacy scan is clean. Signed cleanup/finalization and direct
+three-host clean-state checks passed. Raw evidence remains restricted, and all
+earlier runs/staging/fixture and cursor archives remain. This closes the Linux
+P5 production-reference lane for that exact candidate. It does **not** close
+the separate two-consumer-network/two-relay product acceptance or qualify
+other platforms. Task 18 remains Blocked; task 19 is unstarted. Keep the same
+branch, default-off networking, no tuning and the shared node-owned service.
+The credential for runner-a is stored locally with Windows DPAPI; do not put
+it in reports or ask the owner for it again.
 
 **Latest signed result, 2026-09-23 14:34 UTC:** read
 [the completed signed happy case](outputs/OBP_QA_001_SIGNED_HAPPY_SUCCESS_20260923.md)

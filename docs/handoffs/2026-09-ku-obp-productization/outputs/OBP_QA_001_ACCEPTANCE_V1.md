@@ -4,6 +4,11 @@
 host-provisioning, authority or qualification profile. D-029 remains accepted.
 Use the existing node-owned service for API, CLI, local Web and Desktop.
 
+Execution update (2026-09-23): the separate exact-candidate Linux P5 V2
+three-host gate [qualified](OBP_QA_001_P5_PRODUCTION_20260923.md) on `c453f3e`.
+The ten two-consumer-network product scenarios below remain unrun. The original
+local-preflight and future-run instructions retain their historical scope.
+
 ## Evidence lanes
 
 Continuation D-036 (2026-09-23): the owner explicitly retains the previously
@@ -120,11 +125,11 @@ must bind its own exact approved candidate and use existing evidence verifiers.
 
 Provide an authorized isolated two-consumer/two-relay environment, verifiable
 host/network independence and an explicit supported host assembly. Execute all
-ten scenarios and retain their scoped observations. For a production-reference
-claim, additionally satisfy the complete exact-candidate P5 V2 three-host
-request/inventory/provider/receipt/fault/resource/privacy/cleanup gate. Neither
-topology is available as verified task input here. No remote credentials or
-private keys should be placed in this handoff.
+ten scenarios and retain their scoped observations. The exact-candidate Linux
+P5 V2 three-host request/inventory/provider/receipt/fault/resource/privacy/
+cleanup gate is now verified in the linked qualification report above. Its
+three-host topology does not replace the missing two-consumer-network product
+evidence. No remote credentials or private keys should be placed in this handoff.
 
 Until these gates are met, keep task 18 incomplete and task 19 unstarted.
 Networking remains default-off. No owner decision already accepted is reopened.

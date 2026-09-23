@@ -5,6 +5,18 @@
 
 ## Current checkpoint
 
+- 2026-09-23 15:26 UTC [Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md):
+  exact `c453f3e` bundle installed on a/b/c; fresh signed Base/Registry/P5 V2
+  authority, sequence-7 relay history and four cross-host probes verified.
+  Signed relay-only ring, selected-relay shutdown/alternate recovery and all
+  13 faults with before/during/after markers completed. Independent verifier
+  reports `multi_host_qualified=true` with 332 signed child receipts and 387
+  raw objects; public aggregate privacy scan is clean. Signed cleanup and
+  finalization passed, and direct three-host checks found no active P5 session
+  or TCP 443 listener. Old runs, staging and archived fixtures/cursors remain.
+  Task 18 stays `Blocked` on separate two-consumer-network/two-relay product
+  scenarios and native surface/lifecycle evidence; task 19 is unstarted.
+
 - 2026-09-23 14:34 UTC [signed V2 happy case completed](outputs/OBP_QA_001_SIGNED_HAPPY_SUCCESS_20260923.md):
   immutable `5b8dc3b` installed on a/b/c; fresh Base/Registry/P5 authority
   verified, sequence-4 history and four cross-host probes passed. Signed

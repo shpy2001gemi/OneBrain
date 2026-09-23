@@ -3,6 +3,12 @@
 This is the compact product-planning view. It intentionally separates code and
 test evidence from user-facing orchestration and release qualification.
 
+2026-09-23 15:26 UTC: [Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
+passed on exact `c453f3e` across three hosts with all 13 faults and ten exit
+oracles. Task 18 remains Blocked on two independent consumer networks, two
+relays and product/native surface scenarios. Other platforms remain pending.
+Older paragraphs below are historical checkpoints.
+
 2026-09-23 update: OBP-PROD-001..004, API, CLI, Web and Desktop are merged
 through D-034. Task 18 has a [local acceptance/preflight package](outputs/OBP_QA_001_ACCEPTANCE_V1.md);
 independent consumer-network and exact-candidate P5 evidence remain outstanding.
