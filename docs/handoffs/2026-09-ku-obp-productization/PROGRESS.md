@@ -5,6 +5,12 @@
 
 ## Current checkpoint
 
+- 2026-09-24 OBP-MIG-001 review publication: validated implementation
+  `1d649ce` was committed and published on
+  `origin/codex/obp-mig-001-retire-legacy-seed`. The retained branch is
+  `Review`; no merge, default rollout, live host action or legacy data
+  removal occurred. D-010 keeps merge as a separate owner direction.
+
 - 2026-09-24 OBP-MIG-001 — `Review`: final local verification passed after
   the [migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md) was completed.
   CLI feature-on 52+2 and base-only 43+2, plus one real-process default-start
@@ -427,7 +433,7 @@
 | 16 | `OBP-WEB-001` | Merged | `codex/obp-web-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md); implementation `cade635`, merge `7f49eeb`, D-032. |
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
-| 19 | `OBP-MIG-001` | Review | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | [Local migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
+| 19 | `OBP-MIG-001` | Review | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | Published implementation `1d649ce`; [migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |

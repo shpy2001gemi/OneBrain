@@ -12,7 +12,7 @@ per task so a new conversation does not need the history that produced it.
 Latest: [OBP-MIG-001 migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
 records the tested compatibility gate, node-owned vNext-only CLI startup and
 retained rollback path on `codex/obp-mig-001-retire-legacy-seed`. Task 19 is
-ready for review; its changes are local and uncommitted.
+ready for review; implementation `1d649ce` is published on the retained branch.
 D-041 closed the D-039/D-040 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
 with QA tip `fb5b71b`, merge `d695e4a`, and an explicit skipped consumer-NAT
 qualification gate. D-039

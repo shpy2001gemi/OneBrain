@@ -5,6 +5,8 @@ published main `940fa61` after D-041 merged OBP-QA-001. The owner accepted
 functional QA and explicitly skipped consumer-NAT qualification for task 18;
 that skip is not a network qualification. This migration changes the normal
 startup path without activating OBP by default or altering old durable data.
+Validated implementation `1d649ce` is published on the retained task branch
+for Review; it has not been merged.
 
 ## Call-site and packaging inventory
 

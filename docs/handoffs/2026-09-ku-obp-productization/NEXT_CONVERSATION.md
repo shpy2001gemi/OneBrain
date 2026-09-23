@@ -1,5 +1,11 @@
 # Next conversation — OBP-MIG-001 review
 
+**Latest publication, 2026-09-24:** OBP-MIG-001 implementation `1d649ce`
+is published on `origin/codex/obp-mig-001-retire-legacy-seed` for Review.
+No merge is recorded; retain the branch. Read the implementation map and
+PROGRESS before any follow-up. Earlier local/uncommitted wording below is
+historical.
+
 **Latest result, 2026-09-24:** task 19 is `Review`; see the
 [implementation and migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
 and top of [PROGRESS](PROGRESS.md). CLI, node, seed daemon, Desktop,
