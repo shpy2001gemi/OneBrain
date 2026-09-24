@@ -1,8 +1,11 @@
 # KU-DESK-001 — Desktop KU integration
 
-> State: Planned
+> State: Review
 > Branch: `codex/ku-desk-001-workflow`
 > Depends on: `KU-WEB-001` merged
+
+Implementation and verification: [KU-DESK-001 evidence](../outputs/KU_DESK_001_IMPLEMENTATION.md).
+Merge remains subject to owner direction under D-010.
 
 ## Objective
 

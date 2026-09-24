@@ -20,6 +20,7 @@ pub struct AppState {
     pub native_events: OnceLock<crate::platform::NativeEvents>,
     pub exit_started: std::sync::atomic::AtomicBool,
     pub lifecycle_unavailable: std::sync::atomic::AtomicBool,
+    pub startup_issue: OnceLock<&'static str>,
     pub recovery_lock: Mutex<()>,
     /// Desktop configuration (always available).
     pub config: DesktopConfig,
@@ -41,6 +42,7 @@ impl AppState {
             native_events: OnceLock::new(),
             exit_started: std::sync::atomic::AtomicBool::new(false),
             lifecycle_unavailable: std::sync::atomic::AtomicBool::new(false),
+            startup_issue: OnceLock::new(),
             recovery_lock: Mutex::new(()),
             config,
             node: OnceLock::new(),

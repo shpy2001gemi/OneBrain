@@ -7,6 +7,8 @@ pub mod error;
 pub mod handlers;
 #[cfg(feature = "base-v1")]
 pub mod ku_api;
+#[cfg(feature = "base-v1")]
+pub mod ku_host;
 pub mod server;
 pub mod types;
 pub mod vnext_api;

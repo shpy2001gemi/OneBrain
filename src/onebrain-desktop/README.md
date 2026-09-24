@@ -66,3 +66,53 @@ closed at startup. macOS/Linux networking support and real OS sleep/network
 qualification remain outstanding. No installer signing, public NAT test or default
 rollout is claimed. See the [registered projection](../../docs/specs/vnext/OBP_LOCAL_DESKTOP_PROJECTION_V1.md)
 and [implementation evidence](../../docs/handoffs/2026-09-ku-obp-productization/outputs/OBP_DESK_001_IMPLEMENTATION.md).
+
+## KU-DESK-001
+
+The packaged `/ku` page uses the same in-process node, authenticated local API
+and node-owned KU service as the accepted Web workflow. KU custody is an optional
+operator configuration in the Desktop `config.toml`; the WebView cannot submit
+Registry roots, source paths, Vault keys or model installation grants. Add the
+following to an existing Desktop config after provisioning real host inputs:
+
+```toml
+[ku_host]
+registry_root = "C:/OneBrainLocal/registry"
+registry_public_key = "<trusted Registry public key: 64 lowercase hex characters>"
+vault_key_file = "C:/OneBrainLocal/secrets/vault.key"
+
+[[ku_host.sources]]
+label = "My admitted source"
+canonical_file = "C:/OneBrainLocal/custody/source.canonical"
+```
+
+The Registry must be a verified signed release. Each admitted source is an
+existing canonical private Text SourceArtifact, not raw text; the Vault key is
+exactly 32 binary bytes. Keep the same data directory, key and admitted source
+files across restart. The Desktop generates a fresh in-memory API token for
+each process. The manual editor is available without a model. To admit an
+experimental installed Ollama model, add `[ku_host.ollama]` with `executable`,
+`models_dir`, `models = ["qwen3:8b"]` and `memory_limit_bytes`; this does not
+qualify model output or enable AI by default.
+
+Invalid KU inputs show a bounded dependency code in the Desktop lifecycle
+status while the legacy local API remains usable. A malformed/unreadable
+Desktop config stops startup with a visible code, avoiding a silent switch to
+the default data directory. Quit/restart fences API admission, stops the
+node-owned network, closes Base and waits for in-flight KU work, then releases
+the listener. Prepared KU operations
+remain durable; after restart, recover with the original operation ID and
+explicitly reconcile before saving. The Web page keeps unsaved IDs in memory
+only, so record an operation ID before leaving it. No KU source or key is
+forwarded through the native event bridge.
+
+Build the Web assets and Desktop crate from the repository root:
+
+```powershell
+npm run build --prefix src/onebrain-web
+cargo build --locked --manifest-path src/Cargo.toml -p onebrain-desktop
+```
+
+No installer, live native WebView run, macOS/Linux lifecycle qualification,
+model qualification or default OBP networking is claimed. See the
+[implementation evidence](../../docs/handoffs/2026-09-ku-obp-productization/outputs/KU_DESK_001_IMPLEMENTATION.md).

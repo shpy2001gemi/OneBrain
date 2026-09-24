@@ -1,55 +1,36 @@
-# Next conversation — KU-DESK-001
+# Next conversation — KU-DESK-001 owner review
 
 ## Current state
 
-- `main` and `origin/main` contain D-042's OBP-MIG-001 merge `0604b55` and
-  the handoff publication. The retained branch is
-  `codex/obp-mig-001-retire-legacy-seed` at `c608069`. Task 19 is `Merged`.
-- OBP-QA-001 is `Merged` under D-039/D-041 functional acceptance. The
-  independent consumer-NAT qualification was explicitly skipped;
-  `consumer_nat_qualified=false`. The separate Linux three-host P5
-  production-reference qualification applies only to exact candidate
-  `c453f3e`. Preserve all existing remote staging, runs and durable state.
-- OBP remains opt-in. The normal product surfaces use the shared node-owned
-  service. The legacy TCP/JSON seed path requires explicit compatibility
-  selection; no automatic trust or data migration was made.
-- `KU-DESK-001` is the next dependency-ready implementation task:
-  `KU-WEB-001` is merged. `KU-ENC-003` remains `Blocked`, so `KU-QA-001`
-  and `INT-KU-OBP-001` are not ready for acceptance.
+- `KU-DESK-001` is `Review` on the retained
+  `codex/ku-desk-001-workflow` branch, based on clean, synchronized
+  `main == origin/main` at `073e141`. Read the
+  [implementation evidence](outputs/KU_DESK_001_IMPLEMENTATION.md),
+  [task 08](tasks/08-KU-DESK-001.md) and [PROGRESS](PROGRESS.md).
+  D-010 requires explicit owner direction before merge or branch deletion.
+- The accepted `/ku` Web workflow is packaged in Desktop over the same
+  embedded node, local authenticated API and node-owned KU service. Windows
+  Desktop build, default/feature lifecycle tests, Web build/tests, API tests
+  and vNext contracts pass. Operator installation, live WebView and other OS
+  lifecycle evidence are still open. `model_qualified=false`.
+- `KU-ENC-003` remains `Blocked`, so `KU-QA-001` and `INT-KU-OBP-001` are
+  not ready for acceptance.
+- OBP-MIG-001 remains merged under D-042 with rollback and legacy data
+  retained. OBP-QA-001 remains merged under functional acceptance, with
+  `consumer_nat_qualified=false`; Linux three-host P5 is qualified only for
+  exact candidate `c453f3e`. Preserve old staging/runs and default-off OBP
+  networking. No tuning or mobile implementation is part of this handoff.
 
-## Read first
+## Review route
 
-1. Root `AGENTS.md`, [PROGRESS](PROGRESS.md), [DECISIONS](DECISIONS.md),
-   [MASTER_PLAN](MASTER_PLAN.md), and [KU-DESK-001](tasks/08-KU-DESK-001.md).
-2. The accepted KU product/API/Desktop-Web profiles,
-   [Web implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), and the
-   Desktop bootstrap, sidecar, tray, shutdown and event-bridge code/tests.
-3. For OBP boundaries, read the
-   [migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md),
-   [QA functional acceptance](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md),
-   and [P5 production-reference record](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md).
-
-## Prompt to paste into a new conversation
-
-```text
-Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
-trong working tree gốc. Kiểm tra main sạch và đồng bộ origin/main, rồi làm
-KU-DESK-001 trên nhánh codex/ku-desk-001-workflow theo D-010. Đọc task 08,
-PROGRESS, DECISIONS, MASTER_PLAN, các KU product/API/Desktop-Web profiles,
-Web implementation và Desktop lifecycle trước khi sửa.
-
-Tích hợp Web KU đã chấp nhận vào Desktop với cùng embedded node/API và
-node-owned service. Kiểm tra startup failure, local read, shutdown/restart,
-durable work và ranh giới private keys/capabilities; chạy build và lifecycle
-tests phù hợp. Ghi evidence và cập nhật ledger trên nhánh tác vụ.
-
-OBP-MIG-001 đã merged theo D-042; giữ rollback/legacy data. OBP-QA-001 đã
-merged theo functional acceptance nhưng consumer NAT chưa qualified
-(consumer_nat_qualified=false); P5 Linux ba host chỉ qualified riêng trên
-candidate c453f3e. Giữ staging/runs cũ, không bật OBP networking mặc định,
-không tuning hay thay đổi mobile. KU-ENC-003 còn Blocked; chưa claim KU-QA
-hoặc INT-KU-OBP. Giữ nhánh review; merge theo D-010 cần chỉ dẫn của owner.
-```
+1. Read root `AGENTS.md`, [MASTER_PLAN](MASTER_PLAN.md),
+   [DECISIONS](DECISIONS.md), [PROGRESS](PROGRESS.md), task 08 and the
+   implementation evidence. Inspect the retained branch against main.
+2. Review the KU host input boundary, Base drain and restart recovery,
+   read-only degradation, WebView token handoff and event bridge privacy.
+3. If accepted, give an explicit D-010 merge/publication direction. Keep the
+   review branch retained. Do not advance KU-QA or INT-KU-OBP while
+   KU-ENC-003 remains Blocked.
 
 Historical QA/MIG checkpoints remain in [PROGRESS](PROGRESS.md),
 [DECISIONS](DECISIONS.md), their linked evidence files and Git history.

@@ -552,7 +552,15 @@
         },
         {
           "path": "src/onebrain-desktop/src/commands.rs",
-          "needle": "shutdown_network().await"
+          "needle": "state.supervisor.shutdown().await"
+        },
+        {
+          "path": "src/onebrain-desktop/src/supervisor.rs",
+          "needle": "base.close()"
+        },
+        {
+          "path": "src/onebrain-desktop/src/supervisor.rs",
+          "needle": "node.lock().await.shutdown_network().await;"
         },
         {
           "path": "src/onebrain-desktop/src/tray.rs",

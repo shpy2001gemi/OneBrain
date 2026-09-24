@@ -34,16 +34,10 @@ pub async fn run_event_bridge(app: tauri::AppHandle, node: Arc<Mutex<OneBrainNod
                         "ku_count": peer.ku_count,
                     }),
                 ),
-                NodeEvent::KuReceived {
-                    cid_hex,
-                    source_text,
-                    from,
-                    ..
-                } => (
+                NodeEvent::KuReceived { cid_hex, from, .. } => (
                     "ku_received",
                     json!({
                         "cid": cid_hex,
-                        "source_text": source_text,
                         "from_peer": from,
                     }),
                 ),

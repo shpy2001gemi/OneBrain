@@ -47,8 +47,15 @@ mod windows {
         }
         let _ = context.app.emit("desktop-lifecycle", ());
         let supervisor = context.supervisor.clone();
+        let app = context.app.clone();
         tauri::async_runtime::spawn(async move {
-            supervisor.shutdown().await;
+            if let Err(reason) = supervisor.shutdown().await {
+                let _ = tauri::Manager::state::<crate::state::AppState>(&app)
+                    .startup_issue
+                    .set(reason);
+                tracing::error!(reason);
+                let _ = app.emit("desktop-lifecycle", ());
+            }
         });
     }
     impl NativeEvents {
