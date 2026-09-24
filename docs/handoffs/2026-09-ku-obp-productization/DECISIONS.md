@@ -1,5 +1,20 @@
 # Decisions and claim boundary
 
+## D-042 — Accept and merge OBP-MIG-001
+
+On 2026-09-24 the owner stated “tôi sẽ đồng ý duyệt tất cả những đề xuất của
+bạn, bao gồm review” after the published OBP-MIG-001 review checkpoint and its
+pending D-010 Git closure were presented. This accepts the task 19 review and
+authorizes its proposed merge/publication. The validated retained branch
+`codex/obp-mig-001-retire-legacy-seed` was merged as
+`0604b55aab6341a65eb1e782e85d8eb812351aa1`. Record publication only
+after `origin/main` contains that merge and its handoff closure.
+
+This acceptance is limited to OBP-MIG-001. It does not activate default OBP
+networking, retire legacy data/configuration or trust, change any live host,
+claim consumer-NAT qualification, approve mobile work, or authorize future
+task merges. Keep the task branch for rollback and audit.
+
 ## D-041 — Close functional QA and advance past consumer NAT qualification
 
 On 2026-09-24 the owner instructed: “hãy làm những việc cần làm để hoàn thành

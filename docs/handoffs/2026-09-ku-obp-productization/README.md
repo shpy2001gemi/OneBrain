@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-MIG-001 Review; OBP-QA-001 merged under D-041; consumer-NAT qualification skipped and unclaimed**
+> Status: **OBP-MIG-001 merged under D-042; consumer-NAT qualification skipped and unclaimed**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,10 +9,10 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest: [OBP-MIG-001 migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
-records the tested compatibility gate, node-owned vNext-only CLI startup and
-retained rollback path on `codex/obp-mig-001-retire-legacy-seed`. Task 19 is
-ready for review; implementation `1d649ce` is published on the retained branch.
+Latest: D-042 accepted and merged OBP-MIG-001 as `0604b55`. The
+[migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md) records the tested
+compatibility gate, node-owned vNext-only CLI startup and retained rollback
+path. Implementation `1d649ce` remains on the published task branch.
 D-041 closed the D-039/D-040 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
 with QA tip `fb5b71b`, merge `d695e4a`, and an explicit skipped consumer-NAT
 qualification gate. D-039

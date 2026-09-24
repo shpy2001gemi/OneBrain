@@ -1,6 +1,6 @@
 # OBP-MIG-001 — Retire the legacy seed product path
 
-> State: Review — implementation `1d649ce` published; compatibility gate and vNext-only startup verified
+> State: Merged — D-042 merge `0604b55`; implementation `1d649ce` and compatibility gate verified
 > Branch: `codex/obp-mig-001-retire-legacy-seed`
 > Depends on: `OBP-QA-001` merged
 

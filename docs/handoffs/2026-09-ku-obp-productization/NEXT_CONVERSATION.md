@@ -1,4 +1,13 @@
-# Next conversation — OBP-MIG-001 review
+# Next conversation — OBP-MIG-001 closure
+
+**Latest closure, 2026-09-24:** D-042 accepted the OBP-MIG-001 review and
+authorized its D-010 Git closure. Implementation `1d649ce` and retained
+branch checkpoint `c608069` were merged as `0604b55` on main. Task 19 is
+`Merged`; read the [migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
+and [PROGRESS](PROGRESS.md). The branch remains available. Consumer-NAT
+qualification remains skipped/unclaimed, and the separate Linux P5
+qualification on `c453f3e` remains intact. No default networking, live host
+or durable legacy data changed. Older Review instructions below are historical.
 
 **Latest publication, 2026-09-24:** OBP-MIG-001 implementation `1d649ce`
 is published on `origin/codex/obp-mig-001-retire-legacy-seed` for Review.

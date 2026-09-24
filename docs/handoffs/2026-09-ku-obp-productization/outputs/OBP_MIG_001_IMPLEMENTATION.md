@@ -6,7 +6,7 @@ functional QA and explicitly skipped consumer-NAT qualification for task 18;
 that skip is not a network qualification. This migration changes the normal
 startup path without activating OBP by default or altering old durable data.
 Validated implementation `1d649ce` is published on the retained task branch
-for Review; it has not been merged.
+and merged under D-042 as `0604b55`.
 
 ## Call-site and packaging inventory
 
