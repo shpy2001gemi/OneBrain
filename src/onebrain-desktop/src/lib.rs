@@ -12,6 +12,7 @@ mod commands;
 pub mod config;
 mod events;
 mod ku_start;
+mod lifecycle_status;
 mod local_listener;
 mod platform;
 mod recovery;
@@ -152,7 +153,7 @@ where
                     }
                 };
                 if let Some(reason) = boot.ku_issue {
-                    let _ = handle.state::<AppState>().startup_issue.set(reason);
+                    let _ = handle.state::<AppState>().ku_issue.set(reason);
                     let _ = handle.emit("desktop-lifecycle", ());
                 }
                 let (node, port) = match supervisor.start(boot, token.clone(), cfg.api_port).await {

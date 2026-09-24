@@ -225,15 +225,19 @@ impl Supervisor {
             task.abort();
             let _ = task.await;
         }
-        if let Some(node) = resources.node.as_ref() {
-            stop_owned_node(node).await?;
+        let result = if let Some(node) = resources.node.as_ref() {
+            stop_owned_node(node).await
+        } else {
+            Ok(())
+        };
+        if result.is_ok() {
+            resources.node.take();
         }
-        resources.node.take();
         self.stop_sockets.cancel();
         if let Some(task) = resources.api.take() {
             let _ = task.await;
         }
-        Ok(())
+        result
     }
 }
 

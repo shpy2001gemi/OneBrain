@@ -51,7 +51,7 @@ mod windows {
         tauri::async_runtime::spawn(async move {
             if let Err(reason) = supervisor.shutdown().await {
                 let _ = tauri::Manager::state::<crate::state::AppState>(&app)
-                    .startup_issue
+                    .shutdown_issue
                     .set(reason);
                 tracing::error!(reason);
                 let _ = app.emit("desktop-lifecycle", ());

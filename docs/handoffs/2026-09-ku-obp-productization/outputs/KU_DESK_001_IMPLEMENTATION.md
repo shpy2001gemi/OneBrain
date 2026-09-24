@@ -43,6 +43,26 @@ service-lifecycle review, not owner acceptance, merge or release.
 
 ## Focused evidence
 
+### Owner-reviewed shutdown correction (2026-09-24)
+
+The owner reviewed the task branch and directed correction of the shutdown
+failure report. A failed Base close now still cancels and joins the local API
+listener, retains the node for a possible retry, and returns a bounded error.
+Quit/Restart records that error separately from earlier KU dependency errors
+and emits `desktop-lifecycle` so the WebView shows that shutdown is incomplete.
+Normal lifecycle withdrawal takes precedence over a prior read-only KU issue;
+fatal startup errors still display their original code. No KU service operation,
+OBP default or mobile behavior changed.
+
+After this correction, Windows default lifecycle tests pass 8/8 and the
+`vnext-outbound-first` lifecycle tests pass 10/10. The new cases verify that a
+Base close error releases the API listener and that shutdown, startup and KU
+degradation messages have the correct priority. The feature Desktop executable
+build passes. `cargo test --locked -p onebrain-desktop --lib` compiled, but its
+test executable could not start on this Windows host
+(`STATUS_ENTRYPOINT_NOT_FOUND`); the lifecycle integration binary runs the new
+status test successfully. This is not a live Tauri WebView or OS suspend test.
+
 | Check | Result / boundary |
 |---|---|
 | Desktop KU lifecycle test | Actual signed test Registry and canonical private Text source through the shared API. Wrong token and a Web-supplied `vault_key`/`authorized` field are rejected without echo. Manual draft prepares, shutdown closes Base, restart changes process generation, original operation reconciles and previews, then saves privately and exact get succeeds. A later restart without Registry still reads the saved KU; editor refuses work. |
@@ -64,8 +84,8 @@ were formatted directly.
 | `cargo check --locked -p onebrain-desktop` | Pass, Windows default build graph. |
 | `cargo check --locked -p onebrain-desktop --features vnext-outbound-first` | Pass, opt-in feature graph. |
 | `cargo build --locked -p onebrain-desktop --features vnext-outbound-first` | Pass, Windows Desktop executable build. |
-| `cargo test --locked -p onebrain-desktop --test lifecycle -- --test-threads=2` | 6 passed. |
-| `cargo test --locked -p onebrain-desktop --test lifecycle --features vnext-outbound-first -- --test-threads=2` | 8 passed. |
+| `cargo test --locked -p onebrain-desktop --test lifecycle -- --test-threads=2` | 8 passed after owner-reviewed correction. |
+| `cargo test --locked -p onebrain-desktop --test lifecycle --features vnext-outbound-first -- --test-threads=2` | 10 passed after owner-reviewed correction. |
 | `cargo check --locked -p onebrain-api --example ku_local_web` | Pass after shared host provisioning refactor. |
 | `cargo test --locked -p onebrain-api --lib -- --test-threads=2` | 37 passed; one explicit real-model opt-in test ignored. |
 | `npm run build` and `npm run test:ku` in `src/onebrain-web` | Build passes; 89 tests in 7 files pass. |

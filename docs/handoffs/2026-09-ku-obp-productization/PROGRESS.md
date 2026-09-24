@@ -5,6 +5,19 @@
 
 ## Current checkpoint
 
+- 2026-09-24 KU-DESK-001 owner review correction — the owner accepted the
+  review finding and directed implementation on the retained task branch.
+  Shutdown errors now release the API listener, retain the node for retry,
+  and publish a distinct `desktop-lifecycle` error even when KU was already
+  degraded. Lifecycle status gives shutdown and fatal startup errors priority
+  over a prior read-only KU issue. Default/feature Windows lifecycle suites
+  pass 8/8 and 10/10; feature Desktop build passes. A separate Desktop lib
+  test binary compiled but could not start on this host
+  (`STATUS_ENTRYPOINT_NOT_FOUND`); the new status case passes in the lifecycle
+  integration binary. [Updated evidence](outputs/KU_DESK_001_IMPLEMENTATION.md).
+  Task remains `Review` pending D-010 Git closure; no KU-QA/INT acceptance,
+  mobile work, OBP networking change or remote host action occurred.
+
 - 2026-09-24 KU-DESK-001 — `Review` on
   `codex/ku-desk-001-workflow` from clean, synchronized main `073e141`.
   [Desktop integration evidence](outputs/KU_DESK_001_IMPLEMENTATION.md):

@@ -3,6 +3,8 @@
 mod config;
 #[path = "../src/ku_start.rs"]
 mod ku_start;
+#[path = "../src/lifecycle_status.rs"]
+mod lifecycle_status;
 #[path = "../src/local_listener.rs"]
 mod local_listener;
 #[path = "../src/recovery.rs"]
@@ -15,6 +17,46 @@ use onebrain_node::{ConceptRegistryMode, NodeConfig, OneBrainNode};
 use serde_json::{json, Value};
 use std::{path::Path, time::Duration};
 use supervisor::{HostNode, Supervisor};
+
+#[test]
+fn lifecycle_status_reports_shutdown_over_degraded_ku_and_preserves_startup_failure() {
+    let degraded = lifecycle_status::describe(
+        None,
+        None,
+        false,
+        Some("ku_registry_unavailable"),
+        false,
+        true,
+    );
+    assert!(degraded.contains("ku_registry_unavailable"));
+    let stopped = lifecycle_status::describe(
+        None,
+        None,
+        true,
+        Some("ku_registry_unavailable"),
+        false,
+        false,
+    );
+    assert_eq!(stopped, "Restart required after lifecycle change");
+    let failed = lifecycle_status::describe(
+        Some("desktop_base_drain_failed"),
+        None,
+        true,
+        Some("ku_registry_unavailable"),
+        false,
+        false,
+    );
+    assert!(failed.contains("desktop_base_drain_failed"));
+    let fatal = lifecycle_status::describe(
+        None,
+        Some("desktop_config_invalid"),
+        true,
+        None,
+        false,
+        false,
+    );
+    assert!(fatal.contains("desktop_config_invalid"));
+}
 
 async fn local(path: &Path) -> OneBrainNode {
     OneBrainNode::new(NodeConfig {
@@ -362,6 +404,30 @@ async fn occupied_port_fails_closed_without_fallback_and_drains_the_supplied_nod
     assert_eq!(result.err(), Some("desktop_api_bind_failed"));
     assert!(!supervisor.ready());
     supervisor.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn base_close_error_still_releases_the_local_listener() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut node = local(dir.path()).await;
+    node.install_base_runtime(onebrain_api::base_runtime_config_for_api_token("TOKEN"))
+        .unwrap();
+    // A previously closed Base returns a typed close error. The supervisor
+    // must still stop accepting sockets while reporting incomplete shutdown.
+    node.base_services().unwrap().close().await.unwrap();
+    let supervisor = Supervisor::default();
+    let (_, port) = supervisor
+        .start(HostNode::local(node), "TOKEN".into(), 0)
+        .await
+        .unwrap();
+    assert_eq!(
+        supervisor.shutdown().await,
+        Err("desktop_base_drain_failed")
+    );
+    assert!(!supervisor.ready());
+    let _rebound = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

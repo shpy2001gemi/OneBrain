@@ -1,4 +1,4 @@
-# Next conversation — KU-DESK-001 owner review
+# Next conversation — KU-DESK-001 Git closure
 
 ## Current state
 
@@ -8,6 +8,13 @@
   [implementation evidence](outputs/KU_DESK_001_IMPLEMENTATION.md),
   [task 08](tasks/08-KU-DESK-001.md) and [PROGRESS](PROGRESS.md).
   D-010 requires explicit owner direction before merge or branch deletion.
+- The owner reviewed the branch and directed the shutdown reporting
+  correction. The task branch now reports Base close failure in the WebView,
+  releases the local listener even on that error, and keeps the node for retry.
+  Default/feature lifecycle tests pass 8/8 and 10/10; feature Desktop build
+  passes. See the updated evidence for the Windows Desktop lib-test executable
+  limitation. This review direction did not itself specify Git merge/branch
+  deletion.
 - The accepted `/ku` Web workflow is packaged in Desktop over the same
   embedded node, local authenticated API and node-owned KU service. Windows
   Desktop build, default/feature lifecycle tests, Web build/tests, API tests
@@ -26,10 +33,9 @@
 1. Read root `AGENTS.md`, [MASTER_PLAN](MASTER_PLAN.md),
    [DECISIONS](DECISIONS.md), [PROGRESS](PROGRESS.md), task 08 and the
    implementation evidence. Inspect the retained branch against main.
-2. Review the KU host input boundary, Base drain and restart recovery,
-   read-only degradation, WebView token handoff and event bridge privacy.
-3. If accepted, give an explicit D-010 merge/publication direction. Keep the
-   review branch retained. Do not advance KU-QA or INT-KU-OBP while
+2. Check the owner-reviewed shutdown correction and retained task branch.
+3. Give an explicit D-010 merge/publication direction if the task should enter
+   main. Keep the review branch retained. Do not advance KU-QA or INT-KU-OBP while
    KU-ENC-003 remains Blocked.
 
 Historical QA/MIG checkpoints remain in [PROGRESS](PROGRESS.md),

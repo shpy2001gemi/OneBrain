@@ -21,6 +21,8 @@ pub struct AppState {
     pub exit_started: std::sync::atomic::AtomicBool,
     pub lifecycle_unavailable: std::sync::atomic::AtomicBool,
     pub startup_issue: OnceLock<&'static str>,
+    pub ku_issue: OnceLock<&'static str>,
+    pub shutdown_issue: OnceLock<&'static str>,
     pub recovery_lock: Mutex<()>,
     /// Desktop configuration (always available).
     pub config: DesktopConfig,
@@ -43,11 +45,25 @@ impl AppState {
             exit_started: std::sync::atomic::AtomicBool::new(false),
             lifecycle_unavailable: std::sync::atomic::AtomicBool::new(false),
             startup_issue: OnceLock::new(),
+            ku_issue: OnceLock::new(),
+            shutdown_issue: OnceLock::new(),
             recovery_lock: Mutex::new(()),
             config,
             node: OnceLock::new(),
             api_port: OnceLock::new(),
             api_token: OnceLock::new(),
         }
+    }
+
+    pub fn lifecycle_status(&self) -> String {
+        crate::lifecycle_status::describe(
+            self.shutdown_issue.get().copied(),
+            self.startup_issue.get().copied(),
+            self.supervisor.stopped(),
+            self.ku_issue.get().copied(),
+            self.lifecycle_unavailable
+                .load(std::sync::atomic::Ordering::SeqCst),
+            self.supervisor.ready(),
+        )
     }
 }

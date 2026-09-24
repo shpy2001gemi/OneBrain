@@ -3,7 +3,7 @@
 use crate::state::AppState;
 use serde_json::json;
 use std::path::PathBuf;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 // ─── API / Node Info ───────────────────────────────────────────────────────
 
@@ -109,8 +109,9 @@ pub(crate) async fn finish_exit(app: tauri::AppHandle, restart: bool) {
         let _ = task.await;
     }
     if let Err(reason) = state.supervisor.shutdown().await {
-        let _ = state.startup_issue.set(reason);
+        let _ = state.shutdown_issue.set(reason);
         tracing::error!(reason);
+        let _ = app.emit("desktop-lifecycle", ());
         return;
     }
     if state
@@ -149,20 +150,7 @@ pub fn desktop_lifecycle_status(
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     local_main(&window)?;
-    Ok(if let Some(reason) = state.startup_issue.get() {
-        format!("Local dependency unavailable ({reason}); saved local reads remain available when the backend is ready. Restart after correcting host inputs")
-    } else if state.supervisor.stopped() {
-        "Restart required after lifecycle change or startup failure".into()
-    } else if state
-        .lifecycle_unavailable
-        .load(std::sync::atomic::Ordering::SeqCst)
-    {
-        "Local-only mode; native lifecycle adapter unavailable, peer networking disabled".into()
-    } else if state.supervisor.ready() {
-        "Local API ready; network state is separate".into()
-    } else {
-        "Local backend starting".into()
-    })
+    Ok(state.lifecycle_status())
 }
 
 #[tauri::command]
