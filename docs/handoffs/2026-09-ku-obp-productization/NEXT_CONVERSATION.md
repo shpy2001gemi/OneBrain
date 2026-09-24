@@ -2,7 +2,8 @@
 
 **Latest closure, 2026-09-24:** D-042 accepted the OBP-MIG-001 review and
 authorized its D-010 Git closure. Implementation `1d649ce` and retained
-branch checkpoint `c608069` were merged as `0604b55` on main. Task 19 is
+branch checkpoint `c608069` were merged as `0604b55` on `origin/main`;
+handoff closure `e7a3c5a` was also published. Task 19 is
 `Merged`; read the [migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
 and [PROGRESS](PROGRESS.md). The branch remains available. Consumer-NAT
 qualification remains skipped/unclaimed, and the separate Linux P5

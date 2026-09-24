@@ -5,6 +5,10 @@
 
 ## Current checkpoint
 
+- 2026-09-24 D-042 publication verified: merge `0604b55` and handoff
+  closure `e7a3c5a` were pushed to `origin/main`. The retained migration
+  branch remains at `c608069` on origin. OBP-MIG-001 is `Merged`.
+
 - 2026-09-24 D-042 OBP-MIG-001 closure: owner accepted the reviewed
   implementation and its D-010 merge/publication step. Branch
   `codex/obp-mig-001-retire-legacy-seed` remains published at `c608069`;
