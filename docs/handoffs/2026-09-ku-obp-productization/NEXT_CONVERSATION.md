@@ -38,5 +38,37 @@
    main. Keep the review branch retained. Do not advance KU-QA or INT-KU-OBP while
    KU-ENC-003 remains Blocked.
 
+## Prompt to paste into a new conversation
+
+```text
+Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
+trong working tree gốc. Tiếp tục KU-DESK-001 trên nhánh review
+codex/ku-desk-001-workflow theo D-010. Kiểm tra working tree sạch, nhánh đã
+push và đồng bộ origin/codex/ku-desk-001-workflow, bao gồm bản sửa 4ec7b1a;
+kiểm tra main == origin/main trước khi có thao tác Git tiếp theo. Đọc task 08,
+PROGRESS, DECISIONS, MASTER_PLAN và evidence
+outputs/KU_DESK_001_IMPLEMENTATION.md.
+
+Owner đã review và yêu cầu sửa nhánh lỗi Quit/Restart: bản sửa đã push trên
+nhánh tác vụ. Kiểm tra Base close failure vẫn đóng local API listener, giữ
+node để thử lại, báo lỗi shutdown riêng qua desktop-lifecycle, không để lỗi
+KU trước đó che lỗi shutdown. Windows lifecycle tests đạt 8/8 mặc định và
+10/10 với vnext-outbound-first; feature Desktop build đạt. Desktop lib test
+binary không khởi chạy trên host này (STATUS_ENTRYPOINT_NOT_FOUND), nhưng
+status test mới đạt trong lifecycle integration suite. Live WebView, real OS
+sleep và macOS/Linux lifecycle vẫn chưa được qualified.
+
+Giữ nhánh review. Chỉ merge/push main khi tôi chỉ dẫn rõ theo D-010; không
+xóa nhánh nếu chưa có chỉ dẫn riêng. Nếu được chỉ dẫn merge, cập nhật task,
+PROGRESS, evidence và handoff với commit merge/verification thực tế. Không
+claim KU-QA hoặc INT-KU-OBP: KU-ENC-003 còn Blocked và model_qualified=false.
+
+OBP-MIG-001 đã merged theo D-042; giữ rollback/legacy data. OBP-QA-001 đã
+merged theo functional acceptance nhưng consumer_nat_qualified=false; Linux
+ba host P5 chỉ qualified cho exact candidate c453f3e. Giữ staging/runs và
+durable state cũ; không bật OBP networking mặc định, không tuning, không sửa
+mobile hay thay đổi remote host trong công việc này.
+```
+
 Historical QA/MIG checkpoints remain in [PROGRESS](PROGRESS.md),
 [DECISIONS](DECISIONS.md), their linked evidence files and Git history.
