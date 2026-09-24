@@ -1,5 +1,21 @@
 # Decisions and claim boundary
 
+## D-043 — Accept and merge KU-DESK-001
+
+On 2026-09-24 the owner approved the reviewed Desktop tip `bf3edb1` and
+explicitly directed merging `codex/ku-desk-001-workflow` into main and pushing
+main under D-010, while retaining the review branch. Merge
+`6449446c3e538b8c97dbed2fdfb15c138e68a0c8` was pushed and verified on
+`origin/main`; the retained branch remains at `bf3edb1` on origin. Post-merge
+Windows lifecycle tests passed 8/8 default and 10/10 feature-enabled, and the
+feature Desktop build and vNext contract validator passed.
+
+This acceptance closes KU-DESK-001 only. It does not qualify live WebView,
+real OS sleep, macOS/Linux lifecycle or model quality. KU-ENC-003 remains
+Blocked and `model_qualified=false`; no KU-QA-001 or INT-KU-OBP-001
+acceptance, default OBP networking, mobile work, remote host action or branch
+deletion follows from this decision.
+
 ## D-042 — Accept and merge OBP-MIG-001
 
 On 2026-09-24 the owner stated “tôi sẽ đồng ý duyệt tất cả những đề xuất của

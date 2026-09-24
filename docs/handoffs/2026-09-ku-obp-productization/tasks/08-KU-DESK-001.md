@@ -1,11 +1,12 @@
 # KU-DESK-001 — Desktop KU integration
 
-> State: Review
-> Branch: `codex/ku-desk-001-workflow`
+> State: Merged
+> Branch: `codex/ku-desk-001-workflow` (retained at `bf3edb1`)
 > Depends on: `KU-WEB-001` merged
 
 Implementation and verification: [KU-DESK-001 evidence](../outputs/KU_DESK_001_IMPLEMENTATION.md).
-Merge remains subject to owner direction under D-010.
+Owner-approved D-010 merge `6449446c3e538b8c97dbed2fdfb15c138e68a0c8` is on
+`origin/main`. The branch remains available for review and rollback.
 
 ## Objective
 

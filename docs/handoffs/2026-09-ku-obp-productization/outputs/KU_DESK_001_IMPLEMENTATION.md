@@ -1,9 +1,11 @@
 # KU-DESK-001 — Desktop KU integration evidence
 
-2026-09-24. Review branch: `codex/ku-desk-001-workflow`, based on clean
-`main == origin/main` at `073e141790266df13500bc4b42f104655fc1098b`.
-Task 08 is the only active work package. This is a local Windows build and
-service-lifecycle review, not owner acceptance, merge or release.
+2026-09-24. Accepted review tip: `bf3edb1` on retained
+`codex/ku-desk-001-workflow`, based on clean `main == origin/main` at
+`073e141790266df13500bc4b42f104655fc1098b`. Under D-043, owner-approved
+merge `6449446c3e538b8c97dbed2fdfb15c138e68a0c8` was pushed and verified
+on `origin/main`. This evidence supports local Windows build and service
+lifecycle acceptance, not release or platform/model qualification.
 
 ## Integration and authority
 
@@ -63,6 +65,11 @@ test executable could not start on this Windows host
 (`STATUS_ENTRYPOINT_NOT_FOUND`); the lifecycle integration binary runs the new
 status test successfully. This is not a live Tauri WebView or OS suspend test.
 
+Post-merge verification on `6449446`: default lifecycle 8/8, feature lifecycle
+10/10, feature Desktop build and `validate_vnext_contracts.py` all passed.
+The retained branch stays at `bf3edb1`; no implementation source changed in
+the merge or handoff closure.
+
 | Check | Result / boundary |
 |---|---|
 | Desktop KU lifecycle test | Actual signed test Registry and canonical private Text source through the shared API. Wrong token and a Web-supplied `vault_key`/`authorized` field are rejected without echo. Manual draft prepares, shutdown closes Base, restart changes process generation, original operation reconciles and previews, then saves privately and exact get succeeds. A later restart without Registry still reads the saved KU; editor refuses work. |
@@ -101,5 +108,5 @@ real-model quality result was performed. `model_qualified` remains false.
 OBP-QA-001 remains functionally accepted with
 `consumer_nat_qualified=false`; Linux three-host P5 qualifies only candidate
 `c453f3e`. Old remote staging, runs and durable state were untouched; OBP
-networking remains default-off. D-010 keeps this branch for owner review and
-requires explicit direction before merge.
+networking remains default-off. D-043 authorized only this merge/publication;
+the task branch remains retained under D-010.
