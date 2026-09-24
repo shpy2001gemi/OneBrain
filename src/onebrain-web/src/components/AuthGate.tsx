@@ -11,11 +11,22 @@ function DesktopAuthGate({ children }: { children: ReactNode }) {
     const cleanups: (() => void)[] = [];
     const read = async () => {
       try { await getApiConfig(); if (active) setReady(true); }
-      catch { if (active) setError('Local backend is starting or unavailable. If it does not become ready, use the tray Restart action.'); }
+      catch {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const status = await invoke<string>('desktop_lifecycle_status');
+          if (active) setError(status);
+        } catch {
+          if (active) setError('Local backend is starting or unavailable. If it does not become ready, use the tray Restart action.');
+        }
+      }
     };
     void import('@tauri-apps/api/event').then(async ({ listen }) => {
-      const cleanup = await listen('backend-ready', () => { void read(); });
-      if (active) { cleanups.push(cleanup); void read(); } else cleanup();
+      for (const event of ['backend-ready', 'desktop-lifecycle']) {
+        const cleanup = await listen(event, () => { void read(); });
+        if (active) cleanups.push(cleanup); else cleanup();
+      }
+      if (active) void read();
     }).catch(() => { if (active) setError('Desktop credential handoff unavailable'); });
     return () => { active = false; cleanups.forEach(cleanup => cleanup()); };
   }, []);

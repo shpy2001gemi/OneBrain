@@ -18,6 +18,7 @@ import type {
 import "./kuWorkflow.css";
 import { describeKuError as describeError } from "./kuFeedback";
 import { KuReviewDraft } from "./KuReviewDraft";
+import { DesktopLifecycle } from "../components/DesktopLifecycle";
 
 const defaultClient = createKuClient(getPrivateApiConnection);
 type Pending = {
@@ -295,6 +296,7 @@ export function KuWorkflowPage({
   return (
     <div className="page ku-workflow">
       <header className="page-header">
+        <DesktopLifecycle />
         <h1>Local KU workspace</h1>
         <p>
           Encode text with local Ollama or write a manual statement, review

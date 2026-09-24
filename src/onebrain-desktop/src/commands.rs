@@ -1,12 +1,9 @@
 //! Tauri IPC commands — invoked from the frontend via `invoke()`.
 
 use crate::state::AppState;
-use onebrain_node::OneBrainNode;
 use serde_json::json;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tauri::{Manager, State};
-use tokio::sync::Mutex;
+use tauri::{Emitter, Manager, State};
 
 // ─── API / Node Info ───────────────────────────────────────────────────────
 
@@ -86,13 +83,6 @@ pub async fn import_knowledge_file(
 
 // ─── Node Control ──────────────────────────────────────────────────────────
 
-/// Fence and drain every node-owned network/runtime task before process exit.
-pub(crate) async fn shutdown_node(node: Option<Arc<Mutex<OneBrainNode>>>) {
-    if let Some(node) = node {
-        node.lock().await.shutdown_network().await;
-    }
-}
-
 /// Gracefully stop the node and restart the whole desktop process so
 /// caller-owned vNext runtime dependencies are rebuilt safely.
 #[tauri::command]
@@ -118,9 +108,12 @@ pub(crate) async fn finish_exit(app: tauri::AppHandle, restart: bool) {
         task.abort();
         let _ = task.await;
     }
-    state.supervisor.shutdown().await;
-    // Kept as a defensive final node drain for an initialization interruption.
-    shutdown_node(state.node.get().cloned()).await;
+    if let Err(reason) = state.supervisor.shutdown().await {
+        let _ = state.shutdown_issue.set(reason);
+        tracing::error!(reason);
+        let _ = app.emit("desktop-lifecycle", ());
+        return;
+    }
     if state
         .exit_started
         .swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -155,20 +148,9 @@ fn local_main(window: &tauri::WebviewWindow) -> Result<(), String> {
 pub fn desktop_lifecycle_status(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
-) -> Result<&'static str, String> {
+) -> Result<String, String> {
     local_main(&window)?;
-    Ok(if state.supervisor.stopped() {
-        "Restart required after lifecycle change or startup failure"
-    } else if state
-        .lifecycle_unavailable
-        .load(std::sync::atomic::Ordering::SeqCst)
-    {
-        "Local-only mode; native lifecycle adapter unavailable, peer networking disabled"
-    } else if state.supervisor.ready() {
-        "Local API ready; network state is separate"
-    } else {
-        "Local backend starting"
-    })
+    Ok(state.lifecycle_status())
 }
 
 #[tauri::command]
@@ -235,7 +217,9 @@ pub async fn wizard_complete(
     ollama_url: String,
     model: String,
 ) -> Result<(), String> {
-    let mut config = crate::config::DesktopConfig::load().unwrap_or_default();
+    let mut config = crate::config::DesktopConfig::load_checked()
+        .map_err(str::to_owned)?
+        .unwrap_or_default();
 
     config.node_name = node_name;
     config.data_dir = PathBuf::from(data_dir);

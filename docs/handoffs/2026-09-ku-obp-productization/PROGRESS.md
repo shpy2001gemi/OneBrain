@@ -5,6 +5,36 @@
 
 ## Current checkpoint
 
+- 2026-09-24 KU-DESK-001 owner review correction — the owner accepted the
+  review finding and directed implementation on the retained task branch.
+  Shutdown errors now release the API listener, retain the node for retry,
+  and publish a distinct `desktop-lifecycle` error even when KU was already
+  degraded. Lifecycle status gives shutdown and fatal startup errors priority
+  over a prior read-only KU issue. Default/feature Windows lifecycle suites
+  pass 8/8 and 10/10; feature Desktop build passes. A separate Desktop lib
+  test binary compiled but could not start on this host
+  (`STATUS_ENTRYPOINT_NOT_FOUND`); the new status case passes in the lifecycle
+  integration binary. [Updated evidence](outputs/KU_DESK_001_IMPLEMENTATION.md).
+  Task remains `Review` pending D-010 Git closure; no KU-QA/INT acceptance,
+  mobile work, OBP networking change or remote host action occurred.
+
+- 2026-09-24 KU-DESK-001 — `Review` on
+  `codex/ku-desk-001-workflow` from clean, synchronized main `073e141`.
+  [Desktop integration evidence](outputs/KU_DESK_001_IMPLEMENTATION.md):
+  packaged Web `/ku` uses the embedded shared node/API with trusted host KU
+  inputs; node network shutdown retains its order and Base drains before the
+  listener is released. Valid-key
+  Registry/source failure retains read-only saved KU; missing Vault key is a
+  visible typed dependency failure while legacy local reads remain available.
+  Windows default/feature lifecycle suites pass 6/6 and 8/8, including actual
+  prepared-work reconciliation, private save and read across restart.
+  Desktop feature build/default check, Web build and 89 tests, API 37 tests
+  (one real-model test ignored), shared Web-host example check, vNext contract
+  validator and whitespace check pass. Native WebView, other OS lifecycle and
+  model quality remain unqualified. No mobile or OBP network/default change,
+  remote operation, merge or KU-QA/INT acceptance occurred. D-010 requires
+  owner direction to merge; retain this branch for review.
+
 - 2026-09-24 D-042 publication verified: merge `0604b55` and handoff
   closure `e7a3c5a` were pushed to `origin/main`. The retained migration
   branch remains at `c608069` on origin. OBP-MIG-001 is `Merged`.
@@ -435,7 +465,7 @@
 | 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
 | 6 | `KU-CLI-001` | Merged | `codex/ku-cli-001-workflow` | `KU-API-001` | [Local implementation and tests](outputs/KU_CLI_001_IMPLEMENTATION.md); local merge `3216f1d`, D-027. |
 | 7 | `KU-WEB-001` | Merged | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023; local merge `3216f1d`, D-027. |
-| 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | â€” |
+| 8 | `KU-DESK-001` | Review | `codex/ku-desk-001-workflow` | `KU-WEB-001` | [Desktop integration evidence](outputs/KU_DESK_001_IMPLEMENTATION.md); Windows default/feature lifecycle 8/10 after shutdown correction `4ec7b1a`, D-010 review branch retained. |
 | 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | â€” |
 | 10 | `OBP-PROD-001` | Merged | `codex/obp-prod-001-product-contract` | `KU-CON-001` | [Contract proposal and tests](outputs/OBP_PROD_001_CONTRACT.md); accepted under D-025; local merge `3216f1d`, D-027. |
 | 11 | `OBP-PROD-002` | Merged | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests; no activation; local merge `3216f1d`, D-027. |

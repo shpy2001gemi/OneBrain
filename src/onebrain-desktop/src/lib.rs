@@ -11,6 +11,8 @@
 mod commands;
 pub mod config;
 mod events;
+mod ku_start;
+mod lifecycle_status;
 mod local_listener;
 mod platform;
 mod recovery;
@@ -20,7 +22,6 @@ pub mod supervisor;
 mod tray;
 
 use config::DesktopConfig;
-use onebrain_node::OneBrainNode;
 use state::AppState;
 use std::future::Future;
 use std::sync::Arc;
@@ -36,17 +37,7 @@ fn generate_token() -> String {
 
 /// Main entry point — builds and runs the Tauri application.
 pub fn run() {
-    run_host(true, |config, supervisor| async move {
-        let mut node = OneBrainNode::new(config.to_node_config())
-            .await
-            .map_err(|_| "desktop_node_init_failed")?;
-        if config.auto_start && !supervisor.stopped() {
-            node.start_network()
-                .await
-                .map_err(|_| "desktop_network_start_failed")?;
-        }
-        Ok(supervisor::HostNode::local(node))
-    });
+    run_host(true, ku_start::provision_local);
 }
 
 /// Trusted embedding port. A host supplies custody, policy and explicit execution
@@ -56,15 +47,30 @@ where
     F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>) -> Fut + Send + 'static,
     Fut: Future<Output = Result<supervisor::HostNode, &'static str>> + Send + 'static,
 {
+    run_host(false, move |config, supervisor, _token| {
+        host(config, supervisor)
+    });
+}
+
+/// Trusted host with the generated process token, needed when installing a
+/// Base KU runtime before the shared API accepts requests.
+pub fn run_with_host_and_token<F, Fut>(host: F)
+where
+    F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>, String) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<supervisor::HostNode, &'static str>> + Send + 'static,
+{
     run_host(false, host);
 }
 
 fn run_host<F, Fut>(local_fallback: bool, host: F)
 where
-    F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>) -> Fut + Send + 'static,
+    F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>, String) -> Fut + Send + 'static,
     Fut: Future<Output = Result<supervisor::HostNode, &'static str>> + Send + 'static,
 {
-    let config = DesktopConfig::load().unwrap_or_default();
+    let (config, config_issue) = match DesktopConfig::load_checked() {
+        Ok(config) => (config.unwrap_or_default(), None),
+        Err(reason) => (DesktopConfig::default(), Some(reason)),
+    };
     // ── 2. Build the Tauri app ─────────────────────────────────────────
     tauri::Builder::default()
         // ── Plugins ────────────────────────────────────────────────────
@@ -99,6 +105,14 @@ where
             // Set up the system tray.
             tray::setup_tray(app)?;
 
+            if let Some(reason) = config_issue {
+                let state = app.state::<AppState>();
+                let _ = state.startup_issue.set(reason);
+                state.supervisor.fence();
+                let _ = app.emit("desktop-lifecycle", ());
+                return Ok(());
+            }
+
             let state = app.state::<AppState>();
             let supervisor = state.supervisor.clone();
             let mut cfg = config.clone();
@@ -116,8 +130,10 @@ where
                             .store(true, std::sync::atomic::Ordering::SeqCst);
                     } else {
                         supervisor.fence();
+                        let _ = state.startup_issue.set(reason);
                     }
                     tracing::error!(reason);
+                    let _ = app.emit("desktop-lifecycle", ());
                 }
             }
             let handle = app.handle().clone();
@@ -125,20 +141,28 @@ where
                 if supervisor.stopped() {
                     return;
                 }
-                let boot = match host(cfg.clone(), supervisor.clone()).await {
+                let token = generate_token();
+                let boot = match host(cfg.clone(), supervisor.clone(), token.clone()).await {
                     Ok(boot) => boot,
                     Err(reason) => {
                         supervisor.fence();
+                        let _ = handle.state::<AppState>().startup_issue.set(reason);
                         tracing::error!(reason);
+                        let _ = handle.emit("desktop-lifecycle", ());
                         return;
                     }
                 };
-                let token = generate_token();
+                if let Some(reason) = boot.ku_issue {
+                    let _ = handle.state::<AppState>().ku_issue.set(reason);
+                    let _ = handle.emit("desktop-lifecycle", ());
+                }
                 let (node, port) = match supervisor.start(boot, token.clone(), cfg.api_port).await {
                     Ok(ready) => ready,
                     Err(reason) => {
                         supervisor.fence();
+                        let _ = handle.state::<AppState>().startup_issue.set(reason);
                         tracing::error!(reason);
+                        let _ = handle.emit("desktop-lifecycle", ());
                         return;
                     }
                 };

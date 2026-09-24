@@ -11,10 +11,25 @@ use tokio::{
 
 pub type SharedNode = Arc<Mutex<OneBrainNode>>;
 
+/// Preserve the node-owned network shutdown order, then close Base and wait
+/// for admitted KU work before the listener is released.
+pub async fn stop_owned_node(node: &SharedNode) -> Result<(), &'static str> {
+    let base = node.lock().await.base_services();
+    node.lock().await.shutdown_network().await;
+    if let Some(base) = base {
+        base.close()
+            .await
+            .map_err(|_| "desktop_base_drain_failed")?;
+    }
+    Ok(())
+}
+
 /// In-process host provisioning only. Construct exactly one node with the
 /// existing custody/dependency ports; no credentials can be supplied by Web IPC.
 pub struct HostNode {
     pub node: OneBrainNode,
+    /// Static diagnostic only; never includes operator paths, keys or source text.
+    pub ku_issue: Option<&'static str>,
     #[cfg(feature = "vnext-outbound-first")]
     pub binding: Option<onebrain_api::obp_api::Binding>,
 }
@@ -23,6 +38,7 @@ impl HostNode {
     pub fn local(node: OneBrainNode) -> Self {
         Self {
             node,
+            ku_issue: None,
             #[cfg(feature = "vnext-outbound-first")]
             binding: None,
         }
@@ -104,14 +120,14 @@ impl Supervisor {
         let mut resources = self.resources.lock().await;
         let node = Arc::new(Mutex::new(host.node));
         if self.stopped() || resources.node.is_some() {
-            node.lock().await.shutdown_network().await;
+            let _ = stop_owned_node(&node).await;
             return Err("desktop_already_started_or_stopping");
         }
         let listener =
             match tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await {
                 Ok(listener) => listener,
                 Err(_) => {
-                    node.lock().await.shutdown_network().await;
+                    let _ = stop_owned_node(&node).await;
                     return Err("desktop_api_bind_failed");
                 }
             };
@@ -170,7 +186,7 @@ impl Supervisor {
                 },
             ));
         if self.stopped() {
-            node.lock().await.shutdown_network().await;
+            let _ = stop_owned_node(&node).await;
             return Err("desktop_stopping");
         }
         resources.node = Some(node.clone());
@@ -200,22 +216,28 @@ impl Supervisor {
         }
     }
 
-    pub async fn shutdown(&self) {
+    pub async fn shutdown(&self) -> Result<(), &'static str> {
         self.fence();
         let mut resources = self.resources.lock().await;
-        // Stop accepting requests first. Already admitted typed work is drained
-        // by the node's lifecycle gate, including upgraded private WS owners.
+        // Stop accepting requests first. Network owners shut down before the
+        // Base gate drains admitted KU work and upgraded sockets are canceled.
         if let Some(task) = resources.auxiliary.take() {
             task.abort();
             let _ = task.await;
         }
-        if let Some(node) = resources.node.take() {
-            node.lock().await.shutdown_network().await;
+        let result = if let Some(node) = resources.node.as_ref() {
+            stop_owned_node(node).await
+        } else {
+            Ok(())
+        };
+        if result.is_ok() {
+            resources.node.take();
         }
         self.stop_sockets.cancel();
         if let Some(task) = resources.api.take() {
             let _ = task.await;
         }
+        result
     }
 }
 

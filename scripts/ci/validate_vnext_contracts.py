@@ -3752,11 +3752,9 @@ def validate_vnext_desktop_web_ux_profile(
             "Signer ready",
         ),
         "src/onebrain-desktop/src/commands.rs": (
-            "shutdown_network().await",
             "finish_exit(app, true).await;",
             "finish_exit(app, false).await;",
-            "state.supervisor.shutdown().await;",
-            "shutdown_node(state.node.get().cloned()).await;",
+            "if let Err(reason) = state.supervisor.shutdown().await {",
             "app.restart();",
             "app.exit(0);",
         ),
@@ -3765,6 +3763,7 @@ def validate_vnext_desktop_web_ux_profile(
         ),
         "src/onebrain-desktop/src/supervisor.rs": (
             "self.fence();",
+            "base.close()",
             "node.lock().await.shutdown_network().await;",
             "self.stop_sockets.cancel();",
             "with_graceful_shutdown(stop.cancelled_owned())",
