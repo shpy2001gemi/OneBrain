@@ -1,4 +1,4 @@
-//! Network commands: connect, status, peers.
+//! Network commands: legacy connect, status, peers.
 
 use onebrain_node::node::OneBrainNode;
 

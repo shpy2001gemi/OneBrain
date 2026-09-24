@@ -92,6 +92,40 @@ async fn feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks
 }
 
 #[tokio::test]
+async fn vnext_only_startup_avoids_legacy_tcp_and_preserves_explicit_rollback() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut config = NodeConfig {
+        port: 0,
+        data_dir: directory.path().to_path_buf(),
+        concept_registry_mode: ConceptRegistryMode::Disabled,
+        ..NodeConfig::default()
+    };
+    config.vnext.enabled.object_event_v1 = true;
+    config.vnext.enabled.obp_rp = true;
+    let mut node = OneBrainNode::new(config).await.unwrap();
+    node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x51; 32])));
+    node.set_vnext_product_dependencies(product_dependencies())
+        .unwrap();
+
+    let vnext_addr = node.start_vnext_network_only().await.unwrap();
+    assert_eq!(node.vnext_listener_addr(), Some(vnext_addr));
+    assert!(node.listener_addr().is_none());
+    assert!(node.start_vnext_network_only().await.is_err());
+    assert!(node.start_network().await.is_err());
+    node.shutdown_network().await;
+    assert!(node.vnext_listener_addr().is_none());
+
+    // The caller can select the existing compatibility startup explicitly
+    // without replacing its durable dataset or generating another identity.
+    node.set_vnext_product_dependencies(product_dependencies())
+        .unwrap();
+    let legacy_addr = node.start_network().await.unwrap();
+    assert_eq!(node.listener_addr(), Some(legacy_addr));
+    assert!(node.vnext_listener_addr().is_some());
+    node.shutdown_network().await;
+}
+
+#[tokio::test]
 async fn active_product_runtime_requires_vault_and_policy_dependencies() {
     let directory = tempfile::tempdir().unwrap();
     let mut config = NodeConfig::default();

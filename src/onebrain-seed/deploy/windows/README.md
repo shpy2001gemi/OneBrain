@@ -1,5 +1,5 @@
-# OneBrain Seed — Windows Deployment
-# Chạy seed node như Windows Service hoặc console app.
+# OneBrain legacy seed compatibility — Windows Deployment
+# TCP/JSON compatibility only; vNext uses onebrain-relay.
 
 ## Quick Start (Console)
 
@@ -8,7 +8,7 @@
 cargo build --release -p onebrain-seed
 
 # Run
-.\target\release\onebrain-seed.exe --port 4242 --name "Seed-VN1" --max-peers 10000
+.\target\release\onebrain-seed.exe --legacy-seed-compat --port 4242 --name "Seed-VN1" --max-peers 10000
 ```
 
 ## Windows Service (Production)
@@ -19,7 +19,7 @@ cargo build --release -p onebrain-seed
 # 1. Tải NSSM: https://nssm.cc/download
 # 2. Cài service
 nssm install OneBrainSeed "C:\OneBrain\onebrain-seed.exe"
-nssm set OneBrainSeed AppParameters "--port 4242 --name Seed-VN1 --max-peers 10000"
+nssm set OneBrainSeed AppParameters "--legacy-seed-compat --port 4242 --name Seed-VN1 --max-peers 10000"
 nssm set OneBrainSeed AppDirectory "C:\OneBrain"
 nssm set OneBrainSeed DisplayName "OneBrain Seed Node"
 nssm set OneBrainSeed Description "OneBrain P2P relay and peer discovery"

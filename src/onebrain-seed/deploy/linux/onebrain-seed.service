@@ -1,5 +1,5 @@
 [Unit]
-Description=OneBrain Seed Node — P2P relay and peer discovery
+Description=OneBrain legacy TCP/JSON seed compatibility daemon
 Documentation=https://github.com/onebrain/onebrain
 After=network-online.target
 Wants=network-online.target
@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 User=onebrain
 Group=onebrain
-ExecStart=/usr/local/bin/onebrain-seed --port 4242 --name "Seed-VN1" --max-peers 10000
+ExecStart=/usr/local/bin/onebrain-seed --legacy-seed-compat --port 4242 --name "Seed-VN1" --max-peers 10000
 Restart=always
 RestartSec=5
 LimitNOFILE=65536

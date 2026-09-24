@@ -457,6 +457,12 @@ impl OneBrainNode {
                 "network listener is already running".into(),
             ));
         }
+        #[cfg(feature = "vnext-network-runtime")]
+        if self.vnext_product_runtime.is_some() {
+            return Err(NodeError::Network(
+                "network listener is already running".into(),
+            ));
+        }
         let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
         #[cfg(feature = "vnext-outbound-first")]
         if let Some(dependencies) = self.vnext_product_dependencies.as_ref() {
@@ -465,42 +471,7 @@ impl OneBrainNode {
                 .map_err(|error| NodeError::Config(error.to_string()))?;
         }
         #[cfg(feature = "vnext-network-runtime")]
-        let mut pending_vnext = if self
-            .config
-            .vnext
-            .is_active(crate::vnext_config::VNextFeature::ObpRp)
-        {
-            let dependencies = self.vnext_product_dependencies.take().ok_or_else(|| {
-                NodeError::Config(
-                    "active OBP-RP requires caller-owned vNext Vault and Policy dependencies"
-                        .into(),
-                )
-            })?;
-            let identity_signer = match self.vnext_identity_signer.clone() {
-                Some(signer) => Some(signer),
-                None => self
-                    ._dataset_generations
-                    .session_identity_signer()
-                    .map_err(|error| NodeError::Storage(error.to_string()))?,
-            };
-            Some(
-                VNextProductRuntime::start_in_dataset(
-                    self.dataset_paths.as_ref(),
-                    bind_addr,
-                    &self.config.vnext,
-                    dependencies,
-                    identity_signer,
-                )
-                .await
-                .map_err(|error| {
-                    NodeError::Network(format!(
-                        "Failed to start integrated vNext product runtime: {error}"
-                    ))
-                })?,
-            )
-        } else {
-            None
-        };
+        let mut pending_vnext = self.start_vnext_product_runtime(bind_addr).await?;
         let listener = match TcpListener::bind(bind_addr).await {
             Ok(listener) => listener,
             Err(error) => {
@@ -538,6 +509,80 @@ impl OneBrainNode {
         Ok(local_addr)
     }
 
+    #[cfg(feature = "vnext-network-runtime")]
+    async fn start_vnext_product_runtime(
+        &mut self,
+        bind_addr: SocketAddr,
+    ) -> Result<Option<VNextProductRuntime>, NodeError> {
+        if !self
+            .config
+            .vnext
+            .is_active(crate::vnext_config::VNextFeature::ObpRp)
+        {
+            return Ok(None);
+        }
+        let dependencies = self.vnext_product_dependencies.take().ok_or_else(|| {
+            NodeError::Config(
+                "active OBP-RP requires caller-owned vNext Vault and Policy dependencies".into(),
+            )
+        })?;
+        let identity_signer = match self.vnext_identity_signer.clone() {
+            Some(signer) => Some(signer),
+            None => self
+                ._dataset_generations
+                .session_identity_signer()
+                .map_err(|error| NodeError::Storage(error.to_string()))?,
+        };
+        VNextProductRuntime::start_in_dataset(
+            self.dataset_paths.as_ref(),
+            bind_addr,
+            &self.config.vnext,
+            dependencies,
+            identity_signer,
+        )
+        .await
+        .map(Some)
+        .map_err(|error| {
+            NodeError::Network(format!(
+                "Failed to start integrated vNext product runtime: {error}"
+            ))
+        })
+    }
+
+    /// Start only the node-owned vNext runtime. Legacy TCP discovery and
+    /// inbound peer service remain stopped; existing legacy state is untouched.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub async fn start_vnext_network_only(&mut self) -> Result<SocketAddr, NodeError> {
+        if self.listener_task.is_some() || self.vnext_product_runtime.is_some() {
+            return Err(NodeError::Network(
+                "network listener is already running".into(),
+            ));
+        }
+        if !self
+            .config
+            .vnext
+            .is_active(crate::vnext_config::VNextFeature::ObpRp)
+        {
+            return Err(NodeError::Config(
+                "vNext product runtime is not requested".into(),
+            ));
+        }
+        #[cfg(feature = "vnext-outbound-first")]
+        if let Some(dependencies) = self.vnext_product_dependencies.as_ref() {
+            dependencies
+                .validate_outbound_first(&self.config.vnext)
+                .map_err(|error| NodeError::Config(error.to_string()))?;
+        }
+        let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
+        let runtime = self
+            .start_vnext_product_runtime(bind_addr)
+            .await?
+            .ok_or_else(|| NodeError::Config("vNext product runtime is not requested".into()))?;
+        let addr = runtime.services().local_addr();
+        self.vnext_product_runtime = Some(runtime);
+        Ok(addr)
+    }
+
     /// Fence new network operations and stop every node-owned listener and
     /// integrated vNext owner in deterministic order.
     pub async fn shutdown_network(&mut self) {
@@ -552,7 +597,7 @@ impl OneBrainNode {
         }
     }
 
-    /// Connect to a seed peer and exchange handshake.
+    /// Legacy TCP peer handshake; never vNext seed or relay authority.
     pub async fn connect_to_seed(&self, addr: SocketAddr) -> Result<(), NodeError> {
         let mut stream = TcpStream::connect(addr)
             .await
@@ -1076,7 +1121,7 @@ impl OneBrainNode {
     /// runtime references are deliberately not exposed.
     #[cfg(feature = "vnext-outbound-first")]
     pub fn obp_host(&self) -> Option<crate::vnext_product_runtime::obp::Host> {
-        self.vnext_product_runtime.as_ref().map(|r|r.obp_host())
+        self.vnext_product_runtime.as_ref().map(|r| r.obp_host())
     }
 
     #[cfg(feature = "vnext-network-runtime")]

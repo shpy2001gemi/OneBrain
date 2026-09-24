@@ -7,8 +7,11 @@ mod server;
 
 #[derive(Parser)]
 #[command(name = "onebrain-seed")]
-#[command(about = "OneBrain Seed Node — P2P relay and peer discovery")]
+#[command(about = "Legacy TCP/JSON seed compatibility daemon; not a vNext relay")]
 struct Cli {
+    /// Explicitly run the legacy compatibility daemon.
+    #[arg(long)]
+    legacy_seed_compat: bool,
     /// Port to listen on
     #[arg(long, default_value_t = 4242)]
     port: u16,
@@ -25,6 +28,12 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    if !cli.legacy_seed_compat {
+        eprintln!(
+            "onebrain-seed is legacy compatibility only; pass --legacy-seed-compat explicitly"
+        );
+        std::process::exit(2);
+    }
 
     println!("╔══════════════════════════════════════╗");
     println!("║    OneBrain Seed Node Starting...     ║");

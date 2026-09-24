@@ -1,4 +1,28 @@
-# Next conversation — OBP-MIG-001 legacy seed migration
+# Next conversation — OBP-MIG-001 review
+
+**Latest publication, 2026-09-24:** OBP-MIG-001 implementation `1d649ce`
+is published on `origin/codex/obp-mig-001-retire-legacy-seed` for Review.
+No merge is recorded; retain the branch. Read the implementation map and
+PROGRESS before any follow-up. Earlier local/uncommitted wording below is
+historical.
+
+**Latest result, 2026-09-24:** task 19 is `Review`; see the
+[implementation and migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
+and top of [PROGRESS](PROGRESS.md). CLI, node, seed daemon, Desktop,
+contract, format and whitespace checks pass within the documented limits.
+Changes remain local/uncommitted on `codex/obp-mig-001-retire-legacy-seed`.
+No live service, dataset, remote P5 state, OBP default flag or tuning changed.
+The earlier In progress checkpoint below is historical.
+
+**Latest task 19 checkpoint, 2026-09-24:** read
+[migration inventory and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md).
+On `codex/obp-mig-001-retire-legacy-seed`, legacy seed/mDNS/UPnP startup and
+REPL connect require `--legacy-seed-compat`; CLI vNext opt-in uses a node-owned
+vNext-only startup method; the standalone daemon refuses startup without the
+compatibility flag. Old config/data and packaging remain for rollback. CLI,
+seed and node runtime tests pass; final format/contract/packaging checks are
+pending. Task 19 is In progress, local and uncommitted. No live host state,
+OBP default flag, model or P5 qualification changed.
 
 **Latest Git closure, 2026-09-24:** QA tip `fb5b71b` was published on the
 retained branch and merged as `d695e4a` under D-041. Task 18 is `Merged` by

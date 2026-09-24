@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-QA-001 merged under D-041; Linux P5 qualified; consumer-NAT qualification skipped and unclaimed**
+> Status: **OBP-MIG-001 Review; OBP-QA-001 merged under D-041; consumer-NAT qualification skipped and unclaimed**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,7 +9,11 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest: D-041 closed the D-039/D-040 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
+Latest: [OBP-MIG-001 migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md)
+records the tested compatibility gate, node-owned vNext-only CLI startup and
+retained rollback path on `codex/obp-mig-001-retire-legacy-seed`. Task 19 is
+ready for review; implementation `1d649ce` is published on the retained branch.
+D-041 closed the D-039/D-040 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
 with QA tip `fb5b71b`, merge `d695e4a`, and an explicit skipped consumer-NAT
 qualification gate. D-039
 uses working code and functional tests for task 18 review. A bidirectional
@@ -94,7 +98,7 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-MIG-001`](tasks/19-OBP-MIG-001.md) — Planned after D-041 task 18 merge. D-036 accepts reuse of the already supplied three-physical-host placement for the separate P5 record; local preflight is not consumer-NAT qualification.
+**Current task:** [`OBP-MIG-001`](tasks/19-OBP-MIG-001.md) — Review after D-041 task 18 merge. D-036 accepts reuse of the already supplied three-physical-host placement for the separate P5 record; local preflight is not consumer-NAT qualification.
 The API dependency was satisfied by `7d37a30` under D-030; CLI is now merged
 at `04bcb30` under D-031. Read the accepted API and private-WS contracts plus
 current Web design rules before further edits. Current Web evidence supersedes

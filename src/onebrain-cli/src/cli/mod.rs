@@ -95,6 +95,7 @@ fn drain_and_display_events(node: &mut OneBrainNode) {
 async fn dispatch(
     node: &mut OneBrainNode,
     base_host_proof: &str,
+    legacy_seed_compat: bool,
     cmd: &str,
     args: &str,
     full_input: &str,
@@ -119,7 +120,8 @@ async fn dispatch(
         "edit" => knowledge::cmd_edit(node, args, reader).await,
 
         // Network
-        "connect" => network::cmd_connect(node, args).await,
+        "connect" if legacy_seed_compat => network::cmd_connect(node, args).await,
+        "connect" => eprintln!("  Legacy connect requires start --legacy-seed-compat"),
         "status" => network::cmd_status(node).await,
         "peers" => network::cmd_peers(node),
         "workflow" | "vnext" => workflow::cmd_workflow(args),
@@ -176,7 +178,11 @@ async fn dispatch(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Run the interactive REPL loop.
-pub async fn run_repl(node: &mut OneBrainNode, base_host_proof: &str) -> Result<(), NodeError> {
+pub async fn run_repl(
+    node: &mut OneBrainNode,
+    base_host_proof: &str,
+    legacy_seed_compat: bool,
+) -> Result<(), NodeError> {
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
     let mut line = String::new();
@@ -215,7 +221,18 @@ pub async fn run_repl(node: &mut OneBrainNode, base_host_proof: &str) -> Result<
                 break;
             }
             "help" => help::cmd_help(args),
-            _ => dispatch(node, base_host_proof, &cmd, args, trimmed, &mut reader).await,
+            _ => {
+                dispatch(
+                    node,
+                    base_host_proof,
+                    legacy_seed_compat,
+                    &cmd,
+                    args,
+                    trimmed,
+                    &mut reader,
+                )
+                .await
+            }
         }
     }
 
@@ -231,6 +248,7 @@ pub async fn run_repl(node: &mut OneBrainNode, base_host_proof: &str) -> Result<
 pub async fn run_repl_shared(
     shared_node: Arc<Mutex<OneBrainNode>>,
     base_host_proof: &str,
+    legacy_seed_compat: bool,
 ) -> Result<(), NodeError> {
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
@@ -274,6 +292,7 @@ pub async fn run_repl_shared(
                 dispatch(
                     &mut node,
                     base_host_proof,
+                    legacy_seed_compat,
                     &cmd,
                     &args_str,
                     &full_input,

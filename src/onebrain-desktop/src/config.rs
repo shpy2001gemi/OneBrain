@@ -22,7 +22,7 @@ pub struct DesktopConfig {
     pub port: u16,
     /// REST/WebSocket API port.
     pub api_port: u16,
-    /// Seed peer addresses (as strings for TOML friendliness).
+    /// Retained legacy peer addresses (as strings for TOML friendliness).
     pub seeds: Vec<String>,
     /// Explicit compiled Concept Registry path, if configured.
     #[serde(default)]

@@ -117,7 +117,8 @@ onebrain start [OPTIONS]
 | `--data-dir DIR` | `./onebrain_data` | Data directory |
 | `--ollama-url URL` | `http://localhost:11434` | Ollama API URL |
 | `--model MODEL` | `qwen3:8b` | Default AI model |
-| `--seeds ADDR,ADDR` | `[]` | Seed node addresses |
+| `--legacy-seed-compat` | `false` | Explicitly enable legacy TCP/JSON seed discovery, mDNS, UPnP and REPL `connect` for rollback; not vNext |
+| `--seeds ADDR,ADDR` | `[]` | Legacy peer addresses; requires `--legacy-seed-compat` |
 | `--api` | `false` | Enable REST/WebSocket API for Web Dashboard |
 | `--api-port PORT` | `4280` | API server port |
 | `--api-token TOKEN` | `onebrain-dev-token` | API Bearer token for authentication |
