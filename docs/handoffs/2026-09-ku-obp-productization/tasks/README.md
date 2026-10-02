@@ -11,15 +11,16 @@ thái, cập nhật PROGRESS trước rồi đồng bộ bảng này; không t�
 
 | Trạng thái | Số task |
 |---|---:|
-| ✅ Đã merge | 20 |
+| ✅ Đã merge | 22 |
 | ⬜ Chưa bắt đầu | 0 |
 | ⏸ Hoãn sau MVP | 2 |
-| 🔄 Đang làm / 👀 Chờ review / ⛔ Bị chặn | 2 |
+| 🔄 Đang làm / 👀 Chờ review / ⛔ Bị chặn | 0 |
 | **Tổng** | **24** |
 
-**20/24 task đã merge (83,3%)**; nếu chỉ tính 22 task không hoãn thì là **90,9%**.
+**22/24 task đã merge (91,7%)**; nếu chỉ tính 22 task không hoãn thì là **100%**.
 Đây là tỷ lệ đếm task của đợt này, không phải tỷ lệ toàn bộ dự án hay khối lượng
-còn lại. Task 09 và task 20 đã hoàn tất A–D local / Review, đã commit local `8de723d` và ledger đi kèm; chưa push/merge.
+còn lại. Task 09 và task 20 đã được owner chấp nhận theo D-046, merge `8d064c4`
+và xác minh push trên origin/main; checklist A–D hoàn tất.
 “Đã merge” nghĩa là hoàn tất phạm vi đã chấp thuận, không phải mọi platform/model
 đã đủ điều kiện production. Chuẩn bị qualification local vẫn được giữ dù task hoãn.
 
@@ -38,7 +39,7 @@ tự cần thực hiện từ đầu.
 | 6 | [KU-CLI-001](06-KU-CLI-001.md) | Thao tác KU qua CLI | ✅ Đã merge | Đã tích hợp quy trình KU. |
 | 7 | [KU-WEB-001](07-KU-WEB-001.md) | Thao tác KU qua Web | ✅ Đã merge | Có editor và luồng AI thử nghiệm; model chưa qualified. |
 | 8 | [KU-DESK-001](08-KU-DESK-001.md) | Thao tác KU qua Desktop | ✅ Đã merge | Đã tích hợp; kiểm tra native/đa OS sâu để sau. |
-| 9 | [KU-QA-001](09-KU-QA-001.md) | Demo KU local và kiểm tra vừa đủ | 👀 Hoàn tất local / chưa merge | A–D PASS theo scope MVP: save/restart không model; 5 AI drafts với giới hạn thật. |
+| 9 | [KU-QA-001](09-KU-QA-001.md) | Demo KU local và kiểm tra vừa đủ | ✅ Đã merge | A–D PASS theo scope MVP: save/restart không model; 5 AI drafts với giới hạn thật. |
 | 10 | [OBP-PROD-001](10-OBP-PROD-001.md) | Chốt quy trình networking OBP | ✅ Đã merge | Đã chốt contract tích hợp sản phẩm. |
 | 11 | [OBP-PROD-002](11-OBP-PROD-002.md) | Node quản lý vòng đời networking | ✅ Đã merge | Một runtime chung quản lý start/stop. |
 | 12 | [OBP-PROD-003](12-OBP-PROD-003.md) | Khởi tạo và tìm peer/relay | ✅ Đã merge | Đã nối bootstrap, discovery và reservation. |
@@ -49,16 +50,17 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | 👀 Hoàn tất local / chưa merge | A–D PASS theo D-045: confirm riêng → Public CID/bytes khớp → restart/retry; nguồn private giữ local. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045: confirm riêng → Public CID/bytes khớp → restart/retry; nguồn private giữ local. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
 | 24 | [KU-SEM-001](24-KU-SEM-001.md) | Nâng chất lượng bản nháp ngữ nghĩa | ⏸ Hoãn sau MVP | Code nền đã vào main; các lỗi giữ nghĩa/activation còn để sau. |
 
-## Việc cần làm ngay để có MVP
+## MVP đã chấp nhận và backlog kế tiếp
 
 Các dòng dưới là substep của task 09 và 20, không phải task mới. Checklist nguồn
-trong task 09 và task 20 đã đánh dấu A–D theo phạm vi MVP local.
+trong task 09 và task 20 đã đánh dấu A–D và được chấp nhận/merge theo D-046.
+First-run onboarding tiếp theo là contributor backlog chưa bắt đầu, giữ trong task 20.
 
 | Ưu tiên | Task cha / bước | Trạng thái | Kết quả cần thấy |
 |---:|---|---|---|
@@ -99,12 +101,12 @@ Kiểm tra local và fresh `git fetch origin` ngày 02/10/2026 cho thấy:
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
-| Main / origin-main | Baseline `689efd5` | Chứa 20 task Merged và code nền semantic v2 |
+| Main / origin-main | D-046 merge `8d064c4` + commit docs closure; đã push | Chứa 22 task Merged; model/NAT vẫn unqualified |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
-| Nhánh `codex/ku-enc-003-handoff` | MVP `8de723d` + commit ledger đi kèm; còn 17 dirty/untracked paths chỉ chứa preparation/history/overview được giữ | Task 09/20 đã commit local / Review; chưa merge/publish |
-| Commit MVP chưa có trên origin | 2: MVP `8de723d` và commit ledger đi kèm | Chưa push; không cộng vào số task Merged |
+| Nhánh `codex/ku-enc-003-handoff` | Giữ tại `0b050a4`, đã trong main; root workspace hiện ở main | 17 dirty/untracked preparation/history/overview vẫn giữ local |
+| Commit MVP chưa có trên origin | 0 sau push merge + docs closure | Không đồng nghĩa preparation local đã được publish |
 | Worktree phụ `3bbf/OneBrain` | Sạch, detached `798eabf`, đã nằm trong main | Không thấy implementation riêng cần mang về |
 
 Task 20 đã chạy trao đổi/restart thật trên Windows loopback theo D-045; task 09
-được tái dùng đúng scope. Hai task đang Review local, đã commit local `8de723d` và ledger đi kèm; chưa push/merge. Không có
+được tái dùng đúng scope. Hai task đã Merged theo D-046 và push origin/main. Không có
 blocker acceptance local; Registry/setup và share product UX tiếp tục ở backlog.

@@ -1,5 +1,23 @@
 # Decisions and claim boundary
 
+## D-046 — Accept, merge and publish the concept MVP tasks 09/20
+
+On 2026-10-02 the owner explicitly accepted the bounded MVP for KU-QA-001 and
+INT-KU-OBP-001 and directed merging commits `8de723d` and `0b050a4` into main,
+pushing origin, and preserving preparation and the qualification branch.
+Merge `8d064c4dd3c3b35c4838b606d6e6dc455af5f0f4` has parents `689efd5` and
+`0b050a4`; its tree exactly matches the reviewed MVP tip. The merge was pushed
+and verified directly on `origin/main`. The accompanying closure commit records
+this owner decision and updates the existing task ledger/checkpoint/overview.
+
+Tasks 09/20 are Merged within D-044/D-045's Windows local/manual/operator-demo
+scope. Existing focused happy-path/build/test results are reused; the post-merge
+vNext validator passes. This does not grant model/NAT/platform/production
+qualification, default rollout or mobile implementation. Registry/host onboarding,
+product share projection and source/author/fidelity proof remain contributor
+follow-ups. ENC-003 preparation artifacts and the qualification branch at
+`4a8f29d` remain intact and outside the MVP merge; the MVP branch is also retained.
+
 ## D-045 — Explicit Public KU experiment for task 20
 
 On 2026-10-01 the owner explicitly accepted the proposed boundary in

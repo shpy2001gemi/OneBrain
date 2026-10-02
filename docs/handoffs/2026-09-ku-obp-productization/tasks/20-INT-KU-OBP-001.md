@@ -1,6 +1,6 @@
 # INT-KU-OBP-001 — Two-node concept and contributor entry
 
-> State and actual working branch: [PROGRESS](../PROGRESS.md).
+> State: Merged under D-046, 2026-10-02; actual Git state: [PROGRESS](../PROGRESS.md).
 > Parent scope: [MASTER_PLAN](../MASTER_PLAN.md), owner decision D-044 (2026-09-28).
 > Depends on: working KU-QA-001 local MVP slice and accepted OBP-QA-001 functional work.
 > Local integration can use the available task-09 implementation before merge;
@@ -309,3 +309,23 @@ ENC-003 preparation/history, reports, scripts/tests, local overview and the olde
 qualification branch remain retained outside this slice. No push/merge or host
 change was performed. Owner direction is needed for integration/publication under
 D-010/D-044; local Review does not grant main acceptance or broader qualification.
+
+### Owner acceptance and merge — 2026-10-02
+
+D-046 accepts the scoped A–D operator concept. Reviewed commits `8de723d` and
+`0b050a4` entered main through merge `8d064c4`, whose tree exactly matches the
+reviewed tip; push was verified directly on origin/main. The post-merge vNext
+validator and whitespace pass; prior scoped runtime results are reused. The
+source branch, qualification branch and all local preparation are preserved.
+The accompanying docs closure commit updates the existing ledger and overview.
+No model/NAT/platform/production qualification or host change follows from this
+acceptance. The earlier Git-review section records its historical local state.
+
+## Contributor follow-up — first-run experience
+
+Not started; this is the existing first-run backlog item in MASTER_PLAN, outside
+the completed A–D operator demo. Inspect `ku_local_web.rs` Registry/config startup
+errors and the linked manual-host instructions to identify one concrete onboarding
+fix. Preserve Registry trust and private source/key custody. Product API/Web share
+projection, richer roots and source/author/fidelity proof remain separate backlog
+entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
