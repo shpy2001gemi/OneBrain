@@ -850,6 +850,37 @@ impl VNextNetworkRuntime {
         self.listen_addr
     }
 
+    /// Exact public read through the existing acceptance owner (D-045 demo).
+    /// Private records and writer/storage handles never cross this port.
+    pub fn public_object(
+        &self,
+        cid: ku_core::foundation::ObjectCid,
+    ) -> Result<Option<Vec<u8>>, VNextNetworkRuntimeError> {
+        let Some(bytes) = self
+            .validated_sink
+            .get_object(cid)
+            .map_err(VNextNetworkRuntimeError::Storage)?
+        else {
+            return Ok(None);
+        };
+        let object = ku_core::foundation::decode_knowledge_object(
+            &bytes,
+            ku_core::foundation::ResourceProfile::ObjectV1,
+            &[ku_core::foundation::KnownObjectKind::new(
+                ku_core::foundation::ObjectKind(2),
+                1,
+            )],
+            &[],
+        )
+        .map_err(|error| VNextNetworkRuntimeError::Storage(error.to_string()))?;
+        if object.cid() != cid
+            || object.disclosure() != ku_core::foundation::DisclosureClass::Public
+        {
+            return Ok(None);
+        }
+        Ok(Some(bytes))
+    }
+
     /// P5 and platform adapters may share the already-bound OBP endpoint with
     /// authenticated relay control so the relay-observed NAT mapping belongs
     /// to the same direct listener. No private key or route authority crosses

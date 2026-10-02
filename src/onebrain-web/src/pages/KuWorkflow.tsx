@@ -315,7 +315,7 @@ export function KuWorkflowPage({
         </p>
         <p>
           Host: {status?.lifecycle ?? "unavailable"} · Registry:{" "}
-          {status?.registry_ready ? "ready" : "unavailable"} · Local service:{" "}
+          {status?.registry_ready ? "ready" : "unavailable"} · Automatic encoder:{" "}
           {status?.local_encoder_ready ? "ready" : "unavailable"}
         </p>
         {metadata && (

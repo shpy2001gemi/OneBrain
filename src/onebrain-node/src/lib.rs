@@ -29,6 +29,8 @@ pub mod ku_extraction;
 pub mod ku_manual;
 pub mod ku_ollama;
 pub mod ku_product;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod ku_public_share;
 pub mod mdns_discovery;
 pub mod network;
 pub mod node;

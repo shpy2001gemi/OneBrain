@@ -15,3 +15,11 @@ Expected named outputs include:
 
 Do not use this directory as a second progress ledger. Task state and commit
 evidence belong in [`../PROGRESS.md`](../PROGRESS.md).
+
+## D-044: reuse the existing result location
+
+Do not add another report/resume/preparation/analysis file for each continuation
+or subtask. A short command/result/limitation belongs in PROGRESS. If a detailed
+result is necessary, update the existing parent task output and link it from the
+ledger. Preserve old reports as dated history; they do not choose the next task.
+The only active roadmap and contributor queue is MASTER_PLAN.

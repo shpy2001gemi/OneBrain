@@ -1,68 +1,80 @@
-# Next conversation — KU-DESK-001 merged checkpoint
+# Handoff dùng chung — tiếp tục OneBrain
 
-## Current state
+Dùng lại file này cho mọi task/checkpoint; **không tạo handoff theo ngày, nhánh
+hay chat**. Trạng thái động chỉ nằm trong khối `Current checkpoint` đầu
+[PROGRESS.md](PROGRESS.md). File này giữ quy trình và prompt cố định.
 
-- Under D-043, the owner approved review tip `bf3edb1` and explicitly
-  directed the D-010 merge and main publication. Merge
-  `6449446c3e538b8c97dbed2fdfb15c138e68a0c8` is verified on
-  `origin/main`. `KU-DESK-001` is `Merged`; the review branch
-  `codex/ku-desk-001-workflow` remains published at `bf3edb1` and was not
-  deleted. Read [task 08](tasks/08-KU-DESK-001.md),
-  [implementation evidence](outputs/KU_DESK_001_IMPLEMENTATION.md),
-  [PROGRESS](PROGRESS.md) and [DECISIONS](DECISIONS.md).
-- The packaged `/ku` Web workflow uses the same embedded node, authenticated
-  local API and node-owned KU service. The owner-reviewed Quit/Restart fix
-  releases the API listener after a Base close error, retains the node for
-  retry and reports the shutdown failure separately through
-  `desktop-lifecycle`, above an earlier KU dependency error. Post-merge
-  Windows lifecycle tests pass 8/8 default and 10/10 with
-  `vnext-outbound-first`; the feature Desktop build and vNext contract
-  validator pass. The Desktop lib test executable limitation remains in the
-  evidence. Live WebView, real OS sleep and macOS/Linux lifecycle are not
-  qualified.
-- `KU-ENC-003` remains `Blocked` and `model_qualified=false`.
-  `KU-QA-001` and `INT-KU-OBP-001` have no acceptance claim.
-- `OBP-MIG-001` remains merged under D-042 with rollback and legacy data
-  retained. `OBP-QA-001` remains merged under functional acceptance with
-  `consumer_nat_qualified=false`; Linux three-host P5 qualifies only exact
-  candidate `c453f3e`. Preserve old staging/runs and durable state, and keep
-  OBP networking default-off. No tuning, mobile work or remote host action
-  is part of this checkpoint.
+## Agent mới đọc gì?
 
-## Continuation route
+1. Đọc `AGENTS.md` ở root và file này.
+2. Chỉ đọc phần PROGRESS nằm giữa `<!-- CURRENT_CHECKPOINT_START -->` và
+   `<!-- CURRENT_CHECKPOINT_END -->`; không nạp toàn bộ lịch sử.
+3. Mở đúng task/substep và các file trong mục **Đọc tiếp** của checkpoint.
+4. Kiểm tra Git thực tế trước khi sửa. Đọc thêm [MASTER_PLAN](MASTER_PLAN.md),
+   quyết định hoặc contract đúng phần đang cần; không đọc lại tất cả mặc định.
 
-1. Read root `AGENTS.md`, [MASTER_PLAN](MASTER_PLAN.md),
-   [DECISIONS](DECISIONS.md), [PROGRESS](PROGRESS.md) and the relevant task
-   and evidence before starting new work. Confirm clean `main == origin/main`
-   and the retained branch when Git closure matters.
-2. Do not repeat KU-DESK-001 implementation or merge. Keep its branch unless
-   the owner separately directs deletion under D-010.
-3. Do not claim KU-QA-001 or INT-KU-OBP-001 while KU-ENC-003 remains
-   Blocked. Keep all platform, model, NAT and default-rollout limits explicit.
+Ví dụ lấy riêng checkpoint bằng PowerShell, chạy tại root repository:
 
-## Prompt to paste into a new conversation
-
-```text
-Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
-trong working tree gốc. KU-DESK-001 đã được owner duyệt theo D-043 và merge
-vào origin/main bằng 6449446 từ review tip bf3edb1. Kiểm tra working tree
-sạch, main == origin/main và nhánh codex/ku-desk-001-workflow còn được giữ
-trên origin. Đọc task 08, PROGRESS, DECISIONS, MASTER_PLAN và evidence
-outputs/KU_DESK_001_IMPLEMENTATION.md trước khi chọn công việc tiếp theo.
-
-Đừng lặp lại merge KU-DESK-001 hay xóa nhánh khi chưa có chỉ dẫn riêng theo
-D-010. Windows lifecycle mặc định/feature đạt 8/8 và 10/10, feature Desktop
-build và vNext contract validator đạt trên merged tree. Desktop lib test
-binary có giới hạn STATUS_ENTRYPOINT_NOT_FOUND trên host này; live WebView,
-real OS sleep và macOS/Linux lifecycle chưa qualified.
-
-KU-ENC-003 còn Blocked, model_qualified=false; không claim KU-QA-001 hoặc
-INT-KU-OBP-001. OBP-MIG-001 đã merged theo D-042 và giữ rollback/legacy
-data. OBP-QA-001 đã merged theo functional acceptance nhưng
-consumer_nat_qualified=false; Linux ba host P5 chỉ qualified exact candidate
-c453f3e. Giữ staging/runs và durable state cũ, OBP networking default-off;
-không tuning, sửa mobile hay thay đổi remote host từ checkpoint này.
+```powershell
+$progressText = Get-Content -Raw docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md
+[regex]::Match($progressText, '(?s)<!-- CURRENT_CHECKPOINT_START -->(.*?)<!-- CURRENT_CHECKPOINT_END -->').Groups[1].Value
 ```
 
-Historical QA/MIG checkpoints remain in [PROGRESS](PROGRESS.md),
-[DECISIONS](DECISIONS.md), their linked evidence files and Git history.
+Nếu khối bị thiếu hoặc chưa khớp Git: đọc task ledger/inventory liên quan, đối
+chiếu thay đổi rồi sửa checkpoint. Không suy task đã xong chỉ từ lời hẹn hoặc
+một file có tên “result”. Task thực tế chưa đổi thì không khởi động lại từ đầu.
+
+## Agent cập nhật sau task/checkpoint như thế nào?
+
+Thực hiện sau một mốc có ý nghĩa, trước khi kết thúc lượt làm việc, chuyển task
+hoặc bàn giao. Không cần ghi sau từng tool call. Nếu bị ngắt đột ngột trước khi
+kịp ghi, agent mới đối chiếu Git và artifact còn lại để khôi phục.
+
+1. **Thay nội dung khối hiện tại** trong PROGRESS bằng trạng thái mới nhất theo
+   mẫu dưới; mục tiêu tối đa khoảng 60 dòng / 600 từ. Không nối dài nhật ký vào khối.
+2. Cập nhật checklist task cha và dòng trong `Task ledger` nếu trạng thái đổi.
+   Đồng bộ [bảng overview](tasks/README.md) khi task/substep hoặc số lượng đổi.
+3. Ghi một mục lịch sử ngắn, khoảng 3–5 dòng: kết quả, kiểm tra chính, việc còn lại.
+   Link đến code/output hiện có; không dán log, diff hoặc toàn bộ checkpoint cũ.
+4. Chỉ sửa MASTER_PLAN nếu thứ tự/phạm vi thay đổi; chỉ sửa DECISIONS khi có
+   quyết định mới thực sự của owner. Không tự tạo lại quyết định từ suy đoán.
+5. Nếu xong task, đặt task kế tiếp vào checkpoint với trạng thái thật; không để
+   agent mới quay lại task đã xong. `Review`/đã làm local khác với `Merged`.
+
+### Mẫu khối Current checkpoint
+
+```text
+Cập nhật: ngày giờ Asia/Saigon nếu biết; task/substep; trạng thái.
+Mục tiêu hiện tại: một câu mô tả kết quả cần có.
+Vừa làm xong: tối đa 3 ý, phân biệt implementation với tài liệu/chuẩn bị.
+Còn lại / blocker: việc cụ thể; không có thì ghi “không”; dependency thật.
+Bước tiếp theo: hành động đầu tiên đủ cụ thể để làm ngay, không viết “tiếp tục”.
+Đọc tiếp: task cha + tối đa 3–5 file/section liên quan; không liệt kê toàn lịch sử.
+Workspace/Git: đường dẫn, branch, HEAD; dirty/staged; commit/push/merge thực tế.
+Cần giữ: file/nhánh/worktree chưa tích hợp, artifact hoặc process đang dùng.
+Kiểm tra: lệnh + kết quả + thời điểm/base; cái chưa chạy phải ghi rõ.
+Quyết định/giới hạn: ID quyết định áp dụng, phạm vi đã được cho phép, điều chưa claim.
+```
+
+Ghi rõ lần kiểm tra remote; không gọi ref cache là remote vừa xác minh. Process/
+port nếu cần tiếp tục phải được kiểm tra lại trước thao tác, không dùng PID cũ
+như sự thật hiện tại. Chỉ ghi đường dẫn/cách lấy cấu hình, không ghi khóa, token,
+private source hay nhãn holdout. File output chi tiết chỉ mở khi bước tiếp cần nó.
+
+## Prompt cố định để dán vào conversation mới
+
+```text
+Tiếp tục OneBrain tại C:\Users\shpy2\Documents\OneBrain.
+Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md.
+Làm theo quy trình handoff: chỉ lấy khối CURRENT_CHECKPOINT trong PROGRESS.md,
+rồi đọc task/substep và các file được chỉ định. Kiểm tra Git/worktree thực tế,
+giữ cả thay đổi chưa commit và công việc chưa merge; tiếp tục từ Bước tiếp theo,
+không làm lại phần đã xong hoặc nạp toàn bộ lịch sử.
+Ưu tiên MVP chạy được, kiểm tra vừa đủ theo D-044 và quy định hiện hành.
+Sau mỗi task/checkpoint có ý nghĩa, cập nhật cùng PROGRESS.md, checklist task và
+bảng overview nếu có thay đổi trước khi bàn giao. Không tạo thêm tài liệu handoff.
+```
+
+Prompt không chứa tên task/commit cố định nên dùng lại được. Kết quả trong khối
+checkpoint, không phải nội dung chat cũ, quyết định điểm tiếp tục. Đây là quy ước
+làm việc của agent, không phải một dịch vụ chạy nền tự cập nhật khi không có agent.

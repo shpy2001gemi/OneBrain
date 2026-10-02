@@ -62,6 +62,8 @@ Prepare these actual host inputs outside the repository:
    host validates each object; each is bounded to 64 KiB and all to 4 MiB.
    Source acquisition and initial governance provisioning remain external host
    responsibilities. There is no browser raw-source upload or capture-policy UI.
+   The explicit developer provisioning command below can supply a canonical
+   source and real local consent records for the manual demo without a model.
 3. A stable 32-byte **binary** Vault key file and an API token file with at least
    32 random ASCII letters/digits (hyphen/underscore also accepted). Supply these
    through the operator's local secret-management process; retain the same Vault
@@ -105,6 +107,40 @@ API port, rebuild with `VITE_API_BASE` pointing at that loopback port; the
 existing Web client otherwise defaults to port 4280. This task does not deploy
 a website or configure `onebrain.live`.
 
+### Provision a developer-owned manual source
+
+Use an existing private directory outside Git. Write a short UTF-8 text file
+you own or are permitted to capture and an operator request, for example:
+
+```json
+{
+  "operator": "Local developer",
+  "text_file": "C:/OneBrainLocal/provisioning/manual-text.txt",
+  "output_dir": "C:/OneBrainLocal/provisioning/manual-custody",
+  "consent_local_private": true
+}
+```
+
+`consent_local_private: true` explicitly permits manual local encoding and private
+retention of this source, its governance and KU until operator removal. It does
+not permit publication. The output directory must not exist; the existing private
+parent supplies filesystem custody. The bounded command preserves exact source
+bytes and refuses false/missing consent or existing output.
+
+```powershell
+Push-Location src
+cargo run --locked -p onebrain-api --example ku_manual_source -- C:/OneBrainLocal/provisioning/manual-request.json
+Pop-Location
+```
+
+Retain both `governance.json` and `source.canonical`. Add the latter explicitly
+to `sources` in the trusted host config with your chosen display label, then
+restart the host with the same dataset, key and signed Registry. This command
+neither calls a model nor saves/adopts a KU. It is operator provisioning under
+the [manual editor contract](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md),
+not automatic source admission. Custody files contain plaintext private source
+material; keep the whole directory private and outside Git.
+
 Try the journey:
 
 1. Select an admitted source; enter a predicate label and look it up. Explicitly
@@ -147,6 +183,50 @@ private export management, publication/Use/adoption, richer manual semantics,
 Registry distribution and real-model qualification remain separate work. Bounded
 contributions can improve the canonical preview reader, host intake onboarding or
 broaden UI verification without changing these authority boundaries.
+
+## KU-QA-001 local MVP checkpoint — 2026-09-30
+
+On Windows at main `689efd5` plus the uncommitted `ku_manual_source` helper and
+Web label change, the real browser/API journey passed using the existing
+`Documents/OneBrainLocal/host.json`, dataset, Vault key, token and signed Registry.
+The missing executable was rebuilt. The initially empty source catalog was
+provisioned with developer-owned `Water is a liquid.` and actual consent records;
+the prior config was retained in `provisioning/host-before-manual-mvp.json` outside Git.
+
+An unresolved manual preview showed `needs_resolution` and disabled Save. After
+cancel, explicit Registry selection of `water` / local release Q283
+(`784f7c285e57f5ec29348e2d7c2dd0c1`) and manual argument
+`MVP demo 2026-09-30: Water is a liquid.` produced one ready private preview.
+Its exact private ObjectCID, canonical bytes and receipt remain in the local
+result outside Git. Their equality was checked across save/read/restart; use that
+local result for operator inspection. This is the finite predicate/text manual
+form, not automatic semantic encoding.
+
+Reading preview left the saved list empty. The deliberate Web Save returned
+`committed`, `published=false`, `authorizes_reward=false`. Search found the object;
+Get returned the exact preview bytes. One real process restart using the same
+dataset/key/Registry with `ollama` omitted preserved dataset generation, both IDs,
+exact bytes and the same receipt. Web reload/Inspect also worked without a model;
+reads left one saved object. Model configuration was then restored for task 09.C.
+The status label now says **Automatic encoder** because its readiness bit does
+not describe manual editing or saved reads.
+
+Current focused checks: host build and Web build PASS; Web 89 tests PASS,
+15 workflow tests PASS after the label edit; provisioning consent/preservation
+test PASS; 2 manual API and 12 experimental API tests PASS; KU/vNext validators
+and whitespace PASS. `rustfmt --check` passes for the added helper. Whole-workspace
+`cargo fmt --all -- --check` reports existing formatting drift in unchanged
+encoder/node/relay files; it was not repaired as part of the local demo.
+CLI [42 unit + 2 integration results](KU_CLI_001_IMPLEMENTATION.md#verification)
+and Desktop [8/10 lifecycle results](KU_DESK_001_IMPLEMENTATION.md#verification-commands)
+are reused historical checks, not new native runs; the documented Windows `--lib`
+test-host limitation remains. No new CLI/Desktop/native or all-OS claim is made.
+
+Private local result/bytes and screenshot are in
+`Documents/OneBrainLocal/development-reports/local-mvp-20260930.json` / `.jpg`.
+They are outside Git. Keep the source/governance directory and dataset/keys.
+The small experimental result is recorded in the
+[existing Ollama instructions](KU_WEB_001_OLLAMA_IMPLEMENTATION.md#ku-qa-001-small-experimental-check--2026-09-30).
 
 ## Verification
 

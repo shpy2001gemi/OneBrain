@@ -1,5 +1,46 @@
 # OneBrain agent instructions
 
+## Current delivery priority and task continuity
+
+Owner direction on 2026-09-28: deliver a runnable concept MVP quickly so people
+can evaluate the idea and join development. Build on the existing shared
+architecture; do not try to finish the entire research/production roadmap alone.
+
+- Use `docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md` for active
+  scope/order and its `PROGRESS.md` for state, branch/worktree inventory and next
+  action. D-044 in that folder's `DECISIONS.md` records the owner-approved scope.
+- Before new work, inspect relevant local/remote refs, worktrees and uncommitted
+  changes. Work missing from main may already exist elsewhere; do not recreate
+  or discard it. Reuse suitable work and record its actual integration state.
+- Keep substeps in the existing parent task. Update the same plan/ledger and
+  existing task output instead of creating a new plan, report or handoff per
+  branch/attempt. New chats read the short entry point and relevant task only.
+- For the MVP, use a working happy path plus focused checks for changed behavior,
+  saved-data preservation and explicit private/save/share boundaries. Reuse
+  passing tests. Do not require exhaustive matrices, independent evaluators,
+  formal evidence bundles or model qualification for the experimental demo.
+- Keep deferred quality, portability and research gaps discoverable for
+  contributors. A demo must label unsupported/unassessed behavior honestly;
+  completing an MVP task does not grant production/model qualification.
+
+This priority does not change the mobile-specific instructions below.
+
+## Handoff after every meaningful task/checkpoint
+
+- Start with `docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md`.
+  Read only the bounded `CURRENT_CHECKPOINT_START` / `CURRENT_CHECKPOINT_END`
+  block in `PROGRESS.md`, then the named task/files. Expand context only as needed;
+  applicable mandatory contract read sets, including mobile, still apply.
+- Before ending work, handing off or changing tasks after a meaningful checkpoint,
+  replace that block using the template in NEXT_CONVERSATION: actual result,
+  remaining work, concrete next action, focused file pointers, Git/dirty state,
+  retained work, checks and applicable decisions. Do not append a growing log there.
+- Update the parent checklist and ledger when state changes; synchronize the task
+  overview when affected. Keep history to a short entry linking existing artifacts.
+  Reuse the same handoff and fixed prompt; do not create a new file per checkpoint.
+- If interrupted before a handoff update, recover from actual Git/artifacts rather
+  than treating the stale checkpoint as proof of completion. Never record secrets.
+
 ## Mobile build trigger
 
 These rules apply to every task that creates or changes the autonomous mobile

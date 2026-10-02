@@ -63,6 +63,24 @@ The bounded `ku_local_web` host example is an explicit launch, with operator
 provided Registry trust key, admitted sources and Vault key. It is not default
 CLI/Desktop lifecycle integration or a self-provisioning production installation.
 
+For a deliberate developer-owned manual demonstration, the opt-in
+`ku_manual_source` provisioning example accepts an operator JSON request with
+`operator`, `text_file`, `output_dir` and `consent_local_private: true`. It reads
+at most 8192 exact UTF-8 bytes, creates a new output directory and writes one
+private canonical Text SourceArtifact plus its actual local policy, consent
+receipt, scope, assessment, retention, frontier and adapter records. Context-local
+opaque reference kind 0 binds their SHA-256 commitments, as in the existing
+text-intake producer; these records are neither canonical public policy objects
+nor publication grants. Consent covers manual local encoding and private retention
+until operator removal, with no model call. Missing/false consent fails before
+creating output. Existing directories are never overwritten.
+
+The operator must own or be permitted to capture the text, retain the complete
+output under private filesystem custody outside Git, and explicitly add
+`source.canonical` to the host's `sources` configuration. Provisioning alone does
+not admit a source to a principal or save a KU. The manual host remains the custody
+owner; removing admission requires stopping it and changing its source list.
+
 The [shared semantic selection extension](KU_SEMANTIC_SELECTION_PROFILE_V1.md)
 uses the same private review-job transport and node lifecycle. New jobs expose
 `draft_extracted` when host assembly succeeds, with semantic/factual verification

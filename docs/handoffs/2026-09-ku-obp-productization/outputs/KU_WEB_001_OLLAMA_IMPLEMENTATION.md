@@ -6,6 +6,13 @@ the shared encoder before displaying an exact private preview. Save is explicit.
 `model_qualified` remains `false`; this is development integration evidence,
 not KU-ENC-003 quality qualification. No private VI/EN holdout was opened.
 
+Current Web entry: **Bản nháp tri thức · xử lý nền** starts durable semantic
+selection work and shows `draft_extracted` / `needs_review`, with semantic and
+factual verification unassessed. These drafts cannot be saved as canonical KU.
+The older **Encode and preview** path is inside **Encode trực tiếp sang KU · luồng
+thử nghiệm cũ**. Use the [manual/resolved path](KU_WEB_001_IMPLEMENTATION.md)
+for the supported explicit private save demonstration when lowering is incomplete.
+
 ## Run on this Windows host
 
 Use the same stable dataset, Vault key, API token and activated signed Registry
@@ -85,7 +92,7 @@ kill-on-close and memory limits, then resumes it. Completion, cancellation and
 timeout destroy only this worker tree. CPU-only operation reserves four GiB for
 host tokenizers/parsers and limits worker memory to the remaining configured
 reservation (eight GiB in the example). One inference call is admitted across
-the host's models. The job deadline is 120 seconds including startup; startup
+the host's models. The current experimental job deadline is 600 seconds including startup; startup
 itself is bounded to ten seconds. Slow or invalid output fails without a KU.
 
 Admission verifies complete GGUF/config/template/parameter layer hashes,
@@ -105,6 +112,44 @@ garbage collection, live revocation UI, model pull UI or GPU worker profile.
 The browser holds pending IDs/text only in memory. Non-Windows worker admission
 is unavailable. Production signed Registry and secret provisioning remain
 operator responsibilities; this addition does not create a deployment.
+
+## KU-QA-001 small experimental check — 2026-09-30
+
+Five new developer-authored sentences ran through the admitted `qwen3:8b` and
+actual authenticated background draft API on the existing Windows host. This
+uses the current `ku-semantic-selection/1.0` default; no qualification input,
+second model, download or independent verifier was used. Approximate times
+include queue admission, inference, validation and polling, not isolated model latency.
+
+| Developer input | Observed result | Time / calls | Inspected proposal and limitation |
+|---|---|---|---|
+| `Copper conducts electricity.` | `draft_extracted` | 56.67 s / 1 | Copper → conducts → electricity; no host issues. |
+| `Đồng dẫn điện.` | `needs_review` | 82.72 s / 2 | Subject empty, `Đồng` incorrectly in arguments; predicate `dẫn điện`. Subject unresolved and number/annotation scope issue; bounded repair made no change. |
+| `Copper does not dissolve in water.` | `draft_extracted` | 46.58 s / 1 | Copper → dissolve → in water, retains negation `does not`. |
+| `Nếu trời mưa, sân bị ướt.` | `draft_extracted` | 48.49 s / 1 | sân → bị ướt, retains condition `Nếu trời mưa`. |
+| `Lan reads a book and Minh writes a letter.` | `needs_review` | 50.57 s / 1 | Both claims retained with intended roles; conjunction `and` remains uncovered. |
+
+All five returned semantic/factual verification **unassessed**, `canonical_ku=false`.
+Repeated start, polling and reads preserved calls/windows and the saved-KU list.
+The probe never called prepare/save/publication. Mechanical extraction of three
+examples is not measured fidelity or truth. VI role selection and conjunction
+coverage remain contributor follow-ups under KU-SEM-001; they do not block the
+separately demonstrated manual save path. Canonical lowering/promotion of these
+background drafts remains unsupported.
+
+From repo root, repeat with your own bounded developer inputs and a new private
+report path (existing reports are never overwritten):
+
+```powershell
+python -m scripts.encoder.probe_review_host --development-inputs C:/OneBrainLocal/development-cases.json --report C:/OneBrainLocal/development-results.jsonl --token-file C:/OneBrainLocal/secrets/api-token.txt --model qwen3:8b --consent-development-text
+```
+
+Input is a JSON array of `{ "id": "en-simple", "text": "Copper conducts electricity." }`.
+The opt-in host must already be running with the selected model admitted. The
+probe retains draft jobs and source/consent privately; report files contain the
+supplied text and proposals. This run's input/result are
+`Documents/OneBrainLocal/development-reports/mvp-20260930-cases.json` and
+`mvp-20260930-qwen8b.jsonl`, outside Git. The ordinary Ollama server was retained.
 
 ## Verification
 
@@ -155,7 +200,8 @@ Runtime options: raw Qwen3 ChatML, empty thinking block, full Candidate JSON
 format, `stream:false`, `keep_alive:0`, `num_ctx:8192`, `num_predict:2048`,
 `temperature:0`, `seed:1`, `num_gpu:0`; 12 GiB total declared reservation with
 8 GiB worker limit and 4 GiB host allowance. Longer text or CPU contention may
-exceed the 120-second deadline. This one successful sentence is not an accuracy
+exceeded the original 120-second deadline; the current experimental profile uses
+600 seconds. This one successful sentence is not an accuracy
 or latency qualification result.
 
 The manually invoked real-model test is excluded from routine CI:

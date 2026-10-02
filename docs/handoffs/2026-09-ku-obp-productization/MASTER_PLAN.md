@@ -1,132 +1,129 @@
-# Master plan
+# OneBrain concept MVP — master plan
 
-## Objective
+Owner direction: **2026-09-28, D-044** in [DECISIONS](DECISIONS.md).
+This is the single active delivery plan. [PROGRESS](PROGRESS.md) owns status,
+branch/worktree inventory and the next action; task files own acceptance.
+The September implementation history remains in PROGRESS and existing outputs.
 
-Deliver a coherent local-first KU product through CLI, local Web and Desktop,
-then connect those surfaces to automatic vNext outbound-first networking
-without reopening the frozen OBP authority model.
+## Product question and minimum useful demonstration
 
-## Dependency graph
+Can a person turn a small piece of knowledge into an inspectable local object,
+keep and find it after restart, and explicitly exchange that object with another
+node while retaining identity, provenance and control over private content?
+
+The MVP answers this with a working narrow path, not a claim that arbitrary
+language extraction, global knowledge convergence or token economics is solved.
+Use the existing Rust/node services and local Web as the primary demonstration
+surface on the available Windows host. CLI is the practical inspection/second-node
+surface; Desktop reuses the Web workflow. No additional UI framework is needed.
+
+The concept demonstration has three visible outcomes:
+
+1. A supported manual/resolved draft can be previewed, explicitly saved, searched
+   and reopened after restart with the same identity. A few ordinary public or
+   developer-owned text examples also exercise the existing experimental model
+   path; keep successful proposals and visible unresolved/needs-review outcomes.
+2. Two real node instances explicitly exchange an accepted KU; the receiver can
+   inspect its identity and provenance. Two processes on one host are sufficient
+   for the first concept demo. This does not establish consumer-NAT independence.
+3. A new contributor can find the prerequisites, build/run commands, sample
+   journey, architectural seams and a bounded improvement to make. Document setup
+   that still needs operator input; do not advertise a one-command install yet.
+
+## Remaining MVP sequence
 
 ```mermaid
-flowchart TD
-    K1["KU-REV-001\nCanonical audit"] --> K2["KU-REV-002\nCode/evidence map"]
-    K2 --> K3["KU-CON-001\nProduct contract freeze"]
-    K3 --> K4["KU-RUN-001\nShared node service"]
-    K4 --> E1["KU-ENC-001\nShared encoder contract"]
-    E1 --> E2["KU-ENC-002\nWorkflow-controlled encoder"]
-    E2 --> E3["KU-ENC-003\nModel/resource qualification"]
-    E2 --> K5["KU-API-001\nREST/WS projection"]
-    E3 --> K9
-    K5 --> K6["KU-CLI-001"]
-    K5 --> K7["KU-WEB-001"]
-    K7 --> K8["KU-DESK-001"]
-    K6 --> K9["KU-QA-001\nCross-surface acceptance"]
-    K8 --> K9
-
-    K3 --> O1
-    O1["OBP-PROD-001\nProduct contract freeze"] --> O2["OBP-PROD-002\nNode lifecycle owner"]
-    O2 --> O3["OBP-PROD-003\nBootstrap/discovery/reservations"]
-    O3 --> O4["OBP-PROD-004\nRouting/outbox/failover"]
-    O4 --> O5["OBP-API-001\nREST/WS projection"]
-    O5 --> O6["OBP-CLI-001"]
-    O5 --> O7["OBP-WEB-001"]
-    O7 --> O8["OBP-DESK-001"]
-    O6 --> O9["OBP-QA-001\nDesktop NAT/outage gate"]
-    O8 --> O9
-    O9 --> O10["OBP-MIG-001\nLegacy seed retirement"]
-
-    K9 --> I1["INT-KU-OBP-001\nOpt-in KU network journey"]
-    O9 --> I1
+flowchart LR
+    A["Existing shared KU + CLI/Web/Desktop"] --> B["KU-QA-001: local demo and focused smoke"]
+    B --> C["INT-KU-OBP-001: two-node journey"]
+    D["Existing OBP runtime and functional QA"] --> C
+    C --> E["Same integration task: runnable contributor entry"]
+    Q["KU-ENC-003: deferred qualification"]
+    S["KU-SEM-001: deferred fidelity improvements"]
 ```
 
-## Execution order
+| Parent task | Substeps kept in that task | MVP completion |
+|---|---|---|
+| [KU-QA-001](tasks/09-KU-QA-001.md) | A: reconcile available implementation/setup; B: local save/search/restart; C: small experimental AI check and shared-surface smoke | Local concept can be demonstrated and actual limits are recorded; strict ENC-003 is not a dependency |
+| [INT-KU-OBP-001](tasks/20-INT-KU-OBP-001.md) | A: explicit two-node exchange; B: receiver read/identity and one retry or restart; C: contributor build/run instructions and backlog links | Repeatable concept journey plus a usable open-source entry point, without platform qualification claims |
 
-### Phase A — KU review, starts now
+These are existing tasks 09 and 20, not a new milestone/task hierarchy. Planning
+this scope does not mark either task implemented. Each next step fixes the first
+concrete obstacle to the demo, rather than expanding an evaluation framework.
+Dependent local work may use a reviewed available implementation before merge;
+record the actual base in PROGRESS. Publication/merge state remains separate.
 
-1. `KU-REV-001`: decide which KU documents and semantics are authoritative.
-2. `KU-REV-002`: map current runtime, persistence, tests and product gaps.
-3. `KU-CON-001`: freeze the shared local product workflow before adding new
-   public API/command fields.
+## MVP checks and stopping rule
 
-Exit: there is one owner-approved KU product contract with explicit migration
-and legacy boundaries.
+- Run the primary happy path once after relevant changes; inspect the result.
+- Use focused existing tests for the changed module. Add a small regression only
+  for a real bug or a meaningful data/consent boundary; avoid implementation-mirror
+  tests and automatic full-workspace reruns for documentation or small UI edits.
+- Check saved data after one restart and that save/share require their explicit
+  action. Show a useful failure when AI/network is unavailable or input unresolved.
+- For experimental AI, inspect about five short VI/EN developer examples with one
+  available admitted model. Record what worked, what failed and rough observed
+  elapsed time. No accuracy threshold, blind benchmark, reviewer signature, second
+  model, p95 campaign or statistical report is required to accept this demo.
+- Reuse CLI/Desktop component results; a known unrelated platform test-host failure
+  is a documented follow-up, not a reason to hold the Web/CLI concept indefinitely.
+- Record command/result and limitations briefly in PROGRESS or the existing parent
+  task output. Stop expanding checks when the scoped journey works and no concrete
+  data-loss/privacy/false-success defect remains in it.
 
-### Phase B — KU shared implementation and surfaces
+Model drafts remain proposals unless the existing canonical workflow accepts them.
+Use the working manual/resolved path when lowering is unsupported; that limitation
+must be apparent to the tester. Do not call manual corrections automatic encoding.
 
-4. `KU-RUN-001`: implement the node-owned local KU service.
-   Before the model-backed product surface, D-017 inserts `KU-ENC-001` for the
-   shared extraction/compiler contract and `KU-ENC-002` for its implementation.
-   `KU-ENC-003` qualifies real model/resource tuples; it may run alongside API
-   projection after the shared runtime is merged, but blocks model-ready and
-   cross-surface encoder qualification claims.
-5. `KU-API-001`: expose the contract once through local authenticated REST/WS.
-6. `KU-CLI-001`, then `KU-WEB-001` and `KU-DESK-001` on separate branches.
-7. `KU-QA-001`: prove the same operation has the same identity, state and error
-   semantics through all surfaces and across restart.
+## Shared framework contributors should extend
 
-Exit: KU is usable locally and consistently without a peer or seed.
+| Seam | Existing owner/location | Rule for an MVP contribution |
+|---|---|---|
+| Canonical knowledge, identity and storage | `src/ku-core`, `src/onebrain-base-contract` | Reuse registered types/codec; keep durable identity stable |
+| Extraction and model adapters | `src/ku-encoder/src/extraction` | Models return proposals; reuse the shared workflow and bounded provider interface |
+| KU jobs, save/recovery and orchestration | `src/onebrain-node` | Keep one service owner; avoid frontend-specific knowledge semantics |
+| Local API and user experience | `src/onebrain-api`, `src/onebrain-cli`, `src/onebrain-web`, `src/onebrain-desktop` | Project the same service; improve setup and visible errors in place |
+| Peer exchange | `src/ku-net`, `src/onebrain-relay`, node networking | Reuse authenticated transport/reconciliation and explicit publication |
+| Qualification tools | `scripts/encoder/qualification_*` and retained ENC-003 branch | Preserve for later; do not turn them into the MVP's prerequisite |
 
-### Phase C — OBP productization, no protocol redesign
+Public contracts still govern changed behavior. Read the relevant contract when
+changing that interface, not every research/evidence document for every substep.
 
-8. `OBP-PROD-001`: freeze the missing orchestration/status/product boundary.
-9. `OBP-PROD-002`: give the normal node aggregate lifecycle ownership.
-10. `OBP-PROD-003`: connect bootstrap, discovery, reservation, advertisement
-    and refresh using trusted-local configuration and existing validated types.
-11. `OBP-PROD-004`: connect the planner, authenticated carrier selection,
-    durable outbox, alternate-relay failover and checkpoint resume.
+## After-MVP and contributor backlog
 
-Exit: a normal feature-gated node can bootstrap and reach an expected peer
-without a legacy seed or manually supplied raw socket address.
+This is the central queue. Detailed existing specs/defect records stay at their
+owners; the entries below link to them rather than spawning new plans.
 
-### Phase D — OBP product surfaces and acceptance
+| Area / existing owner | Bounded contribution | Completion example / dependency |
+|---|---|---|
+| Task 20.C — first-run experience | Make the existing local host easier to provision, document prerequisites and useful errors | A fresh contributor can follow the declared setup and demo; no hidden maintainer-only files |
+| Task 20 follow-up — share projection | Project the D-045 shared share module through a registered product API/Web action and normal node host composition | Preserve exact preview/confirmation, private IDs/source suppression and pending/delivery distinction; current concept uses the isolated helper |
+| KU-SEM-001 | Pick one reference/alternative/qualifier defect from the [semantic backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md) | One reproducible case, shared fix and focused regression; broader fidelity stays deferred |
+| KU-QA-001 follow-up | CLI/Desktop parity and native lifecycle portability | Reproduce one actual difference or host issue and fix it; no full platform lab required to contribute |
+| KU-ENC-003 | Finish one missing harness/provider/measurement/evaluator seam | See [task 23](tasks/23-KU-ENC-003.md); formal qualified claims still require its full original conditions |
+| OBP-QA-001 follow-up | Consumer NAT, native OS lifecycle, non-Linux paths | Reproduce on available real environment; record scope; do not reopen completed functional acceptance |
+| Base / Registry | Simplify contributor setup and later strict release closure | Preserve existing trust/data; [historical status](../../PROJECT_STATUS.md) and runtime plan own production gates |
+| Mobile | Existing autonomous mobile backlog | Separate later lane under mobile AGENTS/build contract; no mobile implementation is authorized by this plan |
+| M6 — distributed KQL / Outcome / Benefit | Implement a bounded slice when that lane is selected | [Distributed runtime plan](../../research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md), sections 12–13; outside this MVP |
+| M7 — economics and wallet | Reconcile reward-policy decisions, then versioned implementation | Same runtime plan section 14 plus D-013/D-014; no production token promise in MVP |
+| Foundation optional | RUN-003 remote cognition, RIB-001/002 fast-path reconciliation | [Foundation plan](../../research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md); do not make optional work a new MVP prerequisite |
+| Extension / bot / glasses / BCI | Later adapters/research after the working shared core demo | Existing scaffold/research; outside current MVP |
 
-12. `OBP-API-001`: expose bounded status and operator actions.
-13. `OBP-CLI-001`, `OBP-WEB-001`, `OBP-DESK-001` on separate branches.
-14. `OBP-QA-001`: two consumer nodes, two independent relays, no inbound NAT,
-    bootstrap loss, selected-relay loss, restart and privacy assertions.
-15. `OBP-MIG-001`: retire the legacy product seed path only after parity is
-    proven and rollback remains available.
+## Document and branch discipline
 
-Exit: desktop product can make the bounded automatic-connectivity claim. This
-does not enable the lane by default or qualify mobile/browser platforms.
-
-### Phase E — KU/OBP integration
-
-16. `INT-KU-OBP-001`: local KU → explicit publish preparation/confirmation →
-    durable network intent → authenticated reconciliation → remote validation →
-    scoped status/provenance, with private data and authority firewalls intact.
-
-## Parallelism
-
-- `KU-CLI-001` and `KU-WEB-001` may branch in parallel after `KU-API-001` is
-  merged. `KU-DESK-001` starts after the Web surface is accepted because the
-  Desktop application embeds it.
-- `KU-ENC-003` and `KU-API-001` can use the same frozen KU-ENC-002 service
-  without editing its semantic contract independently. Mobile integration
-  remains in MOB-06; these tasks do not create another mobile tool orchestrator.
-- The OBP planning lane may begin after `KU-CON-001`, but implementation must
-  not modify unfinished KU service code.
-- No two active branches should edit the same public contract file. If they
-  must, serialize them.
-
-## Shared acceptance principles
-
-- local operation remains useful with zero peers;
-- no UI status says global/full/closed where scope is partial;
-- raw query, private Need, Vault content, private key or receipt capability is
-  not exposed publicly;
-- route, relay, path count or delivery receipt grants no knowledge authority;
-- every mutation is idempotent or carries an explicit conflict state;
-- process restart preserves canonical identity and durable nonterminal work;
-- kill/rollback keeps evidence and does not silently re-enable a lane;
-- default-off remains unchanged until a separate release decision.
-
-## Out of scope
-
-- mobile implementation or mobile UI;
-- browser/WASM carrier implementation;
-- strict Base qualification and default rollout;
-- ciphertext mailbox and push-wake delivery;
-- M6 active multipath KQL, end-to-end Outcome/Benefit and production OBT;
-- redesign of frozen OBP wire/session/reconciliation contracts.
+- README and NEXT_CONVERSATION link to this plan, PROGRESS and the current task.
+  They do not contain a parallel chronological history or task-state table.
+- PROGRESS is the only execution ledger. Its inventory distinguishes main,
+  unmerged committed work, unpublished commits, dirty files and other worktrees.
+- Subtasks use headings/checklists in the existing parent task. Update the same
+  output file if a substantive report is useful; routine runs need only a ledger
+  line. Keep old evidence read-only unless correcting it explicitly.
+- Before creating a branch/worktree, inspect the relevant existing refs and dirty
+  work. Reuse suitable work; do not branch from main and silently omit useful code.
+  A subtask branch must name its parent task/base and feed back into this ledger.
+- Do not copy older PROGRESS/DECISIONS from a retained branch over the active
+  ledger. Integrate useful code selectively when appropriate; document the actual
+  Git result. No automatic branch deletion, reset or cleanup of other work.
+- Keep current limitations accessible to contributors without requiring them to
+  recreate a historical audit trail. [CONTRIBUTING](../../../CONTRIBUTING.md)
+  explains the entry path and proportional checks.

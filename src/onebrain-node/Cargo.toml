@@ -56,6 +56,10 @@ required-features = ["vnext-production-canary-harness"]
 [[example]]
 name = "concept_registry_production_qualification"
 
+[[example]]
+name = "ku_peer_demo"
+required-features = ["vnext-outbound-first"]
+
 [features]
 default = ["base-v1"]
 base-v1 = []
