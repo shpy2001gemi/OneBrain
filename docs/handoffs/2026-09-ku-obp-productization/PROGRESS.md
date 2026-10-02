@@ -6,43 +6,40 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 01/10/2026 12:02 (Asia/Saigon). Task: `INT-KU-OBP-001` A–D; Review local.**
+**Cập nhật: 02/10/2026 08:41 (Asia/Saigon). Task: `KU-QA-001` + `INT-KU-OBP-001`; Review, đã commit local.**
 
-- **Mục tiêu hiện tại:** chốt slice MVP local task 09 + task 20 vào Git với phạm vi rõ ràng.
-- **Vừa xong:** owner chấp thuận boundary thử nghiệm D-045; shared `ku_public_share`
-  tạo Public object mới từ KU manual đã lưu, preview đọc được + confirm riêng + recheck access.
-  Hai runtime QUIC loopback và host KU/API custody thật đã trao đổi một object;
-  receiver khớp Public CID/bytes/semantic ID, biết provenance sender/selector.
-  Restart cả hai peer + retry giữ cùng object/intent; KU/source private không gửi/đổi.
-- **Còn lại / blocker:** không có blocker acceptance local; task 09 và 20 A–D đã Review,
-  chưa commit/merge. Registry/keys provisioning, product API/Web share projection,
-  normal host composition và nguồn/author/fidelity proof nằm ở backlog; không mở qualification.
-- **Bước tiếp theo:** review diff MVP task 09 + 20 (helper source, nhãn Web, share module,
-  peer helper và docs), tạo commit local giới hạn ở slice đã kiểm tra; không stage ENC-003
-  preparation/qualification hay ghi đè docs từ nhánh cũ. Merge/publish vẫn chưa thực hiện.
-- **Đọc tiếp:** [task 20/run/result](tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045),
-  `src/onebrain-node/src/ku_public_share.rs`, `src/onebrain-node/examples/ku_peer_demo.rs`,
-  [CONTRIBUTING](../../../CONTRIBUTING.md), [D-045/D-044](DECISIONS.md).
-  Task 09 local evidence chỉ cần khi gom commit: `outputs/KU_WEB_001_IMPLEMENTATION.md`.
+- **Mục tiêu hiện tại:** bàn giao slice MVP chạy được để owner review tích hợp vào main.
+- **Vừa xong:** review code/task 09 + 20 và tạo commit MVP `8de723d` (30 file,
+  gồm code demo và coordination D-044/D-045). Loại private saved CID khỏi tài liệu
+  kết quả; link preparation chỉ có local được ghi rõ. Không đổi code đã kiểm tra.
+  Task 09/20 A–D vẫn hoàn tất local; ledger/checklist/overview đã đồng bộ Git.
+- **Còn lại / blocker:** không có blocker acceptance local. Chưa push/merge;
+  tích hợp/publish cần owner chỉ định theo D-010/D-044. Registry/keys provisioning,
+  share API/Web, normal host composition và source/author/fidelity proof giữ ở backlog.
+- **Bước tiếp theo:** review `git diff origin/main..codex/ku-enc-003-handoff` cho slice
+  MVP và commit ledger đi kèm, rồi nhận owner direction về merge/publish. Không chạy lại
+  task 09/20 hay gom ENC-003 preparation vào lần tích hợp này.
+- **Đọc tiếp:** [task 20 Git review/run/result](tasks/20-INT-KU-OBP-001.md#git-review--2026-10-02),
+  [task 09 result](tasks/09-KU-QA-001.md#deferred-follow-ups), [CONTRIBUTING](../../../CONTRIBUTING.md),
+  [D-044/D-045/D-010](DECISIONS.md). Code diff có `ku_public_share.rs` + `ku_peer_demo.rs`.
 - **Workspace/Git:** `C:/Users/shpy2/Documents/OneBrain`; `codex/ku-enc-003-handoff`,
-  HEAD `689efd5`. Fetch origin 01/10 đầu lượt; HEAD/main/origin-main khớp 0/0.
-  45 dirty/untracked paths (27 tracked + 18 untracked), không staged; không commit/push/merge.
-  Worktree phụ detached `798eabf` sạch/đã trong main, giữ nguyên. Mọi incoming edit còn giữ.
-- **Cần giữ:** ENC-003 preparation local + nhánh `4a8f29d` (3 commit chưa merge);
-  `C:/Users/shpy2/Documents/OneBrainLocal/host.json`, keys/dataset/Registry và custody cũ.
-  Demo riêng `OneBrainLocal/peer-mvp-20261001-vz_5bczi/` có `result.json` và `final/`
-  chứa configs/stores; không copy vào Git. Original host config không đổi;
-  process host/peer do lượt này tạo đã dừng, 4280 không listener; Ollama 11434/PID 19528
-  vẫn giữ nguyên lúc kiểm tra cuối. Không coi PID là trạng thái cho lượt sau.
-- **Kiểm tra:** peer helper build PASS; 3 shared disclosure regressions + 1 existing
-  expected-peer integration PASS; happy path thật trên build cuối PASS, private source
-  records/identifiers không có ở receiver; private view/config giữ nguyên; restart/retry PASS.
-  KU/vNext validators, rustfmt hai file mới và whitespace PASS. Task 09 Web/API/local
-  save/restart evidence tái dùng; không chạy lại AI/native/đa OS hay workspace fmt.
-- **Quyết định/giới hạn:** D-044/D-045/D-023; helper là operator experiment, ba process
-  trên cùng Windows host; hỗ trợ một predicate + một text literal, advanced roots reject.
-  Private ObjectCID khác Public ObjectCID; cùng Public CID/bytes giữa sender/receiver.
-  Provenance chỉ transport/selector; source/author/fidelity unassessed, không Use/adoption/reward.
+  implementation `8de723d`; HEAD là commit ledger chứa checkpoint này (`git log -1`).
+  Main/origin-main vẫn `689efd5`; fresh fetch origin 02/10 đầu lượt, chưa push/merge.
+  Sau commit ledger, còn 17 dirty/untracked paths: 2 tracked partial preparation
+  (`PROGRESS.md`, task 23) + 15 untracked; không staged. Worktree phụ detached `798eabf` sạch.
+- **Cần giữ:** ENC-003 scripts/tests và sáu preparation reports, overview local;
+  nhánh qualification `4a8f29d` (3 commit chưa merge). Mọi artifact/data ngoài Git,
+  `OneBrainLocal/host.json`, keys/dataset/Registry/custody và
+  `OneBrainLocal/peer-mvp-20261001-vz_5bczi/result.json` + `final/` giữ nguyên.
+  Lượt này không khởi động/dừng host hay đọc private report; trạng thái process cần kiểm tra lại.
+- **Kiểm tra:** fresh KU product/registration + vNext validators, rustfmt 3 file mới,
+  Git-index Markdown links (265 ở snapshot MVP; 267 sau cập nhật ledger) và whitespace PASS 02/10.
+  Hash kiểm tra các retained files không đổi. Reuse task 09 Web/API/save/restart/5 AI
+  và task 20 build/3 disclosure tests/1 expected-peer test/real delivery/restart/retry
+  PASS 30/09–01/10; không rerun AI/native/đa OS hay workspace fmt cho review tài liệu.
+- **Quyết định/giới hạn:** D-044/D-045/D-023; operator demo ba process Windows loopback,
+  một predicate + một text literal; private CID khác Public CID. Provenance chỉ
+  transport/selector; source/author/fidelity unassessed, không Use/adoption/reward.
   `model_qualified=false`, `consumer_nat_qualified=false`; không mobile/default rollout.
 <!-- CURRENT_CHECKPOINT_END -->
 
@@ -50,19 +47,24 @@ Quy trình cập nhật và prompt cố định: [NEXT_CONVERSATION](NEXT_CONVER
 Agent mới dừng đọc phần trạng thái ở marker END; chỉ mở inventory/ledger/lịch sử
 bên dưới khi cần đối chiếu. Khối trên được thay thế sau mỗi checkpoint có ý nghĩa.
 
-## Git and retained-work inventory — audited 2026-09-28
+## Git and retained-work inventory — audited 2026-09-28; MVP refresh 2026-10-02
 
 Fresh `git fetch origin` and `git ls-remote --heads origin` completed. Compared
 all 24 local branches and all 58 actual remote branch tips against origin/main,
 including refs without a configured upstream. Both registered worktrees and
-stash were inspected. This inventory describes the audit before these plan edits.
+stash were inspected. This full-ref inventory describes the September audit. Scoped fresh fetch,
+branch/worktree and dirty-state checks on 2026-10-02 confirm main `689efd5`,
+qualification `4a8f29d` and the retained worktree; the rows below reflect the
+local MVP commit and its accompanying ledger commit. No full remote-tip audit
+was repeated.
 
 | Location | Actual state | How it affects the plan |
 |---|---|---|
-| `main`, `origin/main`, working HEAD | `689efd5`; current branch `codex/ku-enc-003-handoff` has no upstream | Main is the shared implementation baseline; the current dirty tree adds retained preparation/planning work |
+| `main`, `origin/main` | `689efd5` after fresh fetch 2026-10-02 | Shared implementation baseline; MVP slice is not merged |
+| `codex/ku-enc-003-handoff`, working HEAD | MVP commit `8de723d` plus accompanying ledger commit; no upstream/push | Tasks 09/20 code and MVP coordination committed locally; retained preparation remains dirty |
 | `codex/ku-enc-003-model-qualification` local and remote | `4a8f29d`, 3 commits not in main; 50 main-side commits absent from this older branch | Preserve for later qualification; do not overwrite current docs or switch the dirty tree to it |
 | Other local branches / actual remote tips | All already ancestors of main | Their old names do not represent missing implementation; do not redo them |
-| Committed work not on any origin ref | **0** across local branches | This does not mean all work is published: the dirty/untracked files below are not committed |
+| Local MVP work absent from origin | `8de723d` and accompanying ledger commit on the handoff branch | Two local commits after this ledger is committed; no push/merge |
 | Original working tree | Incoming handoff edits, six ENC-003 preparation reports, four `qualification_*` Python modules plus four test modules, and the overview report | Preserve; qualification preparation is useful later, not an MVP blocker or completed model evaluation |
 | Second worktree `.codex/worktrees/3bbf/OneBrain` | Clean detached `798eabf`, already in main | No unique implementation found; untouched, with no cleanup/reuse claim |
 | Stash | 0 entries | No stashed task found |
@@ -88,6 +90,13 @@ was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by mai
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
 ## Historical checkpoints — not current execution instructions
+
+### 2026-10-02 — MVP diff review and local Git closure
+
+- Reviewed and committed tasks 09/20 plus D-044/D-045 coordination as `8de723d`; code matches the previously tested slice. [Task 20 review and limits](tasks/20-INT-KU-OBP-001.md#git-review--2026-10-02).
+- Removed the private saved CID from result docs; 265 index-only file links, KU/vNext validators, focused rustfmt and whitespace PASS. Existing happy-path/build/test evidence reused.
+- ENC-003 preparation reports/scripts/tests/history remain outside the commit and unchanged; ledger/overview now distinguish local commits from main/publication.
+- No push/merge or host action. Next: owner review of the committed MVP and accompanying ledger; integration requires owner direction.
 
 ### 2026-10-01 — INT-KU-OBP-001 local concept complete / Review
 
@@ -623,7 +632,7 @@ task ledger for current state.
 | 6 | `KU-CLI-001` | Merged | `codex/ku-cli-001-workflow` | `KU-API-001` | [Local implementation and tests](outputs/KU_CLI_001_IMPLEMENTATION.md); local merge `3216f1d`, D-027. |
 | 7 | `KU-WEB-001` | Merged | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023; local merge `3216f1d`, D-027. |
 | 8 | `KU-DESK-001` | Merged | `codex/ku-desk-001-workflow` | `KU-WEB-001` | D-043 merge `6449446` on `origin/main`; review branch retained at `bf3edb1`; [Desktop integration evidence](outputs/KU_DESK_001_IMPLEMENTATION.md); Windows default/feature lifecycle 8/10. |
-| 9 | `KU-QA-001` | Review | `codex/ku-enc-003-handoff` @ `689efd5` + uncommitted MVP changes | Available accepted KU CLI/Web/Desktop and shared service; no ENC-003 gate (D-044) | A–D complete local: real Web private save/search/restart without model; 5 observed AI drafts (3 extracted/2 needs-review); focused checks PASS, baseline workspace fmt drift recorded. Not committed/merged. |
+| 9 | `KU-QA-001` | Review | `codex/ku-enc-003-handoff` @ MVP `8de723d` + accompanying ledger commit | Available accepted KU CLI/Web/Desktop and shared service; no ENC-003 gate (D-044) | A–D complete local: real Web private save/search/restart without model; 5 observed AI drafts (3 extracted/2 needs-review); focused checks PASS, baseline workspace fmt drift recorded. Committed locally; not pushed/merged. |
 | 10 | `OBP-PROD-001` | Merged | `codex/obp-prod-001-product-contract` | `KU-CON-001` | [Contract proposal and tests](outputs/OBP_PROD_001_CONTRACT.md); accepted under D-025; local merge `3216f1d`, D-027. |
 | 11 | `OBP-PROD-002` | Merged | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests; no activation; local merge `3216f1d`, D-027. |
 | 12 | `OBP-PROD-003` | Merged | `codex/obp-prod-003-discovery` | `OBP-PROD-002` local evidence, D-026 | [Discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md); 234 node unit + 22 integration tests; local merge `3216f1d`, D-027. |
@@ -634,7 +643,7 @@ task ledger for current state.
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
 | 19 | `OBP-MIG-001` | Merged | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | D-042 merge `0604b55`; retained implementation `1d649ce`; [migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
-| 20 | `INT-KU-OBP-001` | Review | `codex/ku-enc-003-handoff`, `689efd5` + retained task-09 work; uncommitted | Working KU-QA-001 MVP slice and accepted OBP-QA-001; D-044/D-045 experimental public boundary | [Task 20 A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01): real loopback share/receiver/restart/retry PASS; instructions/backlog updated; source private, transport-only provenance. |
+| 20 | `INT-KU-OBP-001` | Review | `codex/ku-enc-003-handoff` @ MVP `8de723d` + accompanying ledger commit | Working KU-QA-001 MVP slice and accepted OBP-QA-001; D-044/D-045 experimental public boundary | [Task 20 A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01): real loopback share/receiver/restart/retry PASS; instructions/backlog updated; source private, transport-only provenance; committed locally, not pushed/merged. |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Deferred | Retained `codex/ku-enc-003-model-qualification` at `4a8f29d`; newer preparation local on handoff branch | KU-ENC-002; formal qualification inputs when resumed | D-044 removes this from MVP critical path. 200-source export and 85-test preparation retained; full harness/reviewer/run lock unfinished; model unqualified. |

@@ -1,6 +1,6 @@
 # Danh sách task và trạng thái OneBrain
 
-**Cập nhật: 01/10/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
+**Cập nhật: 02/10/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
 
 Đây là bảng xem nhanh ngay trong task index có sẵn, tổng hợp từ
 [PROGRESS](../PROGRESS.md). PROGRESS vẫn là sổ trạng thái chính;
@@ -19,7 +19,7 @@ thái, cập nhật PROGRESS trước rồi đồng bộ bảng này; không t�
 
 **20/24 task đã merge (83,3%)**; nếu chỉ tính 22 task không hoãn thì là **90,9%**.
 Đây là tỷ lệ đếm task của đợt này, không phải tỷ lệ toàn bộ dự án hay khối lượng
-còn lại. Task 09 và task 20 đã hoàn tất A–D local / Review, chưa commit/merge.
+còn lại. Task 09 và task 20 đã hoàn tất A–D local / Review, đã commit local `8de723d` và ledger đi kèm; chưa push/merge.
 “Đã merge” nghĩa là hoàn tất phạm vi đã chấp thuận, không phải mọi platform/model
 đã đủ điều kiện production. Chuẩn bị qualification local vẫn được giữ dù task hoãn.
 
@@ -95,16 +95,16 @@ Chi tiết và backlog được giữ trong MASTER_PLAN và kế hoạch gốc t
 
 ## Công việc chưa vào main / chưa push
 
-Kiểm tra local và `git fetch origin` ngày 30/09/2026 cho thấy:
+Kiểm tra local và fresh `git fetch origin` ngày 02/10/2026 cho thấy:
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
 | Main / origin-main | Baseline `689efd5` | Chứa 20 task Merged và code nền semantic v2 |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
-| Cây làm việc `codex/ku-enc-003-handoff` | Chưa commit: plan/handoff và ENC preparation được giữ; task 09 helper/nhãn Web và task 20 share module/peer helper/hướng dẫn | Tính là công việc local đã có; không tính đã merge/publish |
-| Commit ở nhánh local chưa có trên bất kỳ ref origin nào | 0 | Không đồng nghĩa mọi thay đổi đã push: file chưa commit vẫn nằm local |
+| Nhánh `codex/ku-enc-003-handoff` | MVP `8de723d` + commit ledger đi kèm; còn 17 dirty/untracked paths chỉ chứa preparation/history/overview được giữ | Task 09/20 đã commit local / Review; chưa merge/publish |
+| Commit MVP chưa có trên origin | 2: MVP `8de723d` và commit ledger đi kèm | Chưa push; không cộng vào số task Merged |
 | Worktree phụ `3bbf/OneBrain` | Sạch, detached `798eabf`, đã nằm trong main | Không thấy implementation riêng cần mang về |
 
 Task 20 đã chạy trao đổi/restart thật trên Windows loopback theo D-045; task 09
-được tái dùng đúng scope. Hai task đang Review local, chưa commit/merge. Không có
+được tái dùng đúng scope. Hai task đang Review local, đã commit local `8de723d` và ledger đi kèm; chưa push/merge. Không có
 blocker acceptance local; Registry/setup và share product UX tiếp tục ở backlog.

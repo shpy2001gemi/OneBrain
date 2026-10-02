@@ -292,3 +292,20 @@ saved access and idempotent intent identity; the actual helper/API run covers
 separate confirmation, durable delivery, receiver read and both-process restart.
 Task 09's passing local Web/save/restart evidence was reused, not resampled.
 Whole-workspace formatting/native/platform qualification was not rerun.
+
+### Git review — 2026-10-02
+
+MVP commit `8de723d` on `codex/ku-enc-003-handoff` contains the task-09 source
+helper/Web label, shared Public KU module, peer helper/public read port and
+MVP run/coordination documents. Review made no runtime change. The private saved
+CID was removed from result documentation; local preparation reports are explicit
+local pointers. All 265 local Markdown file links in the staged snapshot resolve
+against the index, with no dependency on untracked qualification artifacts.
+KU product/registration and vNext validators, focused new-file rustfmt and
+whitespace pass. The prior scoped build/tests and actual delivery/restart result
+above are reused. The accompanying ledger commit updates task/Git state only.
+
+ENC-003 preparation/history, reports, scripts/tests, local overview and the older
+qualification branch remain retained outside this slice. No push/merge or host
+change was performed. Owner direction is needed for integration/publication under
+D-010/D-044; local Review does not grant main acceptance or broader qualification.
