@@ -52,6 +52,17 @@ That is the future OneBrain seeks to help create: **every brain is an autonomous
 
 ## Project status
 
+**Current priority (2026-09-28): a runnable open-source concept MVP.** Follow the
+[single MVP plan](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
+[current work including unmerged branches](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md)
+and [contributor entry](CONTRIBUTING.md). Model/production qualification is later
+work, not a prerequisite for the experimental demonstration. The table below is
+the dated September baseline.
+
+Try the [manual local-to-peer concept](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
+private save → exact Public preview → explicit confirmation → receiver inspection.
+It currently requires operator Registry/host setup and supports a narrow manual form.
+
 Snapshot: **2026-09-05**, audited at `main` commit `c65f1739fcd0`.
 
 | Workstream | Current status | Main open boundary |

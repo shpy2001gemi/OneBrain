@@ -51,6 +51,16 @@ Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở
 
 ## Trạng thái dự án
 
+**Ưu tiên hiện hành (28/09/2026): MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
+Theo [kế hoạch duy nhất](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
+[sổ công việc gồm cả nhánh chưa merge](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md)
+và [hướng dẫn đóng góp](CONTRIBUTING.md). Qualification model/production là việc
+sau MVP, không chặn demo thử nghiệm. Bảng bên dưới là baseline lịch sử tháng 9.
+
+Thử [demo KU local tới node nhận](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
+lưu private → xem preview Public → xác nhận riêng → node nhận đọc cùng CID/bytes.
+Hiện cần tự cấu hình Registry/host và dùng dạng manual hẹp đã hỗ trợ.
+
 Snapshot: **2026-09-05**, audit tại commit `main` `c65f1739fcd0`.
 
 | Luồng công việc | Trạng thái hiện tại | Ranh giới chính còn mở |

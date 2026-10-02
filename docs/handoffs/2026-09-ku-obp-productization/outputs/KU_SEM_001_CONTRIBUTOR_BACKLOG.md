@@ -1,5 +1,10 @@
 # KU-SEM-001 — contributor backlog
 
+D-044 (2026-09-28): this is the existing detailed semantic defect list, linked
+from the single MASTER_PLAN contributor queue. Baseline source is now in main
+through `437dba0` / `3216f1d`; the old local-only description below is historical.
+Remaining defects are not fixed and do not block the scoped concept demonstration.
+
 Owner accepted the current foundation for continued product development on
 2026-09-20 (D-024). These gaps are deferred, not fixed, and do not block unrelated
 CLI/OBP framework work. This file is a local handoff; no public issues were filed.

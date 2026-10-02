@@ -1,5 +1,12 @@
 # Trạng thái dự án OneBrain
 
+> **Định hướng hiện hành — 28/09/2026:** ưu tiên MVP chạy được theo D-044.
+> Xem [kế hoạch duy nhất](handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md)
+> và [sổ task/nhánh hiện tại](handoffs/2026-09-ku-obp-productization/PROGRESS.md).
+> Qualification model được hoãn khỏi đường găng MVP. Snapshot 05/09 bên dưới
+> được giữ làm lịch sử release, không phải thứ tự task hay yêu cầu bằng chứng
+> strict cho lần demo này.
+
 [English](PROJECT_STATUS.md)
 
 > Snapshot: **2026-09-05 (Asia/Saigon)**
@@ -10,7 +17,7 @@
 > Phạm vi: trạng thái repository, nhánh/worktree Git local, các tuyên bố
 > qualification trong source, validator hiện tại và bằng chứng CI gần nhất.
 
-Đây là điểm vào cho tiến độ hiện tại. Specification mô tả hành vi bắt buộc hoặc
+Đây là snapshot lịch sử về tiến độ và release. Specification mô tả hành vi bắt buộc hoặc
 mục tiêu; bản thân specification không phải bằng chứng rằng một đường production
 đã hoàn tất.
 

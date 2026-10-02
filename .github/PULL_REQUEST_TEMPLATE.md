@@ -1,37 +1,26 @@
-## 📝 Description
+## Problem and result
 
-A brief description of the changes in this PR.
+What concrete problem does this solve, and what works after the change?
 
-## 🔗 Related Issue
+## Parent task or issue
 
-Fixes #(issue number)
+Link the existing task/backlog item or issue. Keep substeps in that parent;
+there is no need for a new plan or evidence report for this PR.
 
-## 🔄 Type of Change
+## Validation
 
-- [ ] 🐛 Bug fix (non-breaking change that fixes an issue)
-- [ ] ✨ New feature (non-breaking change that adds functionality)
-- [ ] 💥 Breaking change (change that causes existing functionality to behave differently)
-- [ ] 📖 Documentation (changes to documentation only)
-- [ ] 🔧 Refactor (no functionality change, code improvement only)
-- [ ] ✅ Test (adding or updating tests)
+List the focused commands or manual happy path actually run and their results.
+For documentation-only changes, link/format checks are sufficient. Mention any
+relevant checks that failed or could not run; do not claim full qualification.
 
-## 📸 Screenshots (if applicable)
+## Limits and follow-ups
 
-| Before | After |
-|---|---|
-| | |
+Known limitations and one bounded follow-up, if needed. Include a screenshot
+for visual changes when useful. Link deferred work to the central MVP backlog.
 
-## ✅ Checklist
+## Checklist
 
-- [ ] My code follows the project's coding style
-- [ ] I have performed a self-review of my code
-- [ ] I have added comments for complex logic
-- [ ] I have updated the relevant documentation
-- [ ] My changes produce no new warnings
-- [ ] I have added tests for my changes
-- [ ] All tests (new and existing) pass
-- [ ] I have updated CHANGELOG.md
-
-## 💬 Notes for Reviewers
-
-Any additional information the reviewer should know.
+- [ ] I reviewed the change and kept unrelated work intact.
+- [ ] I checked the affected behavior, or explained why this is documentation-only.
+- [ ] I updated the existing task/run instructions when behavior or setup changed.
+- [ ] No private inputs, API tokens, Vault keys or other secrets are included.

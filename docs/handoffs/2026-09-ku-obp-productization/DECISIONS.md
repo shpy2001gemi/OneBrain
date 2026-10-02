@@ -1,5 +1,69 @@
 # Decisions and claim boundary
 
+## D-045 — Explicit Public KU experiment for task 20
+
+On 2026-10-01 the owner explicitly accepted the proposed boundary in
+[task 20.A](tasks/20-INT-KU-OBP-001.md#a--integration-seam-and-proposed-disclosure-boundary-2026-10-01):
+prepare a new Public object from an authorized saved semantic root, require a
+separate exact confirmation before durable outbound transfer, retain the private
+KU/source, and inspect matching Public bytes/CID with transport-only provenance.
+This is a bounded experiment under D-044. It does not promote the old private
+ObjectCID, disclose its source/provenance journal, grant author/fidelity/adoption/
+Use/reward authority or change model/NAT qualification. No default rollout,
+new Feed event or wire schema is authorized. The task section is the reviewed
+experimental disclosure contract; its implementation state remains in PROGRESS.
+
+## D-044 — Runnable concept MVP first; one plan and one progress ledger
+
+On 2026-09-28 the owner directed updating unfinished work across main, unmerged
+branches and unpublished changes; avoiding fragmented subtask documents; and
+shipping a working open-source MVP to test whether the idea is feasible. A
+single maintainer should establish the shared architecture and a useful example
+that contributors can extend. Exhaustive tests and formal evidence collection
+must not prevent that first demonstration.
+
+This decision supersedes the execution priority and MVP acceptance requirements
+in D-021, D-043, the previous MASTER_PLAN and tasks 09/20/23 where they made
+KU-ENC-003 strict qualification a prerequisite of the concept MVP:
+
+- Move KU-ENC-003 to **Deferred**, retaining its real technical/input gaps and
+  `model_qualified=false`. Reviewer provenance, blind holdout/run locks, multiple
+  model families, statistical grading and resource qualification remain criteria
+  for future qualification claims, not prerequisites for an experimental demo.
+- Start with KU-QA-001's small runnable local journey, then INT-KU-OBP-001's
+  two-node demonstration and contributor entry path. Reuse the accepted D-023
+  experimental model lane with a few public/developer-owned examples and honest
+  draft/needs-review states. Do not require a second model, independent reviewer,
+  physical lab or signed evidence bundle to complete these MVP tasks.
+- A manual/resolved draft remains the reliable save path. Demonstrate model
+  proposals separately where canonical lowering is unavailable; do not present
+  an unassessed draft as a validated/saved KU. Fix only concrete demo blockers.
+- Use one primary host/surface and a small focused smoke set. Reuse existing
+  component tests for other surfaces; defer exhaustive platform/NAT/soak/fault
+  matrices. Basic preservation of saved data, explicit save/share and accurate
+  success/error states remain part of a useful demo.
+- MASTER_PLAN owns scope, dependency order and the contributor backlog;
+  PROGRESS owns current state, branch/worktree inventory and results. Existing
+  task files own bounded acceptance. README/NEXT_CONVERSATION are short pointers.
+  Put substeps inside their parent task; do not create a new plan/report/prompt
+  file for each attempt, branch or conversation. Reuse an existing task output
+  only when results cannot fit a short ledger entry.
+- D-010's mandatory branch-per-task, clean-main start, push-before-progress and
+  merge-before-dependent-work rules are relaxed for local MVP implementation.
+  Reuse suitable work in place and record its exact base/dependency. Preserve
+  dirty/unmerged work. A branch is an implementation location, not a new roadmap.
+  Actual commit/publication/merge state must still be recorded accurately; this
+  planning request does not itself publish, merge, delete branches or alter hosts.
+
+No protocol/SEM/authority or runtime policy is changed by this decision. Existing
+source consent, private data boundaries and node-owned services stay in use.
+Qualification flags remain honest and networking remains opt-in. Mobile work is
+deferred from this desktop/local MVP and retains its separate build contract.
+Do not ask the owner to approve this same prioritization again.
+
+Earlier dated decisions below retain their historical scope. Current execution
+is governed by this decision and the updated MASTER_PLAN/task acceptance.
+
 ## D-043 — Accept and merge KU-DESK-001
 
 On 2026-09-24 the owner approved the reviewed Desktop tip `bf3edb1` and
@@ -293,6 +357,10 @@ Windows/macOS outbound-first qualification, mobile and browser lanes remain
 separate decisions.
 
 ## D-010 — Merge and branch policy for this workstream
+
+D-044 supersedes the mandatory branch/push/merge sequencing below for local MVP
+work. Actual merge/publication and branch deletion still require their own scope.
+The original policy is retained here as historical context.
 
 Each task uses its declared `codex/` branch. Completion means the branch is
 validated and pushed with an updated handoff ledger. Merge and local branch

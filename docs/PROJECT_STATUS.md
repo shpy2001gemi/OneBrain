@@ -1,5 +1,12 @@
 # OneBrain Project Status
 
+> **Active direction — 2026-09-28:** runnable concept MVP first, under D-044.
+> Use the [single delivery plan](handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md)
+> and [current task/branch ledger](handoffs/2026-09-ku-obp-productization/PROGRESS.md).
+> Formal model qualification is deferred from the MVP critical path. The dated
+> September 5 snapshot below is retained as release/history context, not current
+> task sequencing or a request for strict release evidence.
+
 [Tiếng Việt](PROJECT_STATUS.vi.md)
 
 > Snapshot: **2026-09-05 (Asia/Saigon)**
@@ -10,7 +17,7 @@
 > Scope: repository state, local Git branches/worktrees, source-controlled
 > qualification claims, current validators, and recent CI evidence.
 
-This is the current progress entry point. Specifications describe required or
+This is a historical release/progress snapshot. Specifications describe required or
 target behavior; they are not, by themselves, proof that a production path is
 complete.
 
