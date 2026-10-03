@@ -51,11 +51,11 @@ fake Registry, invented governance, source reference or production fixture.
 
 Prepare these actual host inputs outside the repository:
 
-1. A complete activated signed Registry release directory and its independently
-   trusted public key, using the existing Registry activation toolchain. The
+1. A Registry root containing signed `releases/` and activation `state/`, and its
+   independently trusted public key, using the existing Registry activation toolchain. The
    host uses `ConceptRegistryGenerationManager::open` to verify it. An unsigned
    `concepts.obr` or test fixture is not a substitute.
-2. One to 64 existing canonical **LOCAL_ONLY Text SourceArtifacts** that the
+2. For manual creation, one to 64 canonical **LOCAL_ONLY Text SourceArtifacts** that the
    operator admits for this local principal. These are binary canonical object
    files from the trusted capture/custody producer, including actual governance
    references. They are not raw `.txt`, JSON views or Base64 text files. The
@@ -64,6 +64,8 @@ Prepare these actual host inputs outside the repository:
    responsibilities. There is no browser raw-source upload or capture-policy UI.
    The explicit developer provisioning command below can supply a canonical
    source and real local consent records for the manual demo without a model.
+   For saved inspection without manual creation, `sources` can be omitted or
+   empty; see [manual source setup](#provision-a-developer-owned-manual-source).
 3. A stable 32-byte **binary** Vault key file and an API token file with at least
    32 random ASCII letters/digits (hyphen/underscore also accepted). Supply these
    through the operator's local secret-management process; retain the same Vault
@@ -107,7 +109,107 @@ API port, rebuild with `VITE_API_BASE` pointing at that loopback port; the
 existing Web client otherwise defaults to port 4280. This task does not deploy
 a website or configure `onebrain.live`.
 
+### Resolve config or API-token setup failures
+
+The host reports these failures before creating a dataset or starting the API:
+
+| Diagnostic | Correction |
+|---|---|
+| `ku_host_config_unreadable` | Check the config path passed on the command line and local read permissions. Relative config/input paths resolve against the launch working directory. |
+| `ku_host_config_too_large` | Keep the JSON config at most 65536 bytes. Store token, key and canonical source bytes in the referenced private files. |
+| `ku_host_config_invalid` | Use complete UTF-8 JSON. The message gives a line/column and either syntax guidance or the required field/type checklist. Use forward slashes or escaped backslashes in Windows paths; unknown fields are rejected. Compare the config with the example above, including nested `sources`/`ollama` fields if present. |
+| `ku_api_token_unreadable` | Set `api_token_file` to an existing locally readable private token file. |
+| `ku_api_token_too_large` | Keep that file at most 1024 bytes, including surrounding whitespace. Supply plain token text rather than JSON, a Vault key or a source file. |
+| `ku_api_token_invalid` | Use a UTF-8 token with 32..1024 ASCII letters, digits, hyphen or underscore after trimming surrounding whitespace. Quotes, JSON and interior whitespace are invalid. |
+
+Config/token diagnostics omit input values, private paths and token bytes. Inspect
+the indicated config position locally; do not paste custody contents into reports.
+Correct the setup and retry with the same `data_dir`, Vault key and source files.
+The host does not generate or replace secrets on failure. Secret provisioning
+remains a contributor follow-up.
+
+### Resolve Vault-key setup failures
+
+These failures also stop before Registry or dataset initialization:
+
+| Diagnostic | Correction |
+|---|---|
+| `ku_vault_key_unreadable` | Set `vault_key_file` to an existing locally readable private key file. Relative paths resolve against the launch working directory. For an existing dataset, restore access to its original key. |
+| `ku_vault_key_too_large` | The file exceeds 32 bytes. Supply the original 32-byte binary key; hex, Base64, JSON or token text are not decoded. Do not truncate the file to make it fit. |
+| `ku_vault_key_invalid` | The file contains fewer than 32 bytes. Restore the original binary key through your local secret-management process; do not pad or generate a replacement key. |
+
+Retain the same `data_dir` and original Vault key when retrying. No whitespace is
+trimmed from key bytes, and exactly 32 bytes retains the existing acceptance
+rule; this format check does not verify that a key belongs to an existing dataset.
+Diagnostics omit private paths and key contents. This example adds guidance to
+the shared helper's fatal errors; Desktop codes and read-only fallback stay intact.
+
+### Resolve source-input setup failures
+
+With a valid Registry and Vault-key file, these warnings mean the shared helper
+installed its existing read-only fallback. The host can start after successful
+node/runtime initialization, but source editing/encoding is unavailable for that
+launch. One failed source disables the whole input catalog; the host does not
+silently admit a partial list.
+
+| Diagnostic | Correction |
+|---|---|
+| `ku_host_input_unavailable` | Check every `sources[].canonical_file` and local read permissions. Relative paths resolve against the launch working directory. |
+| `ku_host_input_exceeds_limit` | Supply the intended complete canonical source within 65536 bytes. Do not truncate or alter canonical bytes to fit. |
+| `ku_source_admission_failed` | Check `sources[].canonical_file` and `sources[].label`: each file must be a valid binary canonical **LOCAL_ONLY Text SourceArtifact**, each label 1..128 UTF-8 bytes, and source object IDs distinct. Raw text, JSON, Base64, KU objects and duplicate source IDs are not admitted. |
+| `ku_host_source_limit` | Explicitly choose at most 64 operator-admitted source entries. |
+
+Restore the intended source/custody files locally, or use the existing explicit
+[manual provisioning command](#provision-a-developer-owned-manual-source) for text
+you are permitted to capture. Keep the same `data_dir` and original Vault key,
+then restart deliberately. Do not invent governance or treat file decoding as
+source authorization. Diagnostics name config fields without displaying source
+paths, labels or bytes; shared helper/Desktop codes remain unchanged.
+
+Successful startup is not a saved-access check. Authenticate and use **Search / list**
+and **Inspect** to verify your existing saved KU. With the original dataset/key,
+the fallback retains saved reads; source-dependent preparation/save/recovery can
+still fail. Do not replay encoding or save/share automatically when retrying.
+The focused synthetic test verifies exact saved bytes and the committed receipt
+after restart with missing, invalid and oversized sources or more than 64 entries,
+plus wrong-token denial.
+It does not verify arbitrary operator datasets or key ownership.
+
+### Resolve a Registry startup failure
+
+`ku_registry_unavailable: local KU host cannot start.` means the host could not
+load and verify an activated signed Registry generation. Check these operator
+config fields:
+
+- `registry_root`: the Registry root containing `releases/` and activation
+  `state/`, rather than an individual release directory or an unsigned OBR file.
+- `registry_public_key`: the independently trusted signer public key, encoded
+  as 64 lowercase hexadecimal characters. Keep that trust source independent
+  of the downloaded package.
+
+Use the existing [Registry operator commands](../../../specs/vnext/CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md#4-operator-commands)
+to verify the package and inspect or activate the intended trusted release.
+This failure exits before creating the dataset or starting the API. Retry with
+the same `data_dir`, Vault key and admitted source files. This example requires
+a verified Registry even for saved reads; with a valid Registry, the existing
+unavailable-model path can still serve saved private KU. Registry provisioning
+remains an operator prerequisite.
+
 ### Provision a developer-owned manual source
+
+Omitting `sources` or setting `"sources": []` is valid. With a verified Registry
+and original Vault key, the host returns a successful empty manual catalog,
+rather than a source-admission failure. The Web manual editor explains the
+missing setup, links here and disables its form until a source is admitted.
+Use **Search / list** and **Inspect** to check saved artifacts independently.
+Experimental AI intake remains subject to its own model availability and
+explicit source/retention consent; it does not require a manual catalog entry.
+
+Follow the steps below deliberately, then restart the host and select **Refresh
+host status** in Web. The catalog is frozen until host restart. Keep the same
+dataset and original key. Provisioning/refresh does not replay encoding, save
+or share; old source-dependent preparations may still require their original
+admitted source. An empty catalog is not a promise that those operations work.
 
 Use an existing private directory outside Git. Write a short UTF-8 text file
 you own or are permitted to capture and an operator request, for example:

@@ -528,7 +528,23 @@ export function KuWorkflowPage({
           does not interpret arbitrary text or assess truth.
         </p>
         {editorError && <p>{editorError}</p>}
-        <fieldset disabled={busy || lockedDraft}>
+        {catalog?.sources.length === 0 && (
+          <p role="status">
+            No manual sources available. Ask the local host operator to add a
+            source you own or are permitted to use, then restart the host and
+            refresh this page. Follow the{" "}
+            <a
+              href="https://github.com/shpy2001gemi/OneBrain/blob/main/docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#provision-a-developer-owned-manual-source"
+              target="_blank"
+              rel="noreferrer"
+            >
+              manual source setup guide
+            </a>
+            . Use Search / list below to check saved artifacts. Source setup
+            does not save or share a KU.
+          </p>
+        )}
+        <fieldset disabled={busy || lockedDraft || catalog?.sources.length === 0}>
           <legend>Manual statement</legend>
           <label htmlFor="ku-source">Admitted source</label>
           <select

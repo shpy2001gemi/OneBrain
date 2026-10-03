@@ -323,9 +323,140 @@ acceptance. The earlier Git-review section records its historical local state.
 
 ## Contributor follow-up — first-run experience
 
-Not started; this is the existing first-run backlog item in MASTER_PLAN, outside
-the completed A–D operator demo. Inspect `ku_local_web.rs` Registry/config startup
-errors and the linked manual-host instructions to identify one concrete onboarding
-fix. Preserve Registry trust and private source/key custody. Product API/Web share
+Registry, config/token, Vault-key/source-input diagnostics and empty-catalog guidance: committed for local review on `codex/ku-first-run-diagnostics`, based on main `49e529f`;
+this is the existing first-run backlog item in MASTER_PLAN, outside the completed
+A–D operator demo. Its integration state is separate from D-046's accepted MVP.
+
+- [x] Fix one concrete Registry startup failure: the shared custody helper returns
+  `ku_registry_unavailable` with a read-only runtime, but this example's Required
+  Registry node cannot start. Reject that result before dataset creation or node
+  initialization, with a safe message naming the config fields, signed activation
+  prerequisite, existing operator guide and data/key preservation on retry.
+  Emit the retained-read warning only after the node's KU runtime is installed.
+- [x] Extend the existing [manual-host instructions](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-a-registry-startup-failure)
+  with the correct Registry root layout, independent signer trust and retry steps.
+- [x] Verify the focused example regression and actual executable's failure path.
+- [x] Reproduce missing `api_token_file` returning only an OS error. Add bounded
+  config/token loading diagnostics with field/path/format guidance, safe JSON
+  line/column and no operator values. Retain config schema, token acceptance,
+  file size limits and rejection before dataset/node initialization.
+- [x] Extend the [operator guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-config-or-api-token-setup-failures)
+  and verify invalid config/token retries preserve existing custody inputs.
+- [x] Reproduce Vault key read/length errors in `prepare_ku_runtime`. Add example-only
+  guidance for unreadable, too-large and short key files, without rereading inputs or
+  changing shared helper/Desktop codes, exact 32-byte acceptance or read-only fallback.
+- [x] Extend the [Vault-key retry instructions](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-vault-key-setup-failures)
+  and check failure before dataset/Registry initialization, input suppression and
+  unchanged saved/key/token bytes on retry.
+- [x] Reproduce missing/invalid/oversized `sources[].canonical_file` with the
+  existing synthetic signed activated Registry builder. Add example-only field,
+  canonical format/label/duplicate-ID and retry guidance, including the 64-entry
+  limit. Preserve the shared read-only fallback and reject partial admission.
+- [x] Extend the [source-input operator guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-source-input-setup-failures).
+  Verify exact saved private bytes/receipt through the authenticated API after
+  restart under all four fallback codes; deny wrong-token reads and editor access.
+  Replace the blanket saved-read startup claim with conditional access guidance.
+- [x] Reproduce omitted/empty `sources` with synthetic signed activated custody:
+  both return a successful empty catalog without a fallback warning. Add Web
+  guidance linking the existing explicit operator provisioning steps and disable
+  only the empty manual form; retain saved inspection and separate AI consent.
+  Extend the same regression to check exact private bytes/receipt after restart.
+- [x] Review the cumulative five first-run slices against the parent scope and
+  isolate code/guide/checklist/ledger changes for integration, preserving incoming
+  ENC-003 preparation. Registry/secret provisioning and normal host composition
+  remain broader contributor work; do not imply fresh-clone self-provisioning.
+
+Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
 entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
+
+Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
+-p onebrain-api --example ku_local_web` 1/1 PASS; `cargo build --locked --manifest-path
+src/Cargo.toml -p onebrain-api --example ku_local_web_staging` PASS. The actual staging
+executable exited 1 for missing and unsigned/unactivated Registry in an isolated
+synthetic directory: no ready/read claim, no new dataset, exact saved/key/token/
+Registry bytes retained on retry, no private values in diagnostics. KU/vNext
+validators, scoped rustfmt and whitespace pass. The prior valid-host/save/share/
+restart result is reused; no real host, private input, model, native or platform
+campaign was run. This change is uncommitted/unpublished; broader first-run setup
+remains open. Existing duplicate-example-target and ku-net dead-code warnings remain.
+
+Config/token checkpoint, Windows 2026-10-02: the same example tests now pass 3/3,
+including the retained Registry regression; staging build PASS. Thirteen actual
+executable cases passed in a separate synthetic directory: missing/oversized/
+malformed config, missing field, unknown field, wrong type, missing token with
+new/existing dataset, short/non-UTF-8/quoted/oversized token, and a valid trimmed
+token reaching the Registry check. All exited 1 without ready/read claims or
+input-value disclosure; exact existing files were unchanged and no new dataset
+was created on early failures. Tests also retain optional config defaults and
+the 65536-byte config / 1024-byte token limits. KU product/registration and vNext
+validators, scoped rustfmt and whitespace PASS. Reuse the prior valid-host/save/
+share/restart evidence; no real custody files or live hosts were opened. Both
+diagnostic slices remain local/uncommitted/unpublished; broader setup stays open.
+
+Vault-key checkpoint, Windows 2026-10-02: missing/short/long keys reproduced the
+shared helper's generic read/limit/invalid codes. The example now identifies
+`vault_key_file`, exact binary length and recovery of the original key with the
+same dataset. Example tests PASS 4/4, staging build PASS; fourteen actual executable
+cases PASS for new/existing datasets, unreadable directory, empty/31/33-byte/text/
+hex keys, and exact 32-byte non-UTF-8/whitespace acceptance reaching Registry checks.
+All exited 1 without ready/read claims or private-value disclosure; file/directory
+snapshots remained identical. No file is trimmed, padded, truncated or regenerated;
+format acceptance does not establish that a key belongs to the saved dataset.
+KU product/registration and vNext validators, scoped rustfmt and whitespace PASS.
+Reuse prior valid-host/save/share/restart evidence; shared custody code, real inputs
+and live hosts untouched. All three diagnostic slices remain local/uncommitted;
+broader first-run provisioning/source diagnostics remain open.
+
+Source-input checkpoint, Windows 2026-10-03: missing/invalid/oversized canonical
+source files reproduced the helper's generic fallback codes. The opt-in example
+now gives source-field/format/retry guidance for these and the 64-entry limit,
+without rereading inputs or changing shared admission/Desktop behavior. Example
+tests PASS 5/5; staging build PASS. The new regression uses the existing synthetic
+signed activated Registry, actually saves one manual private KU, then restarts
+the node/API under each of the four fallback codes. Authorized Get preserves
+exact canonical bytes and LOCAL_ONLY disclosure; List retains one object and
+Reconcile the original committed receipt. Wrong-token Get is denied, Catalog
+fails even with a usable source before the failed entry, and source/key bytes
+remain unchanged. This tests the actual router/service/storage, not a live browser
+or external executable campaign. KU product/registration and vNext validators,
+scoped rustfmt and whitespace PASS. Prior happy-path/share and executable
+Registry/config/token/key checks are reused; private operator inputs/live hosts
+were untouched. Four diagnostics slices remain local/uncommitted/unpublished;
+empty-catalog onboarding and broader provisioning/composition remain open.
+
+Empty-catalog checkpoint, Windows 2026-10-03: omitted `sources` and `sources: []`
+with the synthetic signed activated Registry both return a successful empty
+catalog, no runtime fallback. Web links the existing explicit operator setup,
+disables only the empty manual form and restores it on an admitted-catalog refresh.
+The same Rust regression PASS 5/5 now checks exact private bytes/LOCAL_ONLY and
+original committed receipt after both restarts; wrong-token catalog access is
+denied. Web component tests PASS 16/16 cover saved inspection, separate AI consent,
+empty-to-admitted refresh and no automatic encoding/save/share. Web/staging builds,
+KU product/registration, vNext, scoped rustfmt and whitespace PASS. Prior executable
+and share/demo checks are reused; no real custody/host or browser/model campaign.
+All five first-run slices remain local/uncommitted/unpublished, retained preparation
+unchanged; integration review and broader provisioning/composition remain open.
+
+### Cumulative first-run review — 2026-10-03
+
+Reviewed the five slices against `49e529f` and the existing task-20 backlog.
+Corrected Registry guidance to name the root containing `releases/` and activation
+`state/`, and clarified that sources are required for manual creation but optional
+for saved inspection. The example keeps the existing config/token/key format
+acceptance, shared custody/admission, authenticated reads and explicit save/share.
+The Web change gates only the empty manual form; AI retains its separate consent.
+
+The review scope is six code/guide/task/overview paths plus a separate progress
+ledger update. Incoming task-23 preparation, its retained history and all 15
+untracked paths are excluded from the commits and retained in the working tree.
+Actual commit IDs and integration state are in [PROGRESS](../PROGRESS.md).
+Local commits are Review, not main acceptance; no push/merge is performed.
+All 45 local Markdown links / 11 anchors in the three staged documents resolve
+against the index; the Web guide URL also names an existing indexed file/anchor.
+
+Focused recheck after the wording correction: example 5/5 and Web workflow 16/16
+PASS; KU product/registration, vNext, scoped rustfmt and whitespace PASS.
+Prior Web/staging builds, executable failure cases and real private-save/share/
+restart results are reused. No private operator input, live host or model was
+opened. Registry/secret provisioning and normal host composition remain open.
