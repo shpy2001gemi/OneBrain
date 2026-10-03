@@ -82,17 +82,32 @@ fn provision(request: Request) -> Result<(), Box<dyn std::error::Error>> {
     // The caller chooses an existing private parent; never replace prior custody.
     std::fs::create_dir(&request.output_dir).map_err(|error| match error.kind() {
         std::io::ErrorKind::AlreadyExists => {
-            "ku_manual_output_exists: output_dir already exists. Existing custody is never overwritten. Retain its governance.json and source.canonical; explicitly admit the existing source if intended, or choose a new directory name under an existing private parent outside Git. Do not delete prior custody to retry."
+            "ku_manual_output_exists: output_dir already exists. Existing custody is never overwritten. Retain and inspect its governance.json and source.canonical; admit an intended source only from a complete successful provisioning, or choose a new directory name under an existing private parent outside Git. Do not delete prior custody to retry."
         }
         _ => {
             "ku_manual_output_unavailable: cannot create output_dir. Choose a new directory under an existing private parent outside Git and check local write permissions; relative paths resolve against the launch working directory. The command does not create parent directories or replace existing custody."
         }
     })?;
-    std::fs::write(request.output_dir.join("governance.json"), records)?;
-    std::fs::write(request.output_dir.join("source.canonical"), bytes)?;
+    write_custody(&request.output_dir, &records, &bytes)?;
     println!(
         "Private manual source provisioned; explicitly configure host admission. No KU saved."
     );
+    Ok(())
+}
+
+fn write_custody(
+    output_dir: &std::path::Path,
+    records: &[u8],
+    bytes: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Fixed diagnostics omit OS detail and paths. A failed write may leave partial
+    // bytes; retain the directory and never treat file presence as success.
+    std::fs::write(output_dir.join("governance.json"), records).map_err(|_| {
+        "ku_manual_governance_write_failed: cannot finish writing governance.json after output_dir creation. The directory may be incomplete; source.canonical was not written by this attempt. Retain the entire directory under private custody and inspect it locally. Do not admit this output to a host. Correct local filesystem availability/write permissions and explicitly retry with a new output_dir under an existing private parent outside Git. Do not delete prior custody to retry. Writes are not transactional; no KU saved."
+    })?;
+    std::fs::write(output_dir.join("source.canonical"), bytes).map_err(|_| {
+        "ku_manual_source_write_failed: cannot finish writing source.canonical after governance.json was written. The directory may be incomplete, even if both files exist. Retain the entire directory under private custody and inspect it locally. Do not admit this output to a host. Correct local filesystem availability/write permissions and explicitly retry with a new output_dir under an existing private parent outside Git. Do not delete prior custody to retry. Writes are not transactional; no KU saved."
+    })?;
     Ok(())
 }
 
@@ -279,6 +294,89 @@ mod tests {
         provision(request()).unwrap();
         assert!(output_dir.join("source.canonical").is_file());
         assert!(output_dir.join("governance.json").is_file());
+    }
+
+    #[test]
+    fn later_write_failure_retains_partial_custody_and_requires_new_destination() {
+        for blocked_file in ["governance.json", "source.canonical"] {
+            let dir = tempfile::tempdir().unwrap();
+            let text_file = dir.path().join("PRIVATE_TEXT_PATH_SENTINEL.txt");
+            let output_dir = dir.path().join("PRIVATE_OUTPUT_PATH_SENTINEL");
+            let raw = b"PRIVATE_SOURCE_SENTINEL\r\n";
+            std::fs::write(&text_file, raw).unwrap();
+            // Synthetic obstruction after create_dir: both calls exercise real FS writes.
+            std::fs::create_dir(&output_dir).unwrap();
+            let obstruction = output_dir.join(blocked_file);
+            std::fs::create_dir(&obstruction).unwrap();
+            std::fs::write(obstruction.join("keep.txt"), b"retained custody").unwrap();
+            let records = b"synthetic governance";
+            let error = write_custody(&output_dir, records, b"synthetic canonical")
+                .unwrap_err()
+                .to_string();
+            let code = if blocked_file == "governance.json" {
+                "ku_manual_governance_write_failed:"
+            } else {
+                "ku_manual_source_write_failed:"
+            };
+            assert!(error.starts_with(code));
+            assert!(!error.contains("PRIVATE_"));
+            assert!(!error.contains("synthetic governance"));
+            assert!(!error.contains("synthetic canonical"));
+            assert!(error.contains("Do not admit this output"));
+            assert!(error.contains("new output_dir"));
+            assert!(output_dir.is_dir());
+            assert_eq!(
+                std::fs::read(obstruction.join("keep.txt")).unwrap(),
+                b"retained custody"
+            );
+            if blocked_file == "governance.json" {
+                assert!(!output_dir.join("source.canonical").exists());
+            } else {
+                assert_eq!(
+                    std::fs::read(output_dir.join("governance.json")).unwrap(),
+                    records
+                );
+            }
+            let request = |output_dir| Request {
+                operator: "PRIVATE_OPERATOR_SENTINEL".into(),
+                text_file: text_file.clone(),
+                output_dir,
+                consent_local_private: true,
+            };
+            assert!(provision(request(output_dir.clone()))
+                .unwrap_err()
+                .to_string()
+                .starts_with("ku_manual_output_exists:"));
+            assert_eq!(
+                std::fs::read(obstruction.join("keep.txt")).unwrap(),
+                b"retained custody"
+            );
+            if blocked_file == "source.canonical" {
+                assert_eq!(
+                    std::fs::read(output_dir.join("governance.json")).unwrap(),
+                    records
+                );
+            }
+            let corrected = dir.path().join("new-custody");
+            provision(request(corrected.clone())).unwrap();
+            let object = decode_knowledge_object(
+                &std::fs::read(corrected.join("source.canonical")).unwrap(),
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(SOURCE_ARTIFACT_KIND, 1)],
+                &[],
+            )
+            .unwrap();
+            assert_eq!(object.disclosure(), DisclosureClass::LocalOnly);
+            assert_eq!(
+                SourceArtifact::from_validated(&object).unwrap().raw_bytes,
+                raw
+            );
+            assert_eq!(std::fs::read(&text_file).unwrap(), raw);
+            assert_eq!(
+                std::fs::read(obstruction.join("keep.txt")).unwrap(),
+                b"retained custody"
+            );
+        }
     }
 
     #[test]

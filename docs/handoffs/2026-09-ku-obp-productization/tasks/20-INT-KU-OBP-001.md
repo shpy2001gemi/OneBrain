@@ -390,6 +390,14 @@ A–D operator demo. Its integration state is separate from D-046's accepted MVP
   code/guide/checklist/overview and isolate the local commits. Exclude task 23,
   all 15 untracked paths and its 108-line preparation history; retain their bytes.
   D-047 does not authorize merge/publication of these additional follow-ups.
+- [x] Reproduce real filesystem failures at both writes after `create_dir` in
+  isolated synthetic custody. Add bounded governance/source write diagnostics;
+  retain partial output, write order and refusal to reuse an existing directory.
+- [x] Extend the same [retry guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-manual-provisioning-sourceoutput-failures)
+  to require a new destination after a failed write and no host admission of the
+  incomplete output. Check retained partial custody, deliberate retry, exact
+  LOCAL_ONLY source bytes and no private diagnostic values. Local integration
+  state is in PROGRESS; this follow-up is outside D-047's merged slice.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -575,3 +583,34 @@ Markdown links/anchors are checked before committing, without relying on exclude
 untracked preparation artifacts. No private operator inputs, host, Registry or
 model were opened. Later write failure handling, broader Registry/secret
 provisioning, normal host composition and product share projection remain open.
+
+### Manual provisioning later-write diagnostics — 2026-10-03
+
+On local base `303b07f`, the example's two writes were extracted unchanged into
+`write_custody`. A synthetic directory obstruction at each target reproduced
+the real filesystem error after output directory creation (focused regression
+1/1 PASS before diagnostics). A governance failure did not write the source;
+a source failure retained the already-written governance. This directly tests
+the same writer used by provisioning, without relying on a timed race or real
+operator custody.
+
+The example now reports `ku_manual_governance_write_failed` or
+`ku_manual_source_write_failed` with fixed guidance and no OS/private-value
+detail. Retry retains the complete failed directory and selects a new destination
+after correcting the local filesystem issue. File presence does not establish
+successful provisioning; failed output must not be admitted to a host. Existing
+directory guidance now makes complete successful provisioning explicit. Write
+order, non-transactional semantics, consent, source bytes, bounds and explicit
+host admission/save/share boundaries remain unchanged; no cleanup/resume added.
+
+Windows validation: manual example tests 6/6 and build PASS. The new regression
+covers both real write errors, safe diagnostics, retained obstruction/governance,
+same-directory refusal and successful new-destination retry with exact decoded
+LOCAL_ONLY source bytes. Three actual executable smoke calls PASS: success,
+existing-output refusal and success at a new destination, with source/request
+bytes and prior custody unchanged. Late-write fault coverage is the focused Rust
+writer test, not a CLI crash/disk-full campaign. KU product/registration and
+vNext validators, scoped rustfmt and whitespace PASS. Reuse prior host saved-read/
+restart/share checks; no real host, Registry, private inputs or model opened.
+Scoped local commits and retained preparation are recorded in PROGRESS; no
+merge/push or broader provisioning/atomicity/qualification claim.

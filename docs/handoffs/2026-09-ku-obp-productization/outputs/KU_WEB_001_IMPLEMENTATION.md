@@ -276,17 +276,24 @@ this ambiguity. The request must still explicitly grant local/private consent.
 | `ku_manual_text_too_large` | Explicitly choose a shorter permitted source, at most 8192 UTF-8 bytes. The command does not truncate or rewrite input. |
 | `ku_manual_text_invalid` | Supply plain UTF-8 text; UTF-16 and binary canonical objects are unsuitable. If needed, prepare a separate UTF-8 copy deliberately. |
 | `ku_manual_text_empty` | Supply nonempty text; an empty or whitespace-only file is rejected. |
-| `ku_manual_output_exists` | Retain the existing directory and both custody files. If this is the intended source, explicitly configure host admission; otherwise choose a new output directory name. Do not delete prior custody to retry. |
+| `ku_manual_output_exists` | Retain and inspect the existing directory and custody files. Explicit host admission requires an intended source from complete successful provisioning. If the previous attempt failed or completeness is uncertain, choose a new output directory name. Do not delete prior custody to retry. |
 | `ku_manual_output_unavailable` | Choose a new directory under an existing private parent and check write permissions. The command does not create missing parents or replace custody. |
+| `ku_manual_governance_write_failed` | The directory was created, but writing `governance.json` failed; this attempt did not write `source.canonical`. Retain the whole directory privately. Correct filesystem availability/write permissions locally and explicitly retry with a new `output_dir`. Do not admit the failed output to a host. |
+| `ku_manual_source_write_failed` | `governance.json` was written, but writing `source.canonical` failed. Retain the whole directory privately, including any partial canonical file. Correct filesystem availability/write permissions locally and explicitly retry with a new `output_dir`. Do not admit the failed output to a host. |
 
 Source-validation failures occur before output creation. Directory-creation
 failures do not write custody files. Successful provisioning preserves exact
 input bytes, including whitespace; it still needs explicit host admission and
-creates no saved/shared KU. If a later filesystem write fails after directory
-creation, the directory may be incomplete: retain and inspect it locally before
-selecting a new destination; this command does not roll back or overwrite it.
-Request-file/JSON failures use the bounded diagnostics above. Later write errors
-retain their existing diagnostics; writes are not transactional.
+creates no saved/shared KU. A later write failure can leave an incomplete file,
+even when both filenames exist. File presence alone is not successful provisioning.
+Retain and inspect the failed directory locally; do not delete it, repair it in
+place with this command, or admit it to a host. Deliberately select a new destination
+in the request and retry after correcting the filesystem issue. The original
+request/source and any old output remain under operator custody. This command
+does not roll back, clean up, resume or overwrite existing output; writes are not
+transactional. Only a successful retry reports provisioning, and it still needs
+separate explicit host admission. Request-file/JSON failures use the bounded
+diagnostics above.
 
 Try the journey:
 

@@ -50,7 +50,7 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; diagnostics request JSON và nguồn/output của manual provisioning đã review local, commit/state trong PROGRESS; setup rộng hơn còn mở. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; diagnostics request JSON, nguồn/output và lỗi ghi sau create_dir của manual provisioning đã kiểm tra local, commit/state trong PROGRESS; setup rộng hơn còn mở. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
@@ -63,8 +63,9 @@ trong task 09 và task 20 đã đánh dấu A–D và được chấp nhận/mer
 First-run onboarding giữ trong task 20: bản sửa Registry/config/token/Vault key/source và hướng dẫn catalog rỗng đã kiểm tra và
 đã merge `cbb7d58` và push origin/main theo D-047, tách khỏi ENC-003;
 không đổi tổng 22 task đã merge / 2 hoãn.
-Hai follow-up diagnostics request JSON và nguồn/output của `ku_manual_source`
-đã kiểm tra/review local; commit và integration state trong PROGRESS, không thuộc gói D-047 đã merge.
+Ba follow-up diagnostics request JSON, nguồn/output và lỗi ghi sau `create_dir`
+của `ku_manual_source` đã kiểm tra local; commit và integration state trong PROGRESS,
+không thuộc gói D-047 đã merge. Retry lỗi ghi giữ custody dở dang và chọn thư mục mới.
 
 | Ưu tiên | Task cha / bước | Trạng thái | Kết quả cần thấy |
 |---:|---|---|---|
@@ -77,7 +78,7 @@ Hai follow-up diagnostics request JSON và nguồn/output của `ku_manual_sourc
 | 7 | INT-KU-OBP-001 / C — lối vào cho contributor | Hoàn tất scope operator demo | Hướng dẫn config/JSONL/sample, prerequisite Registry/keys thật, expected outcome/error và contribution nhỏ |
 | 8 | INT-KU-OBP-001 / D — chốt demo và việc cộng đồng | Hoàn tất local | Task/ledger/overview ghi kết quả và giới hạn; share UI/host composition giữ trong backlog |
 | 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Đã merge/push theo D-047 | `cbb7d58` khớp tip reviewed; post-merge vNext/whitespace PASS; reuse Rust 5/5, Web 16/16, builds + private bytes/receipt/restart; ENC-003 giữ ngoài commit, provisioning/composition rộng hơn còn mở |
-| 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output | Review local; scoped commit/state trong PROGRESS | Rust 5/5, build + 9 source/output và 14 request executable calls PASS; fixed guidance không lộ private values, consent/exact bytes/custody cũ giữ nguyên; chỉ later write errors/non-transactional writes còn mở |
+| 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output + later writes | Review local; scoped commit/state trong PROGRESS | Rust 6/6, build + 3 executable smoke calls PASS; reuse 9 source/output và 14 request calls trước. Lỗi ghi có guidance không lộ private values, giữ output dở dang/retry thư mục mới; consent/exact bytes/custody cũ giữ nguyên; writes vẫn non-transactional |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
