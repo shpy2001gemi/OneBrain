@@ -41,6 +41,7 @@ function fixture(
     unresolved?: boolean;
     loseSave?: boolean;
     noEditor?: boolean;
+    emptyCatalog?: boolean;
     reserveLoss?: boolean;
     ai?: boolean;
     prepareWait?: Promise<void>;
@@ -150,7 +151,7 @@ function fixture(
             break;
           case "catalog":
             payload = {
-              sources: [{ source_ref: source, label: "Host source" }],
+              sources: options.emptyCatalog ? [] : [{ source_ref: source, label: "Host source" }],
               limitations: [],
             };
             break;
@@ -215,7 +216,7 @@ function fixture(
           case "list":
           case "search":
             payload = {
-              items: saved || options.noEditor ? [summary] : [],
+              items: saved || options.noEditor || options.emptyCatalog ? [summary] : [],
               coverage: "local_only",
               snapshot_frontier: "a".repeat(64),
               limitations: ["authorized_snapshot_only"],
@@ -278,6 +279,35 @@ async function preview() {
   );
 }
 describe("local KU component journey", () => {
+  it("guides empty-catalog setup while keeping saved reads and consented AI separate", async () => {
+    const options = { emptyCatalog: true, ai: true };
+    const f = fixture(options);
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByText(/No manual sources available/);
+    expect(screen.getByRole("link", { name: "manual source setup guide" }).getAttribute("href"))
+      .toContain("#provision-a-developer-owned-manual-source");
+    expect(screen.getByLabelText("Admitted source").matches(":disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Preview and validate" }).matches(":disabled")).toBe(true);
+    expect(screen.getByLabelText("Source text to encode").matches(":disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Encode and preview" }).matches(":disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Source text to encode"), { target: { value: "Developer-owned text" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Encode and preview" }).matches(":disabled")).toBe(false);
+    fireEvent.click(await screen.findByRole("button", { name: `Inspect ${object}` }));
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    expect(screen.getByText("AQ==").textContent).toBe("AQ==");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh host status" }));
+    await waitFor(() => expect(f.calls.filter(c => c.body?.request?.action === "catalog")).toHaveLength(2));
+    expect(screen.getByRole("link", { name: "manual source setup guide" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh host status" }).matches(":disabled")).toBe(false));
+    options.emptyCatalog = false; // Simulate explicit admission and host restart.
+    fireEvent.click(screen.getByRole("button", { name: "Refresh host status" }));
+    await screen.findByRole("option", { name: "Host source" });
+    expect(screen.queryByText(/No manual sources available/)).toBeNull();
+    expect(screen.getByLabelText("Admitted source").matches(":disabled")).toBe(false);
+    expect(f.calls.filter(c => c.body?.request?.operation && c.body.request.operation !== "list" && c.body.request.operation !== "get")).toHaveLength(0);
+    expect(f.calls.filter(c => c.path.endsWith("/reservations") || ["draft", "encode_text", "review_start"].includes(c.body?.request?.action))).toHaveLength(0);
+  });
   it("explains duplicate internal identifiers without implying a transport outage", async () => {
     const f = fixture({ ai: true, prepareFailure: "duplicate_id" });
     render(<KuWorkflowPage client={f.client} />);
