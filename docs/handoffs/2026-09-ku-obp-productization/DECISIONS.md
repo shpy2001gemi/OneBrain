@@ -1,5 +1,21 @@
 # Decisions and claim boundary
 
+## D-047 — Merge and publish the reviewed first-run fixes
+
+On 2026-10-03 the owner explicitly directed merging `f2c0baf` and `1c4c78a`
+into main, pushing origin, and preserving all uncommitted preparation, untracked
+files and the qualification branch. Merge `cbb7d58606b721a3a9d729d9626e88ba2664e676`
+has parents `49e529f` and `1c4c78a`; its tree exactly matches the reviewed tip.
+The merge was pushed and verified directly on origin/main. The accompanying
+docs closure records this instruction and synchronizes task/checkpoint/overview.
+
+This integrates only the five reviewed Registry/config/token/Vault-key/source
+diagnostic and empty-catalog slices within task 20. It does not complete broader
+Registry/secret provisioning, normal host composition or product share projection.
+The existing private/save/share boundaries and qualification flags remain intact.
+ENC-003 preparation and its branch at `4a8f29d` remain outside the merge;
+the first-run source branch at `1c4c78a` is retained.
+
 ## D-046 — Accept, merge and publish the concept MVP tasks 09/20
 
 On 2026-10-02 the owner explicitly accepted the bounded MVP for KU-QA-001 and

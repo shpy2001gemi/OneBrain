@@ -50,7 +50,7 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã commit Review local (Git state ở PROGRESS), chưa push/merge; setup rộng hơn còn mở. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge `cbb7d58` và push origin/main theo D-047; setup rộng hơn còn mở. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
@@ -61,7 +61,7 @@ tự cần thực hiện từ đầu.
 Các dòng dưới là substep của task 09 và 20, không phải task mới. Checklist nguồn
 trong task 09 và task 20 đã đánh dấu A–D và được chấp nhận/merge theo D-046.
 First-run onboarding giữ trong task 20: bản sửa Registry/config/token/Vault key/source và hướng dẫn catalog rỗng đã kiểm tra và
-Review local, đã commit riêng khỏi ENC-003; Git state ở PROGRESS, chưa push/merge,
+đã merge `cbb7d58` và push origin/main theo D-047, tách khỏi ENC-003;
 không đổi tổng 22 task đã merge / 2 hoãn.
 
 | Ưu tiên | Task cha / bước | Trạng thái | Kết quả cần thấy |
@@ -74,7 +74,7 @@ không đổi tổng 22 task đã merge / 2 hoãn.
 | 6 | INT-KU-OBP-001 / B — trao đổi KU | Hoàn tất local | Preview/confirm riêng → Public CID/bytes/semantic ID khớp; nguồn private không gửi; restart/retry PASS |
 | 7 | INT-KU-OBP-001 / C — lối vào cho contributor | Hoàn tất scope operator demo | Hướng dẫn config/JSONL/sample, prerequisite Registry/keys thật, expected outcome/error và contribution nhỏ |
 | 8 | INT-KU-OBP-001 / D — chốt demo và việc cộng đồng | Hoàn tất local | Task/ledger/overview ghi kết quả và giới hạn; share UI/host composition giữ trong backlog |
-| 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Review local, đã commit; chưa tích hợp | Cumulative review sửa Registry-root/prerequisites; Rust 5/5, Web 16/16 và KU/vNext/format PASS; reuse Web/staging builds + private bytes/receipt/restart; ENC-003 retained ngoài commit, setup rộng hơn còn mở |
+| 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Đã merge/push theo D-047 | `cbb7d58` khớp tip reviewed; post-merge vNext/whitespace PASS; reuse Rust 5/5, Web 16/16, builds + private bytes/receipt/restart; ENC-003 giữ ngoài commit, provisioning/composition rộng hơn còn mở |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;

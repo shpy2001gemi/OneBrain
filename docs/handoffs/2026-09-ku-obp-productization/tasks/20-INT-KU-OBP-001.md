@@ -323,7 +323,7 @@ acceptance. The earlier Git-review section records its historical local state.
 
 ## Contributor follow-up — first-run experience
 
-Registry, config/token, Vault-key/source-input diagnostics and empty-catalog guidance: committed for local review on `codex/ku-first-run-diagnostics`, based on main `49e529f`;
+Registry, config/token, Vault-key/source-input diagnostics and empty-catalog guidance: Merged and published under D-047, merge `cbb7d58` from `codex/ku-first-run-diagnostics` at `1c4c78a`, based on main `49e529f`;
 this is the existing first-run backlog item in MASTER_PLAN, outside the completed
 A–D operator demo. Its integration state is separate from D-046's accepted MVP.
 
@@ -365,6 +365,9 @@ A–D operator demo. Its integration state is separate from D-046's accepted MVP
   isolate code/guide/checklist/ledger changes for integration, preserving incoming
   ENC-003 preparation. Registry/secret provisioning and normal host composition
   remain broader contributor work; do not imply fresh-clone self-provisioning.
+- [x] Integrate the reviewed `f2c0baf` + `1c4c78a` slice under explicit owner
+  instruction D-047, push main and verify origin; preserve uncommitted ENC-003
+  preparation, all untracked files and the qualification/source branches.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -460,3 +463,17 @@ PASS; KU product/registration, vNext, scoped rustfmt and whitespace PASS.
 Prior Web/staging builds, executable failure cases and real private-save/share/
 restart results are reused. No private operator input, live host or model was
 opened. Registry/secret provisioning and normal host composition remain open.
+
+### Owner-directed first-run merge — 2026-10-03
+
+D-047 authorizes integration/publication of `f2c0baf` + `1c4c78a`. Merge `cbb7d58`
+has exactly the reviewed tip's tree, with parents `49e529f` and `1c4c78a`, and is
+verified directly on origin/main. Post-merge vNext validator and whitespace PASS;
+the earlier scoped tests/builds and real save/share/restart results are reused.
+
+All 17 incoming dirty/untracked paths were restored byte-for-byte before the
+closure edits. Task-23 preparation and 15 untracked files remain outside all
+integration commits; its 108-line retained history also stays uncommitted.
+Qualification `4a8f29d`, source branches and the clean detached worktree remain
+unchanged. No private inputs, live hosts or models were opened. The five fixes
+are Merged; broader provisioning/composition and product sharing remain open.

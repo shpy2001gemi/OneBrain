@@ -6,60 +6,56 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 03/10/2026 10:07 (Asia/Saigon). Task 20 first-run: review xong, commit local `f2c0baf`; MVP 09/20 vẫn Merged.**
+**Cập nhật: 03/10/2026 10:24 (Asia/Saigon). Task 20: năm first-run slices Merged/published theo D-047.**
 
-- **Mục tiêu hiện tại:** chuẩn bị tích hợp gói first-run đã review trong task 20;
-  giữ MVP A–D được D-046 chấp nhận, 22 Merged / 2 Deferred.
-- **Vừa xong:** review cumulative diff từ `49e529f`, sửa Registry-root guidance
-  (`releases/` + activation `state/`) và prerequisites cho saved inspection với
-  catalog rỗng. Commit `f2c0baf` chứa đúng sáu code/guide/task/overview paths;
-  ledger commit riêng chỉ lấy first-run hunks của PROGRESS, loại preparation.
-  Checklist review hoàn tất; incoming task 23, history và 15 untracked giữ nguyên.
-- **Còn lại / blocker:** gói Review local chưa push/merge; bước publication/merge
-  cần chỉ đạo owner riêng theo D-010/D-044. Registry/keys provisioning, normal host
-  composition, share API/Web, source/author/fidelity proof và portability còn mở.
-- **Bước tiếp theo:** khi có chỉ đạo tích hợp, lấy `git log -2` trên
-  `codex/ku-first-run-diagnostics`, kiểm tra đúng `f2c0baf` + ledger commit và remote
-  main, rồi tích hợp đúng hai commit; giữ preparation dirty ngoài index. Review
-  và focused checks đã xong; không lặp demo/AI hay mở private Registry/source.
+- **Mục tiêu hiện tại:** gói first-run đã tích hợp; phần còn lại thuộc cùng backlog
+  task 20. MVP A–D vẫn Merged theo D-046, tổng 22 Merged / 2 Deferred.
+- **Vừa xong:** owner cho phép merge/push `f2c0baf` + `1c4c78a` và giữ preparation.
+  Merge `cbb7d58` có parents `49e529f` / `1c4c78a`, tree khớp tip reviewed;
+  đã push và xác minh trực tiếp origin/main. D-047, task/checklist/overview/ledger
+  cập nhật trong docs closure; preparation/history vẫn ở ngoài index/commit.
+- **Còn lại / blocker:** không còn blocker integration. Registry/secret provisioning,
+  normal host composition, share API/Web, source/author/fidelity proof và portability
+  còn ở backlog; năm diagnostics/catalog fixes không hoàn tất toàn bộ first-run.
+- **Bước tiếp theo:** đọc `ku_manual_source.rs` và phần manual provisioning trong
+  guide để tìm một vướng mắc setup cụ thể còn lại cho task 20; đối chiếu backlog
+  trước khi sửa. Không review lại gói đã merge, lặp demo/AI hoặc mở private inputs.
 - **Đọc tiếp:** [task 20 follow-up](tasks/20-INT-KU-OBP-001.md#contributor-follow-up--first-run-experience),
-  [cumulative review](tasks/20-INT-KU-OBP-001.md#cumulative-first-run-review--2026-10-03),
-  `git show f2c0baf --stat`, [operator guide](outputs/KU_WEB_001_IMPLEMENTATION.md#run-the-local-mvp),
-  [D-010/D-044](DECISIONS.md#d-010--merge-and-branch-policy-for-this-workstream).
-- **Workspace/Git:** `C:/Users/shpy2/Documents/OneBrain`; branch
-  `codex/ku-first-run-diagnostics`; code commit `f2c0baf`, HEAD là ledger commit
-  ngay sau nó (`git log -1`); base/main/origin-main cache `49e529f`. Direct
-  `ls-remote` xác minh main `49e529f`, qualification `4a8f29d` 03/10 trong lượt này;
-  không fetch/push/merge. Còn 17 dirty/untracked paths (PROGRESS preparation,
-  task 23 + 15 untracked), không staged. Worktree phụ detached `798eabf` sạch;
-  qualification local/origin `4a8f29d`, 3 commit chưa merge; stash rỗng.
-- **Cần giữ:** incoming preparation/history, task 23 và 15 untracked (scripts/tests,
-  sáu reports và overview local); qualification branch và source branch `0b050a4`.
-  Dữ liệu/keys/Registry/custody ngoài Git, demo
-  `OneBrainLocal/peer-mvp-20261001-vz_5bczi/result.json` + `final/`; synthetic key run
-  ở `%LOCALAPPDATA%/Temp/onebrain-key-diagnostics-dc8vkj9s/verified/result.json`.
-  Không start/stop host thật; process phải kiểm tra lại khi dùng. Regression chỉ
-  dùng tempdir synthetic tự dọn; không tạo output/handoff mới.
-- **Kiểm tra:** 03/10 10:02 trên code của `f2c0baf`: `cargo test --locked
-  --manifest-path src/Cargo.toml -p onebrain-api --example ku_local_web` 5/5 PASS;
-  `npm run test:ku -- tests/kuWorkflow.test.tsx` 16/16 PASS; KU product/registration,
-  vNext validators, scoped rustfmt/whitespace PASS. 45 local links / 11 anchors
-  trong ba docs của code commit + Web guide link PASS theo index; ledger 119 links /
-  25 anchors PASS. Exact private bytes/LOCAL_ONLY/receipt/restart/auth được regression
-  giữ nguyên. Reuse Web/staging builds, executable Registry/config/token/key cases
-  và real happy-path save/share/restart trước; không browser/AI/native/đa OS mới.
-  16 retained-file SHA256 và 108 dòng incoming preparation history không đổi.
-- **Quyết định/giới hạn:** D-044/D-045/D-046/D-023. Shared custody/trust/admission
-  và saved/private/save/share boundaries giữ nguyên; UI chỉ hướng dẫn setup.
-  Broader onboarding chưa hoàn tất; committed Review local khác Merged.
-  `model_qualified=false`, `consumer_nat_qualified=false`; không mobile/default rollout.
+  [merge result](tasks/20-INT-KU-OBP-001.md#owner-directed-first-run-merge--2026-10-03),
+  `src/onebrain-api/examples/ku_manual_source.rs`,
+  [operator provisioning](outputs/KU_WEB_001_IMPLEMENTATION.md#provision-a-developer-owned-manual-source),
+  [MASTER_PLAN/backlog](MASTER_PLAN.md#after-mvp-and-contributor-backlog).
+- **Workspace/Git:** `C:/Users/shpy2/Documents/OneBrain`; branch `main`.
+  Merge `cbb7d58` đã push/verify trực tiếp 03/10; HEAD là docs closure chứa checkpoint
+  này (`git log -1`), được push và kiểm tra remote lại. Fetch main trước merge
+  xác minh base `49e529f`; qualification remote trực tiếp vẫn `4a8f29d`.
+  Còn 17 dirty/untracked paths: PROGRESS preparation, task 23 + 15 untracked,
+  không staged. First-run source branch `1c4c78a` giữ nguyên; stash rỗng.
+  Worktree phụ detached `798eabf` sạch, qualification 3 commit chưa merge.
+- **Cần giữ:** incoming preparation/history, task 23, 15 untracked (scripts/tests,
+  sáu reports + overview local), qualification `4a8f29d`, MVP branch `0b050a4` và
+  first-run branch `1c4c78a`. Dữ liệu/keys/Registry/custody ngoài Git và demo
+  `OneBrainLocal/peer-mvp-20261001-vz_5bczi/result.json` + `final/` giữ nguyên.
+  Không start/stop host; process phải kiểm tra lại khi dùng. Backup tracked files
+  trước merge ở `%LOCALAPPDATA%/Temp/onebrain-first-run-merge-wraeigkh/`.
+- **Kiểm tra:** 03/10 trên merge `cbb7d58`: vNext validator + whitespace PASS;
+  merge parents/tree đúng tip reviewed. 17 retained paths SHA256 khớp trước closure;
+  16 retained files + 108 dòng preparation history kiểm tra lại sau closure edits.
+  Scoped closure 170 links / 32 anchors + whitespace PASS theo index, không phụ thuộc
+  untracked reports. Reuse Rust 5/5, Web 16/16, KU/vNext/format PASS 10:02 và prior
+  Web/staging builds, executable failure cases, real save/share/restart PASS.
+  Không browser/AI/native/đa OS mới; không thay đổi runtime sau review.
+- **Quyết định/giới hạn:** D-047 chỉ cho phép gói first-run đã review; D-044/D-045/
+  D-046/D-023 vẫn áp dụng. Trust/custody và explicit private/save/share giữ nguyên.
+  Broader onboarding chưa hoàn tất; `model_qualified=false`,
+  `consumer_nat_qualified=false`; không mobile/default rollout.
 <!-- CURRENT_CHECKPOINT_END -->
 
 Quy trình cập nhật và prompt cố định: [NEXT_CONVERSATION](NEXT_CONVERSATION.md).
 Agent mới dừng đọc phần trạng thái ở marker END; chỉ mở inventory/ledger/lịch sử
 bên dưới khi cần đối chiếu. Khối trên được thay thế sau mỗi checkpoint có ý nghĩa.
 
-## Git and retained-work inventory — audited 2026-09-28; MVP merged/published 2026-10-02
+## Git and retained-work inventory — audited 2026-09-28; scoped D-047 recheck 2026-10-03
 
 Fresh `git fetch origin` and `git ls-remote --heads origin` completed. Compared
 all 24 local branches and all 58 actual remote branch tips against origin/main,
@@ -70,10 +66,15 @@ MVP merge `8d064c4` and verified it directly on origin/main. Qualification
 `4a8f29d` and the retained worktree remain unchanged. The accompanying docs
 closure commit updates these rows; no full remote-tip audit was repeated.
 
+Scoped checks on 2026-10-03 fetched main at `49e529f`, directly checked main and
+qualification tips, and preserved both worktrees and incoming dirty files.
+D-047 merge `cbb7d58` was pushed and directly verified; its tree matches `1c4c78a`.
+The following docs closure changes only coordination state and is pushed with main.
+
 | Location | Actual state | How it affects the plan |
 |---|---|---|
-| `main`, `origin/main` | `49e529f`, D-046 merge `8d064c4` plus docs closure; published, directly reverified 2026-10-03 | Tasks 09/20 Merged; accepted MVP remains unchanged |
-| `codex/ku-first-run-diagnostics`, working HEAD | Base `49e529f`; reviewed code/guide/task/overview commit `f2c0baf` plus the following ledger commit (`git log -1`), Review local | Task 20 first-run follow-up; all incoming preparation retained outside both commits, no push/merge |
+| `main`, `origin/main`, working HEAD | Owner-approved first-run merge `cbb7d58` plus accompanying docs closure; merge pushed/verified directly 2026-10-03 | Tasks 09/20 MVP and five first-run fixes Merged; broader setup still open |
+| `codex/ku-first-run-diagnostics` | Retained at `1c4c78a`, base `49e529f`; reviewed `f2c0baf` + ledger `1c4c78a` integrated through `cbb7d58` | D-047; no branch deletion, all incoming preparation remains outside integration commits |
 | `codex/ku-enc-003-handoff` | Retained at `0b050a4`, now an ancestor of origin/main | Source branch kept; no remote branch was created/deleted |
 | `codex/ku-enc-003-model-qualification` local and remote | `4a8f29d`, 3 commits not in main; local and remote tip unchanged | Preserve for later qualification; do not overwrite current docs or switch the dirty tree to it |
 | Other local branches / actual remote tips | All already ancestors of main | Their old names do not represent missing implementation; do not redo them |
@@ -103,6 +104,14 @@ was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by mai
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
 ## Historical checkpoints — not current execution instructions
+
+### 2026-10-03 — Owner-approved first-run merge and publication
+
+[D-047](DECISIONS.md#d-047--merge-and-publish-the-reviewed-first-run-fixes) integrates
+`f2c0baf` + `1c4c78a` as `cbb7d58`, exact reviewed tree, verified on origin/main.
+Post-merge vNext/whitespace PASS; 17 retained paths unchanged before closure.
+Task/checklist/overview synchronized; broader provisioning/composition stays open.
+
 
 ### 2026-10-03 — Task 20 cumulative first-run review / local commit
 
@@ -710,7 +719,7 @@ task ledger for current state.
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
 | 19 | `OBP-MIG-001` | Merged | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | D-042 merge `0604b55`; retained implementation `1d649ce`; [migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
-| 20 | `INT-KU-OBP-001` | Merged | Retained `codex/ku-enc-003-handoff` at `0b050a4`; MVP integrated in main. First-run `codex/ku-first-run-diagnostics`, base `49e529f`, local `f2c0baf` + ledger commit | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 merge `8d064c4` on origin/main; [A–D result](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01) accepted. [Five first-run slices reviewed/committed locally](tasks/20-INT-KU-OBP-001.md#cumulative-first-run-review--2026-10-03), focused checks PASS; no push/merge, incoming ENC-003 excluded. Broader setup/product-share remain in backlog. |
+| 20 | `INT-KU-OBP-001` | Merged | MVP source `0b050a4` and first-run source `1c4c78a` retained; both integrated in main | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 accepts [A–D result](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01); D-047 merges/publishes [five first-run slices](tasks/20-INT-KU-OBP-001.md#owner-directed-first-run-merge--2026-10-03) as `cbb7d58`, tree matches review. Focused checks reused; post-merge vNext/whitespace PASS. Preparation retained outside commits; broader setup/product-share remain open. |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Deferred | Retained `codex/ku-enc-003-model-qualification` at `4a8f29d`; newer preparation retained uncommitted in the main working tree | KU-ENC-002; formal qualification inputs when resumed | D-044 removes this from MVP critical path. 200-source export and 85-test preparation retained; full harness/reviewer/run lock unfinished; model unqualified. |
