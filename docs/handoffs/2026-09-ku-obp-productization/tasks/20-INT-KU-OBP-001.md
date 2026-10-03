@@ -398,6 +398,12 @@ A–D operator demo. Its integration state is separate from D-046's accepted MVP
   incomplete output. Check retained partial custody, deliberate retry, exact
   LOCAL_ONLY source bytes and no private diagnostic values. Local integration
   state is in PROGRESS; this follow-up is outside D-047's merged slice.
+- [x] Prepare owner integration review for all three manual provisioning slices:
+  inspect `ac83f2a..30e4215` and the later-write delta `303b07f..2c09839`, reuse
+  the passing checks, verify retained hashes/history and exclude preparation.
+- [ ] Obtain owner authorization, then integrate/publish the scoped manual
+  provisioning commits with a fresh remote/index/retained-work check. D-047
+  authorizes only the earlier five fixes; this package remains Review local.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -614,3 +620,28 @@ vNext validators, scoped rustfmt and whitespace PASS. Reuse prior host saved-rea
 restart/share checks; no real host, Registry, private inputs or model opened.
 Scoped local commits and retained preparation are recorded in PROGRESS; no
 merge/push or broader provisioning/atomicity/qualification claim.
+
+### Manual provisioning integration review — 2026-10-03
+
+Reviewed cumulative `ac83f2a..30e4215` (six paths, 618 insertions / 67 deletions)
+and new implementation delta `303b07f..2c09839` (four paths, 158 / 13), reusing
+the earlier two-slice review. No blocking defect found in the bounded diagnostics
+and retry behavior. Both write failures use fixed messages, retain partial custody
+and require an explicit new output directory; only complete successful provisioning
+can proceed to host admission. Writes remain non-transactional. No code changed.
+
+Integration scope is implementation `2cd6ffe` + `2c09839`, ledger `303b07f` +
+`30e4215`, and the accompanying scoped review-doc commit recorded in PROGRESS.
+The six paths are the manual example, operator guide, this task, overview,
+NEXT_CONVERSATION and PROGRESS. The prompt update reflects the owner's standing
+handoff instruction. Task 23, all 15 untracked paths, its 108-line preparation
+history and qualification commits remain outside this package.
+
+Direct `git ls-remote --heads origin` at 21:20 Asia/Saigon confirmed main
+`ac83f2a`, qualification `4a8f29d` and no current remote branch. Root HEAD was
+`30e4215`; the detached worktree was clean and stash empty. Sixteen retained
+SHA256 hashes and all 108 retained history additions matched the existing backup;
+cumulative whitespace and main ancestry checks PASS. Reuse Rust 6/6, build,
+validators, three latest executable calls and prior source/request/save/share
+checks; no new runtime test or private/live-host access. D-047 does not authorize
+this package's merge/push. Owner integration authorization remains the next action.
