@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::{io::Read, path::PathBuf};
 
 const CONSENT: &str = "I own or am permitted to capture this text and permit manual local encoding and private retention of its source, governance records and KU until I remove them. No publication is permitted.";
+const TEXT_UNREADABLE: &str = "ku_manual_text_unreadable: cannot read text_file. Set it to an existing locally readable plain UTF-8 text file; relative paths resolve against the launch working directory, not the request JSON's directory. Keep private source text outside Git. No output created.";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,16 +33,24 @@ fn provision(request: Request) -> Result<(), Box<dyn std::error::Error>> {
         return Err("explicit local/private consent and operator identity required".into());
     }
     let mut raw = Vec::new();
-    std::fs::File::open(&request.text_file)?
+    std::fs::File::open(&request.text_file)
+        .map_err(|_| TEXT_UNREADABLE)?
         .take(8193)
-        .read_to_end(&mut raw)?;
-    if raw.len() > 8192 || std::str::from_utf8(&raw)?.trim().is_empty() {
-        return Err("source must be 1..8192 exact UTF-8 bytes of nonempty text".into());
+        .read_to_end(&mut raw)
+        .map_err(|_| TEXT_UNREADABLE)?;
+    if raw.len() > 8192 {
+        return Err("ku_manual_text_too_large: text_file exceeds 8192 bytes. Explicitly select a shorter permitted source; this command does not truncate or rewrite text. No output created.".into());
+    }
+    let text = std::str::from_utf8(&raw).map_err(|_| {
+        "ku_manual_text_invalid: text_file must contain plain UTF-8 text, not UTF-16 or a canonical source object. Use a separate UTF-8 copy if conversion is needed; the command preserves exact accepted bytes. No output created."
+    })?;
+    if text.trim().is_empty() {
+        return Err("ku_manual_text_empty: text_file must contain nonempty text within 8192 UTF-8 bytes; empty or whitespace-only text is rejected. No output created.".into());
     }
     let policy =
         json!({"profile":"ku-local-manual-source/1","consent":CONSENT,"destination":"LOCAL_ONLY"});
     let adapter = json!({"profile":"ku-local-manual-source-adapter/1","version":1,"media":"text/plain; charset=utf-8"});
-    let scope = json!({"policy":hex(&digest(&policy)?),"source":hex(&digest(&json!(std::str::from_utf8(&raw)?))?),"use":"manual_local_encoding"});
+    let scope = json!({"policy":hex(&digest(&policy)?),"source":hex(&digest(&json!(text))?),"use":"manual_local_encoding"});
     let receipt = json!({"operator":request.operator,"consent":true,"policy":hex(&digest(&policy)?),"scope":hex(&digest(&scope)?)});
     let assessment = json!({"policy":hex(&digest(&policy)?),"receipt":hex(&digest(&receipt)?),"scope":hex(&digest(&scope)?),"decision":"permitted_by_operator"});
     let frontier =
@@ -71,7 +80,14 @@ fn provision(request: Request) -> Result<(), Box<dyn std::error::Error>> {
         &json!({"policy":policy,"adapter":adapter,"receipt":receipt,"scope":scope,"assessment":assessment,"frontier":frontier,"retention":retention}),
     )?;
     // The caller chooses an existing private parent; never replace prior custody.
-    std::fs::create_dir(&request.output_dir)?;
+    std::fs::create_dir(&request.output_dir).map_err(|error| match error.kind() {
+        std::io::ErrorKind::AlreadyExists => {
+            "ku_manual_output_exists: output_dir already exists. Existing custody is never overwritten. Retain its governance.json and source.canonical; explicitly admit the existing source if intended, or choose a new directory name under an existing private parent outside Git. Do not delete prior custody to retry."
+        }
+        _ => {
+            "ku_manual_output_unavailable: cannot create output_dir. Choose a new directory under an existing private parent outside Git and check local write permissions; relative paths resolve against the launch working directory. The command does not create parent directories or replace existing custody."
+        }
+    })?;
     std::fs::write(request.output_dir.join("governance.json"), records)?;
     std::fs::write(request.output_dir.join("source.canonical"), bytes)?;
     println!(
@@ -84,18 +100,53 @@ fn hex(bytes: &[u8]) -> String {
     onebrain_base_contract::ku_payload::hex(bytes)
 }
 
+fn load_request(path: &std::path::Path) -> Result<Request, Box<dyn std::error::Error>> {
+    let unreadable = "ku_manual_request_unreadable: cannot read the operator request JSON. \
+        Check the command's request path and local read permissions; relative paths resolve \
+        against the launch working directory. Keep the request and private source outside Git. \
+        No output created.";
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .map_err(|_| unreadable)?
+        .take(65537)
+        .read_to_end(&mut bytes)
+        .map_err(|_| unreadable)?;
+    if bytes.len() > 65536 {
+        return Err(
+            "ku_manual_request_too_large: operator request JSON exceeds 65536 bytes. \
+            Keep source text in the referenced text_file, not inline in the request. \
+            No output created."
+                .into(),
+        );
+    }
+    // serde's detailed error can echo operator values and unknown field names.
+    // Include only fixed guidance and its numeric position, as in load_config.
+    serde_json::from_slice(&bytes).map_err(|error| {
+        let guidance = match error.classify() {
+            serde_json::error::Category::Data => {
+                "use an object with required fields operator (string), text_file (path string), \
+                output_dir (path string), consent_local_private (boolean). Unknown or duplicate \
+                fields are rejected; provisioning requires explicit true consent"
+            }
+            _ => "use complete UTF-8 JSON; escape Windows backslashes or use forward slashes",
+        };
+        format!(
+            "ku_manual_request_invalid: {guidance} (line {}, column {}). Follow 'Provision a \
+            developer-owned manual source' in docs/handoffs/2026-09-ku-obp-productization/outputs/\
+            KU_WEB_001_IMPLEMENTATION.md. Retain existing custody when correcting the request. \
+            No output created.",
+            error.line(),
+            error.column()
+        )
+        .into()
+    })
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args_os()
         .nth(1)
         .ok_or("usage: ku_manual_source <operator-request.json>")?;
-    let mut bytes = Vec::new();
-    std::fs::File::open(path)?
-        .take(65537)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > 65536 {
-        return Err("operator request exceeds limit".into());
-    }
-    provision(serde_json::from_slice(&bytes)?)
+    provision(load_request(std::path::Path::new(&path))?)
 }
 
 #[cfg(test)]
@@ -121,6 +172,7 @@ mod tests {
         assert!(!output_dir.exists());
         provision(request(true)).unwrap();
         let original = std::fs::read(output_dir.join("source.canonical")).unwrap();
+        let original_governance = std::fs::read(output_dir.join("governance.json")).unwrap();
         let object = decode_knowledge_object(
             &original,
             ResourceProfile::ObjectV1,
@@ -139,10 +191,176 @@ mod tests {
             digest(&records["receipt"]).unwrap()
         );
         std::fs::write(&text_file, "changed").unwrap();
-        assert!(provision(request(true)).is_err());
+        let error = provision(request(true)).unwrap_err().to_string();
+        assert!(error.starts_with("ku_manual_output_exists:"));
+        assert!(error.contains("Do not delete prior custody"));
         assert_eq!(
             std::fs::read(output_dir.join("source.canonical")).unwrap(),
             original
         );
+        assert_eq!(
+            std::fs::read(output_dir.join("governance.json")).unwrap(),
+            original_governance
+        );
+    }
+
+    #[test]
+    fn source_failures_are_safe_and_retry_preserves_exact_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let text_file = dir.path().join("PRIVATE_PATH_SENTINEL.txt");
+        let output_dir = dir.path().join("custody");
+        let request = || Request {
+            operator: "PRIVATE_OPERATOR_SENTINEL".into(),
+            text_file: text_file.clone(),
+            output_dir: output_dir.clone(),
+            consent_local_private: true,
+        };
+        let error = provision(request()).unwrap_err().to_string();
+        assert!(error.starts_with("ku_manual_text_unreadable:"));
+        assert!(!error.contains("PRIVATE_PATH_SENTINEL"));
+        assert!(!error.contains("PRIVATE_OPERATOR_SENTINEL"));
+        assert!(!output_dir.exists());
+        for (bytes, code) in [
+            (vec![0xff, 0xfe], "ku_manual_text_invalid:"),
+            (vec![], "ku_manual_text_empty:"),
+            (b" \r\n\t".to_vec(), "ku_manual_text_empty:"),
+            (vec![b'x'; 8193], "ku_manual_text_too_large:"),
+        ] {
+            std::fs::write(&text_file, &bytes).unwrap();
+            assert!(provision(request())
+                .unwrap_err()
+                .to_string()
+                .starts_with(code));
+            assert_eq!(std::fs::read(&text_file).unwrap(), bytes);
+            assert!(!output_dir.exists());
+        }
+        // Exactly 8192 bytes, including non-ASCII text and surrounding whitespace.
+        let mut text = format!("\r\n{}", "Nước".repeat(1000));
+        text.push_str(&"x".repeat(8190 - text.len()));
+        text.push_str("  ");
+        assert_eq!(text.len(), 8192);
+        std::fs::write(&text_file, &text).unwrap();
+        provision(request()).unwrap();
+        let object = decode_knowledge_object(
+            &std::fs::read(output_dir.join("source.canonical")).unwrap(),
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(SOURCE_ARTIFACT_KIND, 1)],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(object.disclosure(), DisclosureClass::LocalOnly);
+        assert_eq!(
+            SourceArtifact::from_validated(&object).unwrap().raw_bytes,
+            text.as_bytes()
+        );
+        assert_eq!(std::fs::read(&text_file).unwrap(), text.as_bytes());
+    }
+
+    #[test]
+    fn missing_output_parent_does_not_create_custody_or_change_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let text_file = dir.path().join("text.txt");
+        let parent = dir.path().join("private-parent");
+        let output_dir = parent.join("custody");
+        std::fs::write(&text_file, "permitted text").unwrap();
+        let request = || Request {
+            operator: "developer".into(),
+            text_file: text_file.clone(),
+            output_dir: output_dir.clone(),
+            consent_local_private: true,
+        };
+        assert!(provision(request())
+            .unwrap_err()
+            .to_string()
+            .starts_with("ku_manual_output_unavailable:"));
+        assert!(!parent.exists());
+        assert_eq!(std::fs::read(&text_file).unwrap(), b"permitted text");
+        std::fs::create_dir(&parent).unwrap();
+        provision(request()).unwrap();
+        assert!(output_dir.join("source.canonical").is_file());
+        assert!(output_dir.join("governance.json").is_file());
+    }
+
+    #[test]
+    fn request_errors_do_not_echo_private_values_or_create_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("PRIVATE_REQUEST_PATH_SENTINEL.json");
+        let text_file = dir.path().join("PRIVATE_TEXT_PATH_SENTINEL.txt");
+        let output_dir = dir.path().join("custody");
+        std::fs::write(&text_file, "PRIVATE_SOURCE_SENTINEL").unwrap();
+        let valid = json!({
+            "operator": "PRIVATE_OPERATOR_SENTINEL",
+            "text_file": text_file,
+            "output_dir": output_dir,
+            "consent_local_private": true,
+        });
+        let mut wrong_type = valid.clone();
+        wrong_type["consent_local_private"] = json!("PRIVATE_CONSENT_SENTINEL");
+        let mut unknown = valid.clone();
+        unknown["PRIVATE_FIELD_SENTINEL"] = json!("PRIVATE_VALUE_SENTINEL");
+        let mut missing = valid;
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("consent_local_private");
+        for bytes in [
+            serde_json::to_vec(&wrong_type).unwrap(),
+            serde_json::to_vec(&unknown).unwrap(),
+            serde_json::to_vec(&missing).unwrap(),
+            b"{\"operator\":\"PRIVATE_OPERATOR_SENTINEL\",\"operator\":\"PRIVATE_DUPLICATE_SENTINEL\"}".to_vec(),
+            b"{\"operator\":\"PRIVATE_OPERATOR_SENTINEL\"".to_vec(),
+            vec![0xff],
+        ] {
+            std::fs::write(&path, &bytes).unwrap();
+            let error = load_request(&path).err().unwrap().to_string();
+            assert!(error.starts_with("ku_manual_request_invalid:"));
+            assert!(error.contains("line ") && error.contains("column "));
+            assert!(!error.contains("PRIVATE_"));
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+            assert_eq!(std::fs::read(&text_file).unwrap(), b"PRIVATE_SOURCE_SENTINEL");
+            assert!(!output_dir.exists());
+        }
+    }
+
+    #[test]
+    fn request_loading_retains_size_limit_and_explicit_consent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("PRIVATE_REQUEST_PATH_SENTINEL.json");
+        let output_dir = dir.path().join("custody");
+        let error = load_request(&path).err().unwrap().to_string();
+        assert!(error.starts_with("ku_manual_request_unreadable:"));
+        assert!(!error.contains("PRIVATE_"));
+        assert!(load_request(dir.path())
+            .err()
+            .unwrap()
+            .to_string()
+            .starts_with("ku_manual_request_unreadable:"));
+        let mut bytes = serde_json::to_vec(&json!({
+            "operator": "developer",
+            "text_file": dir.path().join("missing-text.txt"),
+            "output_dir": output_dir,
+            "consent_local_private": false,
+        }))
+        .unwrap();
+        bytes.resize(65536, b' ');
+        std::fs::write(&path, &bytes).unwrap();
+        let request = load_request(&path).unwrap();
+        assert!(!request.consent_local_private);
+        assert_eq!(request.output_dir, output_dir);
+        // A valid bounded request still needs consent before source access/output.
+        assert!(provision(request)
+            .unwrap_err()
+            .to_string()
+            .contains("explicit local/private consent"));
+        assert!(!output_dir.exists());
+        bytes.push(b' ');
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(load_request(&path)
+            .err()
+            .unwrap()
+            .to_string()
+            .starts_with("ku_manual_request_too_large:"));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(!output_dir.exists());
     }
 }
