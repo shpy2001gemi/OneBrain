@@ -235,6 +235,31 @@ key establishes trust in that package. The Registry signing private key and the
 dataset's binary Vault key are different inputs and are unnecessary for these
 verification commands.
 
+For a new setup, obtain the complete signed release through your Registry
+distributor's mirror or offline delivery, and the expected public key through
+the independent trust channel. This repository does not provide a public download
+endpoint or a trusted bundled release. Extract/copy the received release outside
+Git under `REGISTRY_ROOT/releases/RELEASE_ID`, preserving its exact release
+directory name and all six original files:
+
+```text
+registry/
+  releases/
+    <exact received release ID>/
+      concepts.obr
+      concepts.obr.labels.idx
+      concepts.obr.ccids.idx
+      concepts.obr.manifest.json
+      sbom.spdx.json
+      release.stamp.json
+```
+
+The release directory must contain exactly these files. Keep the trusted key,
+archive wrapper and notes outside it. Do not copy another host's activation state;
+a new root can have no `state/` until deliberate activation. Retain an existing
+root's releases/state and use a separate destination to inspect a replacement
+download. A directory layout or a stamp's signer field alone proves no trust.
+
 From repository root, substitute your Registry root, exact release ID and trusted
 public-key file path, then run these read-only checks (PowerShell):
 
@@ -256,6 +281,17 @@ Ed25519 parser. JSON, quotes, binary keys and uppercase hex are not accepted.
 These input errors occur before Registry inspection or activation. Relative
 paths resolve against the launch working directory; error messages omit the
 supplied path/value. A well-formed wrong key still fails package verification.
+
+On `verify`, `registry_package_unreadable` means the shared verifier could not
+read the package: check `RELEASE_DIR`, extraction nesting and read permissions.
+`RELEASE_DIR` is the individual directory above; `registry_root` in the host and
+`REGISTRY_ROOT` in `status`/`activate` refer to its grandparent. It is not an archive
+or a standalone OBR. `registry_package_file_set_invalid` means the signed
+release's exact file set is missing or has extra entries. Obtain the unchanged
+complete package from the distributor rather than reconstructing signed files.
+These two CLI diagnostics omit supplied paths/values. Other signature, signer,
+manifest and artifact failures remain shared-verifier errors. None of these
+read-only checks repairs, activates or creates a Registry.
 
 If the received package verifies but a **new** Registry has no active release,
 the operator can deliberately activate that exact release with the existing

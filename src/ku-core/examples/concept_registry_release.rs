@@ -11,8 +11,8 @@ use ku_core::{
     activate_concept_registry_release, concept_registry_release_capacity,
     package_concept_registry_release, parse_concept_registry_verifying_key,
     resolve_active_concept_registry_release, rollback_concept_registry_release,
-    verify_concept_registry_release, ConceptRegistryReleasePackageInput,
-    ConceptRegistryReleaseSource,
+    verify_concept_registry_release, ConceptRegistryReleaseError,
+    ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource, ConceptRegistryReleaseStamp,
 };
 use rand::rngs::OsRng;
 
@@ -68,7 +68,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let public_key_path = required_path(&mut args, "PUBLIC_KEY_FILE")?;
             no_more_args(args)?;
             let public_key = read_public_key(&public_key_path)?;
-            let stamp = verify_concept_registry_release(&release_dir, &public_key)?;
+            let stamp = verify_received_release(&release_dir, &public_key)?;
             println!("{}", serde_json::to_string_pretty(&stamp)?);
         }
         "capacity" => {
@@ -170,6 +170,36 @@ fn read_public_key(path: &Path) -> Result<ed25519_dalek::VerifyingKey, Box<dyn E
         a replacement signer or re-sign the received package. No Registry state has been \
         changed; retain existing custody inputs."
             .into()
+    })
+}
+
+fn verify_received_release(
+    release_dir: &Path,
+    public_key: &ed25519_dalek::VerifyingKey,
+) -> Result<ConceptRegistryReleaseStamp, Box<dyn Error>> {
+    // Add acquisition guidance only to the read-only operator command. Do not
+    // inspect/rewrite the package or change shared verification/activation.
+    verify_concept_registry_release(release_dir, public_key).map_err(|error| match error {
+        ConceptRegistryReleaseError::Io(_) => "registry_package_unreadable: cannot read the \
+            received signed package. RELEASE_DIR is the individual release directory, \
+            normally REGISTRY_ROOT/releases/RELEASE_ID, not the Registry root, an archive \
+            or an unsigned OBR. Check the path and read permissions; relative paths resolve \
+            against the launch working directory. Obtain the complete release from your \
+            Registry distributor and keep its directory name. Use the independently trusted \
+            public key; do not generate a replacement signer or re-sign the package. \
+            This verify command is read-only; retain releases, activation state, dataset \
+            and Vault key on retry."
+            .into(),
+        ConceptRegistryReleaseError::UnexpectedFileSet => "registry_package_file_set_invalid: \
+            RELEASE_DIR must contain exactly concepts.obr, concepts.obr.labels.idx, \
+            concepts.obr.ccids.idx, concepts.obr.manifest.json, sbom.spdx.json and \
+            release.stamp.json. Obtain a complete unchanged release from your Registry \
+            distributor; keep public-key files and archive wrappers outside the release. \
+            Do not reconstruct missing signed artifacts or re-sign the package. This verify \
+            command is read-only; retain existing releases, activation state, dataset and \
+            Vault key. File presence alone does not establish signature validity or trust."
+            .into(),
+        other => other.into(),
     })
 }
 
@@ -285,5 +315,45 @@ mod tests {
         // Parsing does not create/activate a Registry or bypass package checks.
         assert!(resolve_active_concept_registry_release(&missing_registry, &public).is_err());
         assert!(!missing_registry.exists());
+    }
+
+    #[test]
+    fn received_release_read_failure_guides_acquisition_without_mutation() {
+        let root = tempfile::tempdir().unwrap();
+        let release = root.path().join("operator-release-canary");
+        let key = SigningKey::from_bytes(&[17; 32]).verifying_key();
+        let missing = verify_received_release(&release, &key)
+            .unwrap_err()
+            .to_string();
+        assert!(missing.starts_with("registry_package_unreadable:"));
+        assert!(missing.contains("REGISTRY_ROOT/releases/RELEASE_ID"));
+        assert!(missing.contains("independently trusted"));
+        assert!(!missing.contains("operator-release-canary"));
+        assert!(!release.exists());
+
+        fs::create_dir(&release).unwrap();
+        assert_eq!(
+            verify_received_release(&release, &key)
+                .unwrap_err()
+                .to_string(),
+            missing
+        );
+        assert_eq!(fs::read_dir(&release).unwrap().count(), 0);
+
+        // A readable malformed stamp still goes through the shared verifier.
+        let stamp = release.join("release.stamp.json");
+        fs::write(&stamp, b"{}").unwrap();
+        let expected = verify_concept_registry_release(&release, &key)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            verify_received_release(&release, &key)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+        assert_eq!(fs::read(&stamp).unwrap(), b"{}");
+        assert_eq!(fs::read_dir(&release).unwrap().count(), 1);
+        assert!(!root.path().join("state").exists());
     }
 }
