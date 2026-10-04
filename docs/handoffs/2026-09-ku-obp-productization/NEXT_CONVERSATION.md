@@ -74,6 +74,8 @@ rồi đọc task/substep và các file được chỉ định. Kiểm tra Git/w
 giữ thay đổi chưa commit, file untracked và công việc chưa merge; tiếp tục từ Bước tiếp theo,
 không làm lại phần đã xong hoặc nạp toàn bộ lịch sử.
 Ưu tiên MVP chạy được, kiểm tra vừa đủ theo D-044 và quy định hiện hành.
+Tôi luôn cho phép merge/push công việc đã kiểm tra cùng cập nhật handoff vào main
+theo D-050; không cần hỏi lại.
 Sau mỗi task/checkpoint có ý nghĩa, cập nhật cùng PROGRESS.md, checklist task và
 bảng overview nếu có thay đổi trước khi bàn giao. Không tạo thêm tài liệu handoff.
 Mỗi khi kết thúc lượt hoặc bàn giao, sau khi cập nhật checkpoint, tự động đưa ra

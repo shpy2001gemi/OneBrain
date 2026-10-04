@@ -6,6 +6,39 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest first-run follow-up — received Registry package (2026-10-04)
+
+Implementation/guide `e77202c` is committed on main and pushed/directly verified
+under D-050, based on `623f14e`. A valid synthetic public key plus a missing
+release made `verify` report only Windows OS error 3. The read-only CLI now maps
+the shared verifier's I/O and exact-file-set failures to bounded acquisition/layout
+guidance. Other shared errors, successful stamp output and all activation/status/
+rollback/package operations retain their behavior. No preflight, second read,
+download, file repair, new signer or automatic activation was added.
+
+The [same host guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-a-registry-startup-failure)
+lists the six received files, exact directory name, release directory versus root,
+independent trust and deliberate activation. Signed-package distribution remains
+external: the repository has no public download endpoint or trusted bundled
+release. Copying another host's activation state is not fresh provisioning.
+
+Windows checks 04/10 16:03–07 Asia/Saigon: example tests 3/3, existing signer/
+signature/artifact regression 1/1, build, scoped rustfmt, vNext and whitespace PASS.
+Twelve actual CLI calls on a newly built synthetic signed package cover complete
+verify → deliberate activation → status, no active release, missing release,
+wrong root, wrong signer, extra/missing artifact and corrupted artifact. Every
+read-only call preserves all fixture file bytes and directories; the restored
+package retains the same active generation. New diagnostics omit supplied paths/
+values. This fixture grants no operator trust. Backup metadata is under
+`%LOCALAPPDATA%/Temp/onebrain-registry-package-5q4oddly/`; synthetic smoke data under
+`%LOCALAPPDATA%/Temp/onebrain-registry-received-smoke-eyltwxey/`.
+
+Reuse prior saved-KU/restart/share results because host/runtime/custody are unchanged.
+No real Registry, private input, live host, model or mobile action was performed.
+First-run as a whole remains open; next inspect normal host config composition
+using independently supplied Registry inputs, rather than repeating diagnostics
+or generating substitute trust. Parent task remains Merged, 22 Merged / 2 Deferred.
+
 ## Latest first-run follow-up — Registry public-key input (2026-10-04)
 
 Merged/published under D-050 through `2b14b23` from reviewed tip `6bc146c`
@@ -504,6 +537,12 @@ Broader provisioning/composition remains open.
 - [x] Under D-050, merge/push reviewed Registry implementation/guide `645c6bc`
   and scoped docs review `6bc146c` through `2b14b23`; verify remote, exact tree/
   parents and retained work. Standing merge/push permission needs no new approval.
+- [x] Reproduce missing received-release OS-only failure on read-only `verify`;
+  add acquisition/layout guidance for shared I/O/exact-file-set errors and document
+  all six files plus independent trust. Commit/push `e77202c` under D-050; example
+  3/3, signer/artifact 1/1, build and 12 synthetic CLI calls PASS. Activation,
+  verification authority and host/runtime remain unchanged; distribution stays
+  external and broader host composition remains open.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
