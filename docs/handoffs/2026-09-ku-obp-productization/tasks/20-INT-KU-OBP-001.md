@@ -6,6 +6,44 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest first-run follow-up — composed host config (2026-10-04)
+
+Implementation/guide `832425b`, based on main `03bf179`, is committed/pushed and
+directly verified under D-050. Valid UTF-8 JSON written with Windows PowerShell's
+BOM failed at line 1, column 1 before reading any host inputs. A new regression
+failed before the fix. The example loader now accepts one leading UTF-8 BOM after
+enforcing the original 65536-byte file limit. Strict JSON/schema validation remains;
+unknown fields, UTF-16, repeated BOM and oversized files are still refused. Config
+bytes, relative-path behavior and shared Registry/runtime/custody semantics remain.
+
+The [same guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#compose-the-host-config-from-supplied-inputs)
+now composes config from the independently trusted Registry public-key file and
+operator-selected dataset, secret and admitted-source paths. `Out-File -NoClobber`
+preserves an existing config; saved inspection explicitly uses an empty source list.
+No key/token/source bytes are embedded, and writing config does not start/save/share.
+Registry acquisition/activation and source admission retain their existing authority.
+
+Windows focused checks on 04/10, approximately 20:36–43 Asia/Saigon: all example
+tests 6/6 PASS, build, scoped rustfmt, vNext and whitespace PASS. After extending
+the existing saved-read test to load BOM configs on restart, that test 1/1 PASS:
+same saved bytes/IDs/receipt, LOCAL_ONLY and wrong-token refusal. An actual Windows
+PowerShell 5.1 execution of the guide writes a BOM config and refuses replacement.
+Two real isolated host launches, BOM then non-BOM restart, serve authenticated status
+and an empty source catalog; wrong-token requests are refused. Fixture Registry,
+secret/config bytes and original synthetic package remain identical; owned processes
+are stopped. Smoke initially used an unsupported Set-Content parameter; guide now
+uses the verified Out-File command. The refusal check uses NoClobber's actual error
+and byte preservation because this PS5.1 script returns exit code 0 on that error.
+
+Backup/hash metadata and synthetic smoke are under
+`%LOCALAPPDATA%/Temp/onebrain-host-composition-ok_guppm/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+No real Registry/private input/live maintainer host/model/mobile was accessed.
+Reuse sharing checks because sharing/runtime are unchanged. Parent task stays
+Merged, 22 Merged / 2 Deferred; this closes only the config composition obstacle.
+Next inspect normal host composition of the approved D-045 shared share module
+and its registered API boundary; API/Web sharing and distribution remain backlog.
+
 ## Latest first-run follow-up — received Registry package (2026-10-04)
 
 Implementation/guide `e77202c` is committed on main and pushed/directly verified
@@ -543,6 +581,13 @@ Broader provisioning/composition remains open.
   3/3, signer/artifact 1/1, build and 12 synthetic CLI calls PASS. Activation,
   verification authority and host/runtime remain unchanged; distribution stays
   external and broader host composition remains open.
+
+- [x] Reproduce PowerShell UTF-8 BOM config refusal; accept one leading BOM within
+  the existing byte limit and strict schema. Document actual input composition via
+  trusted public-key file and custody paths with NoClobber. Commit/push `832425b`
+  under D-050; example 6/6, saved-read BOM restart 1/1, build/vNext/rustfmt and
+  PS5.1 composition + two real synthetic host starts PASS. Existing config,
+  Registry, secrets, private bytes/receipt retained; no activation/save/share added.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog

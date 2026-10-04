@@ -50,7 +50,7 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; ba diagnostics manual provisioning đã merge/push theo D-048 (`403bbbb`). Helper tạo secrets cho dataset mới đã merge/push theo D-049 (`ea92e8a`); commit/state trong PROGRESS; Registry CLI public-key diagnostics đã merge/push qua `2b14b23` theo D-050; received-package verify guidance đã commit/push `e77202c`; acquisition/composition rộng hơn còn mở. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; ba diagnostics manual provisioning đã merge/push theo D-048 (`403bbbb`). Helper tạo secrets cho dataset mới đã merge/push theo D-049 (`ea92e8a`); commit/state trong PROGRESS; Registry CLI public-key diagnostics đã merge/push qua `2b14b23` theo D-050; received-package verify guidance đã commit/push `e77202c`; composed config UTF-8 BOM + guide PowerShell đã commit/push `832425b`; acquisition/share composition còn mở. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
@@ -86,6 +86,8 @@ trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--202
 | 12 | INT-KU-OBP-001 / first-run — input public key của Registry CLI | Đã merge/push theo D-050 | `2b14b23` khớp reviewed tip `6bc146c`, gồm implementation/guide `645c6bc`; post-merge vNext/whitespace/exact tree PASS. Reuse Rust 2/2 + signer/artifact 1/1, build/4 CLI refusals; 16 hashes + 108 prep additions giữ ngoài commits. D-050 cho phép merge/push thường trực; tổng 22 Merged / 2 Deferred không đổi |
 | 13 | INT-KU-OBP-001 / first-run — nhận và verify signed package | Đã commit/push theo D-050 | `e77202c`: hướng dẫn I/O/exact-file-set của read-only verify + layout sáu file, trust độc lập. Rust 3/3 + signer/artifact 1/1, build/12 CLI calls/vNext PASS; bytes/directories/generation fixture giữ nguyên. Không endpoint hay Registry bundle; normal host composition còn mở |
 
+| 14 | INT-KU-OBP-001 / first-run — ghép config host bằng PowerShell | Đã commit/push theo D-050 | `832425b`: chấp nhận một UTF-8 BOM trong 64 KiB, giữ schema; guide ghép trusted public-key file + custody paths, NoClobber. Example 6/6, saved-read restart 1/1, build/vNext/rustfmt + PS5.1/two isolated hosts PASS; config/Registry/secrets giữ nguyên. Normal host sharing còn backlog |
+
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
 luồng manual/resolved vẫn là đường lưu đáng tin cậy. Không gọi bản nháp chưa
@@ -115,7 +117,7 @@ Kiểm tra local/worktree và `git ls-remote --heads origin` trực tiếp ngày
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
-| Main / origin-main | D-050 Registry merge `2b14b23`, received-package implementation `e77202c` + docs closure tại HEAD; push/verify trong cùng lượt | Chứa 22 task Merged; model/NAT vẫn unqualified |
+| Main / origin-main | D-050 Registry merge `2b14b23`, received-package `e77202c`, composed-config `832425b` + docs closure tại HEAD; push/verify trong cùng lượt | Chứa 22 task Merged; model/NAT vẫn unqualified |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
 | Nhánh `codex/ku-enc-003-handoff` | Giữ tại `0b050a4`, đã trong main | Giữ nhánh MVP; preparation vẫn local |
 | Root / `main`; Registry branch `6bc146c`, secrets `f3780c7`, diagnostics `4d01775` giữ local | Gói scoped tích hợp qua `2b14b23`/`ea92e8a`/`403bbbb` và push; source branches giữ nguyên | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
