@@ -6,6 +6,51 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest first-run follow-up — Registry public-key input (2026-10-04)
+
+Reviewed locally on `codex/ku-registry-public-key-diagnostics`, based on main
+`3de6a11`: the existing Registry operator CLI returned only
+OS error 3 for a missing public-key file. `read_public_key` now names
+`PUBLIC_KEY_FILE`, file-path versus host inline-value usage, UTF-8/lowercase-hex
+format, independent trust and custody-preserving retry. It omits supplied
+paths/values; shared parsing, trimming, accepted keys, package verification and
+activation are unchanged. The [same host guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-a-registry-startup-failure)
+provides verify/status commands and distinguishes read-only inspection from
+deliberate activation. Signed-package acquisition remains external; no Registry
+trust is generated or borrowed from private inputs.
+
+Windows focused checks 04/10 09:16–19 Asia/Saigon: operator example tests 2/2,
+existing wrong-signer/signature/artifact regression 1/1, operator build, vNext,
+scoped rustfmt and whitespace PASS. Four executable refusals cover missing key
+on status/activate, invalid key on verify and a valid whitespace-wrapped key
+reaching the existing no-active-release error. Synthetic package/state/dataset/
+Vault-key/input snapshots remain identical and diagnostics contain no supplied
+path/value. The smoke assertion was corrected to the existing full error text;
+no runtime fix was needed. Prior save/share/restart evidence is reused because
+host/runtime are unchanged. No real Registry, private input, live host, model,
+mobile or new qualification run. Implementation/guide commit `645c6bc` is local
+and unpublished; the accompanying scoped docs review records the completed
+review below. Integration scope is separate from D-049's already-published
+secrets helper.
+
+Scope review 04/10 11:20 Asia/Saigon found no further implementation change:
+all key-taking commands call `read_public_key` before Registry inspection or
+mutation; shared parsing, expected-signer/signature/artifact checks and activation
+remain unchanged. The guide matches the existing operator contract, distinguishes
+independent trust from parsing, and requires deliberate activation. Reuse the
+passing focused checks above because code/guide match the incoming tested bytes.
+Fresh scoped whitespace, local links, commit file scope and retained-work checks
+PASS. Task23 + 15 untracked file hashes and the exact 108-line PROGRESS preparation
+block remain outside both local commits. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain-registry-key-review-ll8m3f96/`.
+
+Direct `git ls-remote --heads origin` at 11:20 confirms main `3de6a11`, qualification
+`4a8f29d` and no remote Registry diagnostics branch. Main remains unchanged;
+qualification's 3 unmerged commits, source branches, clean detached `798eabf`
+and all existing preparation are retained. This package is ready for owner scope
+to merge/push implementation `645c6bc` plus the accompanying docs review at local
+HEAD (`git log -1`). D-049 does not authorize this package's publication.
+
 ## Objective
 
 Demonstrate one supported KU moving from local creation to explicit exchange and
@@ -419,6 +464,19 @@ Broader provisioning/composition remains open.
 - [x] Under separate owner authorization D-049, merge/push the secrets slice
   `b73e684` + review `f3780c7` through `ea92e8a`; verify reviewed tree, remote
   and retained work. D-048 covers only the previous manual diagnostics package.
+- [x] Reproduce the Registry operator CLI's OS-only missing `PUBLIC_KEY_FILE`
+  error. Add example-only read/format guidance without supplied paths/values;
+  retain the shared Ed25519 parser, signature checks and activation sequencing.
+  Document CLI file-path versus host inline-key inputs and concrete read-only
+  verify/status commands using independently trusted inputs. Verify refusal
+  before Registry mutation and unchanged synthetic custody. This follow-up is
+  Reviewed/committed locally as `645c6bc`; D-049 does not cover its publication.
+- [x] Review and isolate the Registry public-key diagnostics/guide slice in
+  local commits, excluding task23, 15 untracked files and 108 preparation additions.
+  Keep parent MVP Merged; broader package acquisition/composition remains open.
+- [ ] Under separate owner authorization, merge/push the reviewed Registry
+  diagnostics/guide package and its scoped docs review; recheck remote and retained
+  work before integration. Local implementation is `645c6bc`; actual HEAD is in PROGRESS.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
