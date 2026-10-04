@@ -1,5 +1,24 @@
 # Decisions and claim boundary
 
+## D-049 — Merge and publish the reviewed new-dataset secrets helper
+
+On 2026-10-04 the owner explicitly authorized merging the reviewed helper package
+into main and pushing origin. Merge `ea92e8a693d33d7cc16cc8f3bea910773bb7ccdd`
+has parents `04906dd` and `f3780c7`; its tree exactly matches the reviewed tip.
+It integrates helper `b73e684` and scoped integration review `f3780c7`. The merge
+was pushed and directly verified on origin/main. The accompanying docs closure
+records this instruction and synchronizes checkpoint/checklist/ledger/overview.
+
+This closes only task 20.C's initial Vault-key/API-token creation helper and its
+existing guide/CONTRIBUTING/review records. OS randomness and exclusive creation
+serve a new dataset; existing custody is retained. Windows ACLs remain operator
+managed and pair writes non-transactional, with no cleanup/resume/rotation.
+Registry provisioning, normal host composition and product sharing remain backlog.
+Runtime, private/save/share and model/NAT qualification are unchanged. All 17
+incoming files were restored byte-for-byte before closure edits; task23, 108-line
+preparation additions and 15 untracked paths remain outside integration commits.
+Qualification `4a8f29d`, source branches and detached worktree are retained.
+
 ## D-048 — Merge and publish the reviewed manual provisioning package
 
 On 2026-10-04 the owner explicitly authorized merging `ac83f2a..4d01775`

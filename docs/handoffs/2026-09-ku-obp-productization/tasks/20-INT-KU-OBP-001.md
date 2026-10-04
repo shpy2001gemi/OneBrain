@@ -412,12 +412,13 @@ Broader provisioning/composition remains open.
   values in diagnostics, no existing-dataset recovery/overwrite or host action.
   Verify success through the existing host's token/key readers, refusal and
   partial-write preservation; document the same guide/CONTRIBUTING entry.
-  This additional slice is Review local, outside D-048's merged package.
+  This additional slice is Merged/published under D-049 through `ea92e8a`.
 - [x] Review the committed new-dataset helper package against main; verify scoped
   inclusion/exclusion, host format compatibility and retained work. Ready for owner
   integration decision; implementation tests reused because code is unchanged.
-- [ ] Obtain separate owner authorization before merging/pushing this secrets slice;
-  D-048 covers only the previous manual diagnostics package.
+- [x] Under separate owner authorization D-049, merge/push the secrets slice
+  `b73e684` + review `f3780c7` through `ea92e8a`; verify reviewed tree, remote
+  and retained work. D-048 covers only the previous manual diagnostics package.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -739,3 +740,28 @@ scoped docs review at local HEAD. D-048 is not authorization for this new packag
 If authorized, freshly check remote and incoming hashes, separate preparation from
 integration, merge/push and verify actual remote state; retain source branches,
 worktree and dirty/untracked preparation. Actual HEAD/state stays in PROGRESS.
+
+### Owner-directed new-dataset secrets merge — 2026-10-04
+
+The owner explicitly authorized merge/push of the reviewed helper package.
+D-049 records that instruction. After freshly fetching main `04906dd` and directly
+checking remote refs, merge `ea92e8a` was created with parents `04906dd` + `f3780c7`.
+Its tree exactly matches the reviewed tip and covers only the 7 reviewed files,
+including implementation `b73e684`; no preparation/qualification code was included.
+The merge was pushed and verified directly on origin/main at 09:09 Asia/Saigon.
+The accompanying docs closure synchronizes this checklist, checkpoint and overview.
+
+`python scripts/ci/validate_vnext_contracts.py` and
+`git diff --check 04906dd..ea92e8a` PASS post-merge; exact parents/tree PASS.
+All 17 incoming files restored byte-for-byte before docs closure edits, then
+16 unchanged-file hashes and 108 preparation additions verified outside commits.
+Backup/hash metadata: `%LOCALAPPDATA%/Temp/onebrain-secrets-merge-lhsvq1iq/`.
+Qualification `4a8f29d` still has 3 commits outside main; source branches and clean
+detached `798eabf` are retained. Reuse the Python 4/4, 3 CLI/1 host, build and prior
+save/restart/share results because reviewed implementation and runtime are unchanged.
+No private inputs/live hosts were opened; no full demo or model qualification run.
+
+The helper is Merged/published; first-run as a whole remains open. Registry setup,
+normal host composition, sharing projection, secret recovery/rotation and portable
+permission enforcement remain in the existing contributor backlog. Pair writes
+are non-transactional and preserve partial output; no cleanup/resume is added.
