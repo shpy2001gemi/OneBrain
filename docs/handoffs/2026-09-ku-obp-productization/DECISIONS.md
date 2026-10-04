@@ -1,5 +1,30 @@
 # Decisions and claim boundary
 
+## D-050 — Publish Registry diagnostics; standing merge/push authorization
+
+On 2026-10-04 the owner authorized merge/push of the reviewed Registry package
+and its handoff updates into main, and stated: “tôi luôn cho phép merge/push,
+không cần hỏi lại.” This is standing Git authorization for OneBrain work:
+agents should integrate scoped, checked work and its coordination updates
+without asking for merge/push approval again. It supersedes D-010's separate
+owner-instruction requirement and historical per-package no-publication limits
+for this Git operation. Preserve unrelated dirty/untracked/unmerged work and
+verify actual remote state; publication must still be recorded accurately.
+Product/runtime/trust/consent/mobile authority and qualification claims retain
+their existing contracts. Git permission does not alter those contracts.
+
+Registry merge `2b14b231bf59c9254b620149f349ea18fe5b9cc8` has parents `3de6a11`
+and `6bc146c`; its tree exactly matches the reviewed tip and contains only the
+five reviewed files, including implementation/guide `645c6bc`. Main was pushed
+and directly verified on origin at 15:29 Asia/Saigon. The accompanying docs
+closure records this owner direction and synchronizes the parent checklist,
+checkpoint/ledger/overview and root AGENTS.md. Post-merge vNext/whitespace and
+exact tree/parents PASS; focused runtime results are reused without code changes.
+All 18 incoming files were restored/retained byte-for-byte before closure edits;
+task23, 15 untracked paths and the exact 108 preparation additions remain outside
+integration commits. Qualification `4a8f29d`, source branches and detached worktree
+are retained. Broader Registry acquisition/composition and first-run remain open.
+
 ## D-049 — Merge and publish the reviewed new-dataset secrets helper
 
 On 2026-10-04 the owner explicitly authorized merging the reviewed helper package
@@ -430,7 +455,8 @@ separate decisions.
 ## D-010 — Merge and branch policy for this workstream
 
 D-044 supersedes the mandatory branch/push/merge sequencing below for local MVP
-work. Actual merge/publication and branch deletion still require their own scope.
+work. D-050 now grants standing merge/push authorization; do not request it again.
+Branch deletion still requires its own scope.
 The original policy is retained here as historical context.
 
 Each task uses its declared `codex/` branch. Completion means the branch is

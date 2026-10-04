@@ -8,7 +8,8 @@
 
 ## Latest first-run follow-up — Registry public-key input (2026-10-04)
 
-Reviewed locally on `codex/ku-registry-public-key-diagnostics`, based on main
+Merged/published under D-050 through `2b14b23` from reviewed tip `6bc146c`
+on `codex/ku-registry-public-key-diagnostics`, based on main
 `3de6a11`: the existing Registry operator CLI returned only
 OS error 3 for a missing public-key file. `read_public_key` now names
 `PUBLIC_KEY_FILE`, file-path versus host inline-value usage, UTF-8/lowercase-hex
@@ -28,10 +29,9 @@ Vault-key/input snapshots remain identical and diagnostics contain no supplied
 path/value. The smoke assertion was corrected to the existing full error text;
 no runtime fix was needed. Prior save/share/restart evidence is reused because
 host/runtime are unchanged. No real Registry, private input, live host, model,
-mobile or new qualification run. Implementation/guide commit `645c6bc` is local
-and unpublished; the accompanying scoped docs review records the completed
-review below. Integration scope is separate from D-049's already-published
-secrets helper.
+mobile or new qualification run. Implementation/guide `645c6bc` and scoped docs
+review `6bc146c` are now integrated through `2b14b23` under D-050. The review
+records below describe their pre-merge state.
 
 Scope review 04/10 11:20 Asia/Saigon found no further implementation change:
 all key-taking commands call `read_public_key` before Registry inspection or
@@ -50,6 +50,33 @@ qualification's 3 unmerged commits, source branches, clean detached `798eabf`
 and all existing preparation are retained. This package is ready for owner scope
 to merge/push implementation `645c6bc` plus the accompanying docs review at local
 HEAD (`git log -1`). D-049 does not authorize this package's publication.
+
+Continuation recheck 04/10 11:28 Asia/Saigon confirms local reviewed tip `6bc146c`
+(implementation/guide `645c6bc`), remote main `3de6a11`, qualification `4a8f29d`
+and no published Registry branch. Five-file scope, tested code/guide bytes,
+whitespace, 16 retained hashes and exact 108 preparation additions PASS; the
+index is empty and detached worktree clean. The package was presented for the
+owner's separate merge/push scope under D-010. Awaiting that instruction;
+first-run checklist and 22 Merged / 2 Deferred totals remain unchanged.
+
+## Owner-directed Registry integration — 2026-10-04
+
+The owner authorized this package and handoff publication, plus standing
+merge/push permission for future OneBrain work (D-050). Fresh fetch/direct remote
+checks found main `3de6a11`. Merge `2b14b23` has parents `3de6a11` + `6bc146c`
+and exactly the reviewed tree, covering five files. It was pushed and directly
+verified on origin/main at 15:29 Asia/Saigon. Source branch `6bc146c` is retained.
+Post-merge vNext validator and whitespace PASS; reuse prior focused tests because
+implementation/guide and host/runtime are unchanged. No real Registry/private
+inputs/live hosts/model/mobile were accessed. All 18 incoming files were restored/
+retained byte-for-byte before closure edits; 16 unchanged-file hashes and exact
+108 prep additions remain outside commits. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain-registry-merge-5s5_ri0f/`. Qualification `4a8f29d`
+retains three unmerged commits; detached `798eabf` remains clean.
+
+The Registry input slice is Merged/published; task20 A–D and totals remain
+22 Merged / 2 Deferred. First-run as a whole remains open: signed-package
+acquisition, normal host composition and product sharing remain existing backlog.
 
 ## Objective
 
@@ -470,13 +497,13 @@ Broader provisioning/composition remains open.
   Document CLI file-path versus host inline-key inputs and concrete read-only
   verify/status commands using independently trusted inputs. Verify refusal
   before Registry mutation and unchanged synthetic custody. This follow-up is
-  Reviewed/committed locally as `645c6bc`; D-049 does not cover its publication.
+  Merged/published as `645c6bc` through `2b14b23` under D-050.
 - [x] Review and isolate the Registry public-key diagnostics/guide slice in
   local commits, excluding task23, 15 untracked files and 108 preparation additions.
   Keep parent MVP Merged; broader package acquisition/composition remains open.
-- [ ] Under separate owner authorization, merge/push the reviewed Registry
-  diagnostics/guide package and its scoped docs review; recheck remote and retained
-  work before integration. Local implementation is `645c6bc`; actual HEAD is in PROGRESS.
+- [x] Under D-050, merge/push reviewed Registry implementation/guide `645c6bc`
+  and scoped docs review `6bc146c` through `2b14b23`; verify remote, exact tree/
+  parents and retained work. Standing merge/push permission needs no new approval.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog

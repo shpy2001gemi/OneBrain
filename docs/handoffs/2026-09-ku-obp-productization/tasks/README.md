@@ -83,7 +83,7 @@ trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--202
 | 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Đã merge/push theo D-047 | `cbb7d58` khớp tip reviewed; post-merge vNext/whitespace PASS; reuse Rust 5/5, Web 16/16, builds + private bytes/receipt/restart; ENC-003 giữ ngoài commit, provisioning/composition rộng hơn còn mở |
 | 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output + later writes | Đã merge/push theo D-048 | `403bbbb` khớp tip `4d01775`; post-merge vNext/whitespace PASS; 16 hashes + 108 dòng history giữ nguyên. Reuse Rust 6/6, build + 3 smoke calls, 9 source/output và 14 request calls trước. Lỗi ghi giữ output dở dang/retry thư mục mới; consent/exact bytes/custody cũ giữ nguyên; writes vẫn non-transactional |
 | 11 | INT-KU-OBP-001 / first-run — secrets cho dataset mới | Đã merge/push theo D-049 | `ea92e8a` khớp tip reviewed `f3780c7`; post-merge vNext/whitespace/retained-work PASS. Helper Python sinh Vault key/token bằng OS randomness; từ chối dataset/custody cũ, không tạo dataset hay in secrets. 4/4 regression + 3 CLI/1 host call, build/vNext PASS; Windows ACL do operator quản lý, pair writes non-transactional; Registry/composition còn mở |
-| 12 | INT-KU-OBP-001 / first-run — input public key của Registry CLI | Review local, đã commit; chưa publish | Implementation/guide `645c6bc` + docs review local trên `codex/ku-registry-public-key-diagnostics`; scope/links/whitespace và 16 hashes + 108 prep additions PASS. Reuse Rust 2/2 + signer/artifact 1/1, build/vNext/4 executable refusals vì code không đổi; chờ scope owner cho merge/push, không đổi tổng 22 Merged / 2 Deferred |
+| 12 | INT-KU-OBP-001 / first-run — input public key của Registry CLI | Đã merge/push theo D-050 | `2b14b23` khớp reviewed tip `6bc146c`, gồm implementation/guide `645c6bc`; post-merge vNext/whitespace/exact tree PASS. Reuse Rust 2/2 + signer/artifact 1/1, build/4 CLI refusals; 16 hashes + 108 prep additions giữ ngoài commits. D-050 cho phép merge/push thường trực; tổng 22 Merged / 2 Deferred không đổi |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
@@ -110,15 +110,15 @@ Chi tiết và backlog được giữ trong MASTER_PLAN và kế hoạch gốc t
 ## Công việc chưa vào main / chưa push
 
 Kiểm tra local/worktree và `git ls-remote --heads origin` trực tiếp ngày
-04/10/2026 09:09 (Asia/Saigon); fetch main trước merge, scoped verify trực tiếp sau push:
+04/10/2026 15:29 (Asia/Saigon); fetch main trước merge, scoped verify trực tiếp sau push:
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
-| Main / origin-main | D-049 merge `ea92e8a` + docs closure tại HEAD; đã push/verify trong cùng lượt | Chứa 22 task Merged; model/NAT vẫn unqualified |
+| Main / origin-main | D-050 Registry merge `2b14b23` + docs closure tại HEAD; đã push/verify trong cùng lượt | Chứa 22 task Merged; model/NAT vẫn unqualified |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
 | Nhánh `codex/ku-enc-003-handoff` | Giữ tại `0b050a4`, đã trong main | Giữ nhánh MVP; preparation vẫn local |
-| Root / `main`; secrets branch giữ tại `f3780c7`, diagnostics tại `4d01775` | Gói scoped đã tích hợp qua `ea92e8a`/`403bbbb` và push; source branches giữ local | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
-| Commit MVP/manual/secrets follow-ups chưa có trên origin | 0 sau D-049 merge + closure push | Preparation local vẫn ngoài integration commits |
+| Root / `main`; Registry branch `6bc146c`, secrets `f3780c7`, diagnostics `4d01775` giữ local | Gói scoped tích hợp qua `2b14b23`/`ea92e8a`/`403bbbb` và push; source branches giữ nguyên | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
+| Commit MVP/manual/secrets/Registry follow-ups chưa có trên origin | 0 sau D-050 merge + closure push | Preparation local vẫn ngoài integration commits |
 | Worktree phụ `3bbf/OneBrain` | Sạch, detached `798eabf`, đã nằm trong main | Không thấy implementation riêng cần mang về |
 
 Task 20 đã chạy trao đổi/restart thật trên Windows loopback theo D-045; task 09

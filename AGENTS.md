@@ -25,6 +25,16 @@ architecture; do not try to finish the entire research/production roadmap alone.
 
 This priority does not change the mobile-specific instructions below.
 
+## Standing Git authorization
+
+Owner direction on 2026-10-04: always permit merge/push for OneBrain work;
+do not ask for merge/push approval again. D-050 in the existing DECISIONS.md
+records this standing authorization and supersedes D-010's separate approval
+requirement. Integrate scoped, checked work and its handoff updates; verify actual
+remote state and preserve unrelated dirty/untracked/unmerged work. This changes
+Git authorization only; existing product, trust, consent and mobile contracts
+still apply.
+
 ## Handoff after every meaningful task/checkpoint
 
 - Start with `docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md`.
