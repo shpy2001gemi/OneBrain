@@ -326,6 +326,9 @@ acceptance. The earlier Git-review section records its historical local state.
 Registry, config/token, Vault-key/source-input diagnostics and empty-catalog guidance: Merged and published under D-047, merge `cbb7d58` from `codex/ku-first-run-diagnostics` at `1c4c78a`, based on main `49e529f`;
 this is the existing first-run backlog item in MASTER_PLAN, outside the completed
 A–D operator demo. Its integration state is separate from D-046's accepted MVP.
+The three additional manual provisioning slices and their scoped review records
+are Merged/published under D-048 on 2026-10-04, merge `403bbbb` from `4d01775`.
+Broader provisioning/composition remains open.
 
 - [x] Fix one concrete Registry startup failure: the shared custody helper returns
   `ku_registry_unavailable` with a read-only runtime, but this example's Required
@@ -401,9 +404,9 @@ A–D operator demo. Its integration state is separate from D-046's accepted MVP
 - [x] Prepare owner integration review for all three manual provisioning slices:
   inspect `ac83f2a..30e4215` and the later-write delta `303b07f..2c09839`, reuse
   the passing checks, verify retained hashes/history and exclude preparation.
-- [ ] Obtain owner authorization, then integrate/publish the scoped manual
-  provisioning commits with a fresh remote/index/retained-work check. D-047
-  authorizes only the earlier five fixes; this package remains Review local.
+- [x] Under explicit owner authorization D-048, merge `ac83f2a..4d01775`
+  into main and push origin; merge `403bbbb` exactly matches the reviewed tree.
+  Fresh remote/index/retained-work checks PASS; preserve preparation outside Git.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -645,3 +648,21 @@ cumulative whitespace and main ancestry checks PASS. Reuse Rust 6/6, build,
 validators, three latest executable calls and prior source/request/save/share
 checks; no new runtime test or private/live-host access. D-047 does not authorize
 this package's merge/push. Owner integration authorization remains the next action.
+
+### Owner-directed manual provisioning merge — 2026-10-04
+
+D-048 authorizes merge/push of `ac83f2a..4d01775`. Merge `403bbbb` has parents
+`ac83f2a` and `4d01775`, with exactly the reviewed tip's tree; directly verified
+on origin/main after push. Post-merge `python scripts/ci/validate_vnext_contracts.py`
+and cumulative whitespace PASS. Prior Rust 6/6, build, executable diagnostics
+and source/request/private-save/share/restart checks are reused; no code changed
+during integration and no new runtime campaign was required.
+
+All 17 incoming dirty/untracked paths were backed up outside Git and restored
+byte-for-byte after merge. Task 23, all 15 untracked paths and 108 preparation
+history additions remain outside integration/closure commits. Qualification
+`4a8f29d`, the source branch at `4d01775`, other retained branches and the clean
+detached worktree remain intact. Backup: `%LOCALAPPDATA%/Temp/onebrain-manual-merge-jlthxyld/`.
+No private inputs, Registry or live hosts were opened. This closes integration
+of the three diagnostics slices; non-transactional writes, broader provisioning,
+host composition and product share projection remain contributor backlog.

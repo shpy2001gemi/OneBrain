@@ -50,7 +50,7 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; diagnostics request JSON, nguồn/output và lỗi ghi sau create_dir của manual provisioning đã kiểm tra local, commit/state trong PROGRESS; setup rộng hơn còn mở. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; ba diagnostics manual provisioning đã merge/push theo D-048 (`403bbbb`), commit/state trong PROGRESS; setup rộng hơn còn mở. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
@@ -64,11 +64,11 @@ First-run onboarding giữ trong task 20: bản sửa Registry/config/token/Vaul
 đã merge `cbb7d58` và push origin/main theo D-047, tách khỏi ENC-003;
 không đổi tổng 22 task đã merge / 2 hoãn.
 Ba follow-up diagnostics request JSON, nguồn/output và lỗi ghi sau `create_dir`
-của `ku_manual_source` đã kiểm tra local; commit và integration state trong PROGRESS,
-không thuộc gói D-047 đã merge. Retry lỗi ghi giữ custody dở dang và chọn thư mục mới.
+của `ku_manual_source` đã merge/push theo D-048 qua `403bbbb`, từ tip `4d01775`.
+Retry lỗi ghi giữ custody dở dang và chọn thư mục mới; writes vẫn non-transactional.
 Review tích hợp ba slices đã hoàn tất; phạm vi commit và kiểm tra bảo toàn được ghi
 trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--2026-10-03).
-Chờ owner cho phép merge/push; không đổi tổng số task đã merge.
+Đã tích hợp theo owner authorization D-048; không đổi tổng số task đã merge.
 
 | Ưu tiên | Task cha / bước | Trạng thái | Kết quả cần thấy |
 |---:|---|---|---|
@@ -81,7 +81,7 @@ Chờ owner cho phép merge/push; không đổi tổng số task đã merge.
 | 7 | INT-KU-OBP-001 / C — lối vào cho contributor | Hoàn tất scope operator demo | Hướng dẫn config/JSONL/sample, prerequisite Registry/keys thật, expected outcome/error và contribution nhỏ |
 | 8 | INT-KU-OBP-001 / D — chốt demo và việc cộng đồng | Hoàn tất local | Task/ledger/overview ghi kết quả và giới hạn; share UI/host composition giữ trong backlog |
 | 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Đã merge/push theo D-047 | `cbb7d58` khớp tip reviewed; post-merge vNext/whitespace PASS; reuse Rust 5/5, Web 16/16, builds + private bytes/receipt/restart; ENC-003 giữ ngoài commit, provisioning/composition rộng hơn còn mở |
-| 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output + later writes | Review tích hợp hoàn tất local; chờ owner cho phép merge/push | Scoped commits/state trong PROGRESS; 16 hashes + 108 dòng history giữ nguyên. Reuse Rust 6/6, build + 3 smoke calls, 9 source/output và 14 request calls trước. Lỗi ghi giữ output dở dang/retry thư mục mới; consent/exact bytes/custody cũ giữ nguyên; writes vẫn non-transactional |
+| 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output + later writes | Đã merge/push theo D-048 | `403bbbb` khớp tip `4d01775`; post-merge vNext/whitespace PASS; 16 hashes + 108 dòng history giữ nguyên. Reuse Rust 6/6, build + 3 smoke calls, 9 source/output và 14 request calls trước. Lỗi ghi giữ output dở dang/retry thư mục mới; consent/exact bytes/custody cũ giữ nguyên; writes vẫn non-transactional |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
@@ -108,15 +108,15 @@ Chi tiết và backlog được giữ trong MASTER_PLAN và kế hoạch gốc t
 ## Công việc chưa vào main / chưa push
 
 Kiểm tra local/worktree và `git ls-remote --heads origin` trực tiếp ngày
-03/10/2026 21:20 (Asia/Saigon), không fetch mới trong lượt review này:
+04/10/2026 08:17 (Asia/Saigon); fetch main trước merge và verify trực tiếp sau push:
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
-| Main / origin-main | `ac83f2a`; D-046 MVP và D-047 năm fixes đã merge/push | Chứa 22 task Merged; model/NAT vẫn unqualified |
+| Main / origin-main | D-048 merge `403bbbb` + docs closure tại HEAD; đã push | Chứa 22 task Merged; model/NAT vẫn unqualified |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
 | Nhánh `codex/ku-enc-003-handoff` | Giữ tại `0b050a4`, đã trong main | Giữ nhánh MVP; preparation vẫn local |
-| Root / `codex/ku-manual-provisioning-diagnostics` | `2cd6ffe`, `303b07f`, `2c09839`, `30e4215` và scoped review-doc commit trong PROGRESS; local only | Ba follow-ups đã review tích hợp, chưa merge/push; task23 + 15 untracked + 108 dòng preparation giữ riêng |
-| Commit MVP chưa có trên origin | 0; manual follow-ups còn local | Không đồng nghĩa preparation local đã được publish |
+| Root / `main`; nhánh `codex/ku-manual-provisioning-diagnostics` giữ tại `4d01775` | Gói scoped đã tích hợp qua `403bbbb` và push; source branch giữ local | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
+| Commit MVP/manual follow-ups chưa có trên origin | 0 sau D-048 push | Không đồng nghĩa preparation local đã được publish |
 | Worktree phụ `3bbf/OneBrain` | Sạch, detached `798eabf`, đã nằm trong main | Không thấy implementation riêng cần mang về |
 
 Task 20 đã chạy trao đổi/restart thật trên Windows loopback theo D-045; task 09

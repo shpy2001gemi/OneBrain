@@ -1,5 +1,23 @@
 # Decisions and claim boundary
 
+## D-048 — Merge and publish the reviewed manual provisioning package
+
+On 2026-10-04 the owner explicitly authorized merging `ac83f2a..4d01775`
+into main and pushing origin. Merge `403bbbb8258ca48a46b95a5009a54f660962b89b`
+has parents `ac83f2a` and `4d01775`; its tree exactly matches the reviewed tip.
+The merge was pushed and verified directly on origin/main. The accompanying
+docs closure records this instruction and synchronizes task/checkpoint/overview.
+
+This integrates task 20's three manual provisioning diagnostic follow-ups:
+request-file/JSON, source/output setup and later governance/source writes, plus
+their scoped guide/review/handoff records. Partial custody is retained and retry
+requires a new destination; writes remain non-transactional. It does not complete
+broader Registry/secret provisioning, normal host composition or product sharing.
+Consent, private/save/share and qualification flags remain unchanged. All 17
+incoming dirty/untracked paths were restored byte-for-byte before closure edits;
+task 23, its 108-line preparation history and all 15 untracked paths remain outside
+integration commits. Qualification `4a8f29d` and source branches are retained.
+
 ## D-047 — Merge and publish the reviewed first-run fixes
 
 On 2026-10-03 the owner explicitly directed merging `f2c0baf` and `1c4c78a`
