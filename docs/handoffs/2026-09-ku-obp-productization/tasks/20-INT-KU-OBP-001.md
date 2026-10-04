@@ -368,6 +368,42 @@ A–D operator demo. Its integration state is separate from D-046's accepted MVP
 - [x] Integrate the reviewed `f2c0baf` + `1c4c78a` slice under explicit owner
   instruction D-047, push main and verify origin; preserve uncommitted ENC-003
   preparation, all untracked files and the qualification/source branches.
+- [x] Follow-up local: reproduce the manual provisioning command's missing
+  `text_file` OS-only error. Add source-validation/output-directory diagnostics
+  with field/format/path-resolution guidance and safe custody retry instructions;
+  preserve exact bytes, explicit consent, bounds and refusal to overwrite output.
+- [x] Document [manual provisioning retries](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-manual-provisioning-sourceoutput-failures)
+  and verify source failure/no output, accepted 8192-byte private source, unchanged
+  prior governance/canonical bytes, missing parent and explicit corrected retry.
+  This additional slice is Review local, separate from D-047's merge;
+  actual scoped commits are recorded in PROGRESS.
+- [x] Follow-up local: reproduce serde diagnostics echoing a wrong-type consent
+  value and an unknown request field. Add bounded request-file/JSON diagnostics
+  with safe category guidance and numeric line/column; retain the closed schema,
+  65536-byte bound and explicit consent gate before source access/output creation.
+- [x] Extend the [request retry guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-manual-provisioning-request-failures)
+  and verify no value/path disclosure, no output on refusal, exact-size acceptance,
+  deliberate successful retry and unchanged request/source/prior custody bytes.
+  Both manual provisioning follow-ups are reviewed locally; actual scoped
+  commits and integration state are recorded in PROGRESS.
+- [x] Review both manual provisioning follow-ups against main `ac83f2a`, align
+  code/guide/checklist/overview and isolate the local commits. Exclude task 23,
+  all 15 untracked paths and its 108-line preparation history; retain their bytes.
+  D-047 does not authorize merge/publication of these additional follow-ups.
+- [x] Reproduce real filesystem failures at both writes after `create_dir` in
+  isolated synthetic custody. Add bounded governance/source write diagnostics;
+  retain partial output, write order and refusal to reuse an existing directory.
+- [x] Extend the same [retry guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#resolve-manual-provisioning-sourceoutput-failures)
+  to require a new destination after a failed write and no host admission of the
+  incomplete output. Check retained partial custody, deliberate retry, exact
+  LOCAL_ONLY source bytes and no private diagnostic values. Local integration
+  state is in PROGRESS; this follow-up is outside D-047's merged slice.
+- [x] Prepare owner integration review for all three manual provisioning slices:
+  inspect `ac83f2a..30e4215` and the later-write delta `303b07f..2c09839`, reuse
+  the passing checks, verify retained hashes/history and exclude preparation.
+- [ ] Obtain owner authorization, then integrate/publish the scoped manual
+  provisioning commits with a fresh remote/index/retained-work check. D-047
+  authorizes only the earlier five fixes; this package remains Review local.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -477,3 +513,135 @@ integration commits; its 108-line retained history also stays uncommitted.
 Qualification `4a8f29d`, source branches and the clean detached worktree remain
 unchanged. No private inputs, live hosts or models were opened. The five fixes
 are Merged; broader provisioning/composition and product sharing remain open.
+
+### Manual provisioning source/output diagnostics — 2026-10-03
+
+On main `ac83f2a`, `cargo run --locked --manifest-path src/Cargo.toml -p
+onebrain-api --example ku_manual_source -- <synthetic-request.json>` reproduced
+an OS-only missing-file error without identifying `text_file`. The example now
+names source read/UTF-8/size/empty errors and output-directory creation/existence
+errors, including launch-working-directory resolution and custody-preserving
+retry. Diagnostics omit operator values, private paths and source content.
+Canonical encoding, consent, bounds, Registry trust and host admission are
+unchanged. Output writes remain non-transactional; the guide states how to retain
+an incomplete directory after a later write failure. Request-file/JSON diagnostics
+remain a separate bounded first-run opportunity.
+
+Windows focused checks: `cargo test --locked --manifest-path src/Cargo.toml -p
+onebrain-api --example ku_manual_source` 3/3 PASS after correcting the byte-count
+fixture. Covers consent, source rejection before output, exact 8192-byte UTF-8
+LOCAL_ONLY output, source immutability, original governance/canonical retention
+on repeat and missing-parent correction. KU product/registration and vNext
+validators PASS. Executable checks and final format/whitespace results are
+recorded in the current [PROGRESS](../PROGRESS.md) checkpoint. Prior host saved
+read/restart/share results are reused; no host/model/private operator input was
+opened. This follow-up is local, uncommitted/unpublished; the five D-047 fixes
+remain Merged and broader provisioning/composition remains open.
+
+### Manual provisioning request diagnostics — 2026-10-03
+
+On main `ac83f2a` plus the retained source/output slice, the actual executable
+echoed a synthetic wrong-type `consent_local_private` string and an unknown field
+name through serde errors. Both failures exited before output creation. The new
+`load_request` reports unreadable/oversized/invalid request codes, fixed field/type
+or syntax guidance and numeric line/column without serde's operator-value detail.
+The four-field closed schema, 65536-byte limit, path resolution, explicit consent,
+source/output behavior and canonical encoding remain unchanged. The same operator
+guide now explains request corrections; later writes remain non-transactional.
+
+Windows focused checks: manual example tests 5/5 PASS (including the three retained
+source/custody tests); build PASS. Fourteen actual executable calls PASS: ten
+request refusals, two explicit private successes (ordinary and exactly 65536-byte
+JSON, using launch-relative paths), and two existing-output refusals. Diagnostics
+do not echo sentinels/paths; request/source bytes and both prior custody files stay
+unchanged; failures create no output and success saves no KU. KU product/registration
+and vNext validators, scoped rustfmt and whitespace PASS. Prior host saved-read/
+restart/share checks are reused; no live host, private input, Registry or model was
+opened. Both manual follow-ups remain local/uncommitted/unpublished, separate from
+the five merged D-047 fixes. Broader provisioning/composition remains open.
+
+### Cumulative manual provisioning review — 2026-10-03
+
+Reviewed source/output and request diagnostics together against main `ac83f2a`.
+The manual example retains the four-field closed request schema, 65536-byte
+request / 8192-byte source bounds, consent before source access, exact UTF-8
+source bytes and refusal to replace prior custody. Request parsing reports
+fixed guidance and numeric positions; source/output creation errors identify
+the relevant field and safe retry without operator values or private paths.
+Canonical encoding, Registry trust, host admission and explicit save/share
+remain unchanged. The guide agrees with these boundaries and explicitly states
+that later writes still use their existing errors and are non-transactional.
+The overview now includes the completed request slice; it previously described
+request diagnostics as remaining work.
+
+Local review isolates five code/guide/task/overview/prompt paths and a separate
+PROGRESS ledger update. Incoming task-23 preparation, all 15 untracked paths and
+108 lines of preparation history remain outside these commits and byte-identical
+in the working tree. Actual commits and integration state are in [PROGRESS](../PROGRESS.md).
+This is Review local; the five earlier first-run fixes remain Merged under D-047.
+D-047 does not authorize merge/push of these new manual provisioning follow-ups.
+
+Focused recheck: manual example Rust tests 5/5, KU product/registration and vNext
+validators, scoped rustfmt and whitespace PASS. Prior build, nine source/output
+and fourteen request executable checks, and host saved-read/restart/share checks
+are reused because runtime code was unchanged during this review. Indexed local
+Markdown links/anchors are checked before committing, without relying on excluded
+untracked preparation artifacts. No private operator inputs, host, Registry or
+model were opened. Later write failure handling, broader Registry/secret
+provisioning, normal host composition and product share projection remain open.
+
+### Manual provisioning later-write diagnostics — 2026-10-03
+
+On local base `303b07f`, the example's two writes were extracted unchanged into
+`write_custody`. A synthetic directory obstruction at each target reproduced
+the real filesystem error after output directory creation (focused regression
+1/1 PASS before diagnostics). A governance failure did not write the source;
+a source failure retained the already-written governance. This directly tests
+the same writer used by provisioning, without relying on a timed race or real
+operator custody.
+
+The example now reports `ku_manual_governance_write_failed` or
+`ku_manual_source_write_failed` with fixed guidance and no OS/private-value
+detail. Retry retains the complete failed directory and selects a new destination
+after correcting the local filesystem issue. File presence does not establish
+successful provisioning; failed output must not be admitted to a host. Existing
+directory guidance now makes complete successful provisioning explicit. Write
+order, non-transactional semantics, consent, source bytes, bounds and explicit
+host admission/save/share boundaries remain unchanged; no cleanup/resume added.
+
+Windows validation: manual example tests 6/6 and build PASS. The new regression
+covers both real write errors, safe diagnostics, retained obstruction/governance,
+same-directory refusal and successful new-destination retry with exact decoded
+LOCAL_ONLY source bytes. Three actual executable smoke calls PASS: success,
+existing-output refusal and success at a new destination, with source/request
+bytes and prior custody unchanged. Late-write fault coverage is the focused Rust
+writer test, not a CLI crash/disk-full campaign. KU product/registration and
+vNext validators, scoped rustfmt and whitespace PASS. Reuse prior host saved-read/
+restart/share checks; no real host, Registry, private inputs or model opened.
+Scoped local commits and retained preparation are recorded in PROGRESS; no
+merge/push or broader provisioning/atomicity/qualification claim.
+
+### Manual provisioning integration review — 2026-10-03
+
+Reviewed cumulative `ac83f2a..30e4215` (six paths, 618 insertions / 67 deletions)
+and new implementation delta `303b07f..2c09839` (four paths, 158 / 13), reusing
+the earlier two-slice review. No blocking defect found in the bounded diagnostics
+and retry behavior. Both write failures use fixed messages, retain partial custody
+and require an explicit new output directory; only complete successful provisioning
+can proceed to host admission. Writes remain non-transactional. No code changed.
+
+Integration scope is implementation `2cd6ffe` + `2c09839`, ledger `303b07f` +
+`30e4215`, and the accompanying scoped review-doc commit recorded in PROGRESS.
+The six paths are the manual example, operator guide, this task, overview,
+NEXT_CONVERSATION and PROGRESS. The prompt update reflects the owner's standing
+handoff instruction. Task 23, all 15 untracked paths, its 108-line preparation
+history and qualification commits remain outside this package.
+
+Direct `git ls-remote --heads origin` at 21:20 Asia/Saigon confirmed main
+`ac83f2a`, qualification `4a8f29d` and no current remote branch. Root HEAD was
+`30e4215`; the detached worktree was clean and stash empty. Sixteen retained
+SHA256 hashes and all 108 retained history additions matched the existing backup;
+cumulative whitespace and main ancestry checks PASS. Reuse Rust 6/6, build,
+validators, three latest executable calls and prior source/request/save/share
+checks; no new runtime test or private/live-host access. D-047 does not authorize
+this package's merge/push. Owner integration authorization remains the next action.

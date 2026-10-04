@@ -243,6 +243,58 @@ the [manual editor contract](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
 not automatic source admission. Custody files contain plaintext private source
 material; keep the whole directory private and outside Git.
 
+#### Resolve manual provisioning request failures
+
+The operator request must be a UTF-8 JSON object at most 65536 bytes with all four
+fields from the example above. Unknown and duplicate fields are rejected. Request
+loading/parsing failures exit before reading source text or creating output:
+
+| Diagnostic | Operator correction |
+|---|---|
+| `ku_manual_request_unreadable` | Check the request path passed on the command line and local read permissions. Relative paths resolve against the launch working directory. Keep the request outside Git. |
+| `ku_manual_request_too_large` | Keep the request within 65536 bytes, including whitespace. Store source text in `text_file`; the request contains its path. |
+| `ku_manual_request_invalid` | Use complete UTF-8 JSON with `operator`, `text_file` and `output_dir` as strings and `consent_local_private` as a boolean. Use forward slashes or escaped Windows backslashes. Inspect the reported line/column locally for syntax, missing/unknown/duplicate fields or wrong types. |
+
+Diagnostics include fixed guidance and numeric JSON positions, without echoing
+operator values, unknown field names or private paths. Correct the request locally
+and deliberately retry; retain existing source/governance custody. Do not paste
+private request contents into reports. Valid JSON still requires a nonempty operator
+identity within 128 UTF-8 bytes and explicit `consent_local_private: true` before
+source access/provisioning. A request does not admit a source or save/share a KU.
+
+#### Resolve manual provisioning source/output failures
+
+`ku_manual_source` reports bounded source/output setup diagnostics without printing
+operator identity, private paths or text. `text_file` and `output_dir` relative
+paths resolve against the **launch working directory**, not the request JSON's
+directory. In the command above that directory is `src`; absolute paths avoid
+this ambiguity. The request must still explicitly grant local/private consent.
+
+| Diagnostic | Operator correction |
+|---|---|
+| `ku_manual_text_unreadable` | Check `text_file` exists and is locally readable plain text. Correct its path or read permissions; keep the private file outside Git. |
+| `ku_manual_text_too_large` | Explicitly choose a shorter permitted source, at most 8192 UTF-8 bytes. The command does not truncate or rewrite input. |
+| `ku_manual_text_invalid` | Supply plain UTF-8 text; UTF-16 and binary canonical objects are unsuitable. If needed, prepare a separate UTF-8 copy deliberately. |
+| `ku_manual_text_empty` | Supply nonempty text; an empty or whitespace-only file is rejected. |
+| `ku_manual_output_exists` | Retain and inspect the existing directory and custody files. Explicit host admission requires an intended source from complete successful provisioning. If the previous attempt failed or completeness is uncertain, choose a new output directory name. Do not delete prior custody to retry. |
+| `ku_manual_output_unavailable` | Choose a new directory under an existing private parent and check write permissions. The command does not create missing parents or replace custody. |
+| `ku_manual_governance_write_failed` | The directory was created, but writing `governance.json` failed; this attempt did not write `source.canonical`. Retain the whole directory privately. Correct filesystem availability/write permissions locally and explicitly retry with a new `output_dir`. Do not admit the failed output to a host. |
+| `ku_manual_source_write_failed` | `governance.json` was written, but writing `source.canonical` failed. Retain the whole directory privately, including any partial canonical file. Correct filesystem availability/write permissions locally and explicitly retry with a new `output_dir`. Do not admit the failed output to a host. |
+
+Source-validation failures occur before output creation. Directory-creation
+failures do not write custody files. Successful provisioning preserves exact
+input bytes, including whitespace; it still needs explicit host admission and
+creates no saved/shared KU. A later write failure can leave an incomplete file,
+even when both filenames exist. File presence alone is not successful provisioning.
+Retain and inspect the failed directory locally; do not delete it, repair it in
+place with this command, or admit it to a host. Deliberately select a new destination
+in the request and retry after correcting the filesystem issue. The original
+request/source and any old output remain under operator custody. This command
+does not roll back, clean up, resume or overwrite existing output; writes are not
+transactional. Only a successful retry reports provisioning, and it still needs
+separate explicit host admission. Request-file/JSON failures use the bounded
+diagnostics above.
+
 Try the journey:
 
 1. Select an admitted source; enter a predicate label and look it up. Explicitly

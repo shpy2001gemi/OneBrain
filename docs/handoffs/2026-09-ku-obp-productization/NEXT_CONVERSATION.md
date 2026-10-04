@@ -40,6 +40,9 @@ kịp ghi, agent mới đối chiếu Git và artifact còn lại để khôi ph
    quyết định mới thực sự của owner. Không tự tạo lại quyết định từ suy đoán.
 5. Nếu xong task, đặt task kế tiếp vào checkpoint với trạng thái thật; không để
    agent mới quay lại task đã xong. `Review`/đã làm local khác với `Merged`.
+6. Mỗi khi kết thúc lượt hoặc bàn giao, sau khi cập nhật checkpoint, tự động đưa
+   ra prompt hoàn chỉnh ở dưới để mở conversation mới; không chờ owner nhắc.
+   Prompt phải đọc checkpoint mới nhất, không cố định task hay commit.
 
 ### Mẫu khối Current checkpoint
 
@@ -66,13 +69,16 @@ private source hay nhãn holdout. File output chi tiết chỉ mở khi bước 
 ```text
 Tiếp tục OneBrain tại C:\Users\shpy2\Documents\OneBrain.
 Đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md.
-Làm theo quy trình handoff: chỉ lấy khối CURRENT_CHECKPOINT trong PROGRESS.md,
-rồi đọc task/substep và các file được chỉ định. Kiểm tra Git/worktree thực tế,
-giữ cả thay đổi chưa commit và công việc chưa merge; tiếp tục từ Bước tiếp theo,
+Làm theo quy trình handoff: chỉ lấy khối CURRENT_CHECKPOINT mới nhất trong PROGRESS.md,
+rồi đọc task/substep và các file được chỉ định. Kiểm tra Git/worktree và remote thực tế,
+giữ thay đổi chưa commit, file untracked và công việc chưa merge; tiếp tục từ Bước tiếp theo,
 không làm lại phần đã xong hoặc nạp toàn bộ lịch sử.
 Ưu tiên MVP chạy được, kiểm tra vừa đủ theo D-044 và quy định hiện hành.
 Sau mỗi task/checkpoint có ý nghĩa, cập nhật cùng PROGRESS.md, checklist task và
 bảng overview nếu có thay đổi trước khi bàn giao. Không tạo thêm tài liệu handoff.
+Mỗi khi kết thúc lượt hoặc bàn giao, sau khi cập nhật checkpoint, tự động đưa ra
+prompt hoàn chỉnh để mở conversation mới theo quy trình này, đọc checkpoint mới
+nhất, không cố định task/commit và không chờ tôi nhắc.
 ```
 
 Prompt không chứa tên task/commit cố định nên dùng lại được. Kết quả trong khối
