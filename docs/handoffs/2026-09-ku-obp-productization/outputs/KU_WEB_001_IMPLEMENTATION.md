@@ -92,6 +92,41 @@ against the launch working directory.
 }
 ```
 
+### Compose the host config from supplied inputs
+
+After independently obtaining and deliberately activating the signed Registry,
+preparing the new-dataset secrets (or retaining the original pair for an existing
+dataset), and explicitly provisioning/admitting a manual source, you can assemble
+the same config in PowerShell. Use your actual absolute paths below. The public-key
+file is the independently trusted file used by the Registry operator CLI; reading
+its text does not establish trust or activate a release.
+
+```powershell
+$trustedRegistryKey = (Get-Content -LiteralPath C:/OneBrainLocal/registry-public-key.txt -Raw -ErrorAction Stop).Trim()
+if ($trustedRegistryKey -cnotmatch '^[0-9a-f]{64}$') { throw 'Supply the independently trusted Registry public key as 64 lowercase hex characters.' }
+$hostConfig = [ordered]@{
+    data_dir = 'C:/OneBrainLocal/dataset'
+    registry_root = 'C:/OneBrainLocal/registry'
+    registry_public_key = $trustedRegistryKey
+    vault_key_file = 'C:/OneBrainLocal/secrets/vault.key'
+    api_token_file = 'C:/OneBrainLocal/secrets/api-token.txt'
+    sources = @(@{ label = 'My admitted source'; canonical_file = 'C:/OneBrainLocal/custody/source.canonical' })
+    web_dir = 'C:/Users/shpy2/Documents/OneBrain/src/onebrain-web/dist'
+    port = 4280
+}
+$hostConfig | ConvertTo-Json -Depth 4 | Out-File -LiteralPath C:/OneBrainLocal/host.json -Encoding UTF8 -NoClobber -ErrorAction Stop
+```
+
+Choose a new config filename if it already exists; retain the earlier config and
+the same dataset/key pair. For saved inspection without source creation, explicitly
+set `sources = @()`. The command writes config only, under an existing private
+parent outside Git; it does not read token/key/source bytes or start/save/share.
+The host accepts UTF-8 JSON with or without a single leading UTF-8 BOM, including
+Windows PowerShell 5.1's `-Encoding UTF8` output. UTF-16 JSON remains unsupported;
+the 65536-byte config limit includes any BOM. Normal Registry verification and
+source admission still run on startup. Optional AI settings remain a separate
+operator choice; this composition uses the manual path.
+
 From repository root, build and start (PowerShell):
 
 ```powershell

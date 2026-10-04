@@ -65,7 +65,11 @@ fn load_config(path: &std::path::Path) -> Result<Config, Box<dyn std::error::Err
     })?;
     // serde's detailed error may contain operator-supplied values or field names.
     // Only its category and numeric position are safe to include in diagnostics.
-    serde_json::from_slice(&bytes).map_err(|error| {
+    // Windows PowerShell's UTF-8 writer prefixes JSON with a BOM. Accept one
+    // leading UTF-8 BOM after enforcing the original on-disk byte limit; keep
+    // all other JSON/schema checks and operator-owned file bytes unchanged.
+    let json = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
+    serde_json::from_slice(json).map_err(|error| {
         let guidance = match error.classify() {
             serde_json::error::Category::Data => {
                 "check required fields and their types: data_dir, \
@@ -402,7 +406,13 @@ mod tests {
             if explicit_empty {
                 json_config["sources"] = json!([]);
             }
-            let empty: Config = serde_json::from_value(json_config).unwrap();
+            // Compose a PowerShell-style UTF-8 config for the saved-read restart.
+            let config_path = root.path().join("composed-host.json");
+            let mut config_bytes = vec![0xef, 0xbb, 0xbf];
+            config_bytes.extend(serde_json::to_vec(&json_config).unwrap());
+            std::fs::write(&config_path, &config_bytes).unwrap();
+            let empty = load_config(&config_path).unwrap();
+            assert_eq!(std::fs::read(&config_path).unwrap(), config_bytes);
             let empty_inputs = KuHostInputsConfig {
                 sources: empty.sources,
                 ..inputs.clone()
@@ -634,6 +644,55 @@ mod tests {
             .unwrap()
             .to_string()
             .starts_with("ku_host_config_too_large:"));
+    }
+
+    #[test]
+    fn powershell_utf8_bom_config_preserves_schema_bounds_and_input() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("host.json");
+        let mut value = serde_json::json!({
+            "data_dir":"dataset", "registry_root":"registry",
+            "registry_public_key":"trusted-key", "vault_key_file":"vault.key",
+            "api_token_file":"api-token.txt", "web_dir":"web", "port":4280,
+            "sources":[{"label":"Admitted source", "canonical_file":"source.canonical"}]
+        });
+        let encode = |value: &serde_json::Value| {
+            let mut bytes = vec![0xef, 0xbb, 0xbf];
+            bytes.extend(serde_json::to_vec(value).unwrap());
+            bytes
+        };
+        let mut bytes = encode(&value);
+        std::fs::write(&path, &bytes).unwrap();
+        let config = load_config(&path).unwrap();
+        assert_eq!(config.port, 4280);
+        assert_eq!(
+            config.sources[0].canonical_file,
+            PathBuf::from("source.canonical")
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        bytes.resize(65536, b' ');
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(load_config(&path).is_ok());
+        bytes.push(b' ');
+        std::fs::write(&path, &bytes).unwrap();
+        assert!(load_config(&path)
+            .err()
+            .unwrap()
+            .to_string()
+            .starts_with("ku_host_config_too_large:"));
+
+        value["private-field-canary"] = serde_json::json!("private-value-canary");
+        for bytes in [
+            encode(&value),
+            [vec![0xef, 0xbb, 0xbf], encode(&value)].concat(),
+            vec![0xff, 0xfe, b'{', 0],
+        ] {
+            std::fs::write(&path, &bytes).unwrap();
+            let error = load_config(&path).err().unwrap().to_string();
+            assert!(error.starts_with("ku_host_config_invalid:"));
+            assert!(!error.contains("canary"));
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
     }
 
     #[tokio::test]
