@@ -1,6 +1,6 @@
 # Danh sách task và trạng thái OneBrain
 
-**Cập nhật: 03/10/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
+**Cập nhật: 04/10/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
 
 Đây là bảng xem nhanh ngay trong task index có sẵn, tổng hợp từ
 [PROGRESS](../PROGRESS.md). PROGRESS vẫn là sổ trạng thái chính;
@@ -50,7 +50,7 @@ tự cần thực hiện từ đầu.
 | 17 | [OBP-DESK-001](17-OBP-DESK-001.md) | Networking qua Desktop | ✅ Đã merge | Dùng runtime node chung. |
 | 18 | [OBP-QA-001](18-OBP-QA-001.md) | Kiểm tra chức năng OBP | ✅ Đã merge | Đã chấp thuận chức năng; consumer NAT chưa qualified. |
 | 19 | [OBP-MIG-001](19-OBP-MIG-001.md) | Chuyển đường legacy seed sang chế độ tương thích | ✅ Đã merge | Đã merge; giữ dữ liệu cũ và rollback. |
-| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; ba diagnostics manual provisioning đã merge/push theo D-048 (`403bbbb`), commit/state trong PROGRESS; setup rộng hơn còn mở. |
+| 20 | [INT-KU-OBP-001](20-INT-KU-OBP-001.md) | Demo KU qua hai node và hướng dẫn contributor | ✅ Đã merge | A–D PASS theo D-045; năm first-run slices đã merge/push theo D-047; ba diagnostics manual provisioning đã merge/push theo D-048 (`403bbbb`). Helper tạo secrets cho dataset mới: integration review ready local, chờ owner authorize merge/push; commit/state trong PROGRESS; setup rộng hơn còn mở. |
 | 21 | [KU-ENC-001](21-KU-ENC-001.md) | Khung encoder dùng chung | ✅ Đã merge | Đã chốt schema, workflow và compiler. |
 | 22 | [KU-ENC-002](22-KU-ENC-002.md) | Triển khai encoder dùng chung | ✅ Đã merge | Đã có workflow/adapter; không đồng nghĩa chất lượng model đã đạt. |
 | 23 | [KU-ENC-003](23-KU-ENC-003.md) | Đánh giá sâu model và tài nguyên | ⏸ Hoãn sau MVP | Giữ code chuẩn bị, dữ liệu và nhánh riêng; không chặn MVP. |
@@ -82,6 +82,7 @@ trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--202
 | 8 | INT-KU-OBP-001 / D — chốt demo và việc cộng đồng | Hoàn tất local | Task/ledger/overview ghi kết quả và giới hạn; share UI/host composition giữ trong backlog |
 | 9 | INT-KU-OBP-001 / first-run — Registry/config/token/Vault key/source/catalog rỗng | Đã merge/push theo D-047 | `cbb7d58` khớp tip reviewed; post-merge vNext/whitespace PASS; reuse Rust 5/5, Web 16/16, builds + private bytes/receipt/restart; ENC-003 giữ ngoài commit, provisioning/composition rộng hơn còn mở |
 | 10 | INT-KU-OBP-001 / first-run — manual provisioning request + nguồn/output + later writes | Đã merge/push theo D-048 | `403bbbb` khớp tip `4d01775`; post-merge vNext/whitespace PASS; 16 hashes + 108 dòng history giữ nguyên. Reuse Rust 6/6, build + 3 smoke calls, 9 source/output và 14 request calls trước. Lỗi ghi giữ output dở dang/retry thư mục mới; consent/exact bytes/custody cũ giữ nguyên; writes vẫn non-transactional |
+| 11 | INT-KU-OBP-001 / first-run — secrets cho dataset mới | Integration review ready local; chờ owner authorize | Helper Python sinh Vault key/token bằng OS randomness; từ chối dataset/custody cũ, không tạo dataset hay in secrets. 4/4 regression + 3 CLI/1 host call, build/vNext PASS; Windows ACL do operator quản lý, pair writes non-transactional; Registry/composition còn mở |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
@@ -108,15 +109,15 @@ Chi tiết và backlog được giữ trong MASTER_PLAN và kế hoạch gốc t
 ## Công việc chưa vào main / chưa push
 
 Kiểm tra local/worktree và `git ls-remote --heads origin` trực tiếp ngày
-04/10/2026 08:17 (Asia/Saigon); fetch main trước merge và verify trực tiếp sau push:
+04/10/2026 08:33 (Asia/Saigon), scoped main/qualification/secrets; không fetch mới:
 
 | Nơi lưu | Trạng thái | Cách tính tiến độ |
 |---|---|---|
-| Main / origin-main | D-048 merge `403bbbb` + docs closure tại HEAD; đã push | Chứa 22 task Merged; model/NAT vẫn unqualified |
+| Main / origin-main | `04906dd`, D-048 merge `403bbbb` + docs closure đã push; remote xác minh trực tiếp | Chứa 22 task Merged; model/NAT vẫn unqualified |
 | Nhánh `codex/ku-enc-003-model-qualification` | 3 commit riêng: `89c5f33`, `6e4df3a`, `4a8f29d`; đã push, chưa merge | Công cụ preflight/tài liệu được giữ cho task 23, chưa phải qualification hoàn tất |
 | Nhánh `codex/ku-enc-003-handoff` | Giữ tại `0b050a4`, đã trong main | Giữ nhánh MVP; preparation vẫn local |
-| Root / `main`; nhánh `codex/ku-manual-provisioning-diagnostics` giữ tại `4d01775` | Gói scoped đã tích hợp qua `403bbbb` và push; source branch giữ local | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
-| Commit MVP/manual follow-ups chưa có trên origin | 0 sau D-048 push | Không đồng nghĩa preparation local đã được publish |
+| Root / `codex/ku-new-dataset-secrets`; nhánh diagnostics giữ tại `4d01775` | Gói scoped đã tích hợp qua `403bbbb` và push; source branch giữ local | Task23 + 15 untracked + 108 dòng preparation vẫn giữ riêng |
+| Helper secrets / local commits chưa có trên origin | `b73e684` + docs review tại HEAD; chưa merge/push | Review ready; chờ owner authorize riêng, preparation ngoài commits |
 | Worktree phụ `3bbf/OneBrain` | Sạch, detached `798eabf`, đã nằm trong main | Không thấy implementation riêng cần mang về |
 
 Task 20 đã chạy trao đổi/restart thật trên Windows loopback theo D-045; task 09

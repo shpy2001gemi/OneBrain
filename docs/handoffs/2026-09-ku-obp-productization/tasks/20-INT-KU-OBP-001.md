@@ -407,6 +407,17 @@ Broader provisioning/composition remains open.
 - [x] Under explicit owner authorization D-048, merge `ac83f2a..4d01775`
   into main and push origin; merge `403bbbb` exactly matches the reviewed tree.
   Fresh remote/index/retained-work checks PASS; preserve preparation outside Git.
+- [x] Provide one explicit new-dataset secret helper for the missing initial
+  Vault-key/API-token step: OS randomness, fresh private output only, no secret
+  values in diagnostics, no existing-dataset recovery/overwrite or host action.
+  Verify success through the existing host's token/key readers, refusal and
+  partial-write preservation; document the same guide/CONTRIBUTING entry.
+  This additional slice is Review local, outside D-048's merged package.
+- [x] Review the committed new-dataset helper package against main; verify scoped
+  inclusion/exclusion, host format compatibility and retained work. Ready for owner
+  integration decision; implementation tests reused because code is unchanged.
+- [ ] Obtain separate owner authorization before merging/pushing this secrets slice;
+  D-048 covers only the previous manual diagnostics package.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -666,3 +677,65 @@ detached worktree remain intact. Backup: `%LOCALAPPDATA%/Temp/onebrain-manual-me
 No private inputs, Registry or live hosts were opened. This closes integration
 of the three diagnostics slices; non-transactional writes, broader provisioning,
 host composition and product share projection remain contributor backlog.
+
+### New-dataset secret provisioning — 2026-10-04
+
+The run guide previously required a stable binary Vault key and a random token
+without a runnable creation step. `scripts/base/prepare_ku_local_secrets.py`
+now supplies an explicit standard-library command for a new local dataset.
+It generates 32 binary key bytes and a 64-character random hex token using OS
+randomness, requires a fresh custody directory under an existing private parent,
+and rejects existing datasets/custody, repository paths and overlapping targets.
+It does not create the dataset, read existing custody, activate a Registry,
+start a host, save/share or change any runtime/schema/qualification behavior.
+Windows permissions inherit the operator-controlled parent ACL; the helper
+does not configure/assess that ACL. Writes are exclusive but not transactional;
+a failed pair is retained and cannot be reused/resumed by this command.
+
+Checks on Windows/Python 3.13: `python -m unittest
+scripts.base.test_prepare_ku_local_secrets -v` PASS 4/4, including existing
+saved bytes/key preservation and a forced second-write failure with safe guidance.
+`cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api --example
+ku_local_web` PASS (existing duplicate-target/dead-code warnings). Three actual
+helper CLI calls and one rebuilt host call PASS: new pair accepted by host readers,
+expected missing-Registry rejection before dataset creation, no private output,
+and unchanged custody after refused retries/existing synthetic saved data.
+No signed Registry fixture, private inputs, live hosts or full demo were opened.
+`python scripts/ci/validate_vnext_contracts.py` and whitespace/link checks PASS;
+reuse the previously accepted save/restart/share checks because no runtime changed.
+
+Review scope: two Python files, the existing guide/CONTRIBUTING and task/ledger/
+overview updates; based on main `04906dd`, local branch
+`codex/ku-new-dataset-secrets`. Actual commit/integration state is in PROGRESS.
+Task 23, its preparation reports/modules, 108 preparation history additions and
+retained branches/worktree are excluded. This is an additional local contribution;
+D-048 does not authorize its merge/push. Registry provisioning, host composition,
+secret recovery/rotation and product sharing remain contributor backlog.
+
+### New-dataset secrets integration review — 2026-10-04
+
+Reviewed `04906dd..b73e684` (7 files): helper/test, CONTRIBUTING, the existing Web
+run guide, this parent task, PROGRESS and task overview. No scoped integration
+blocker found. Binary 32-byte key and 64-character ASCII hex token match the host
+readers in `ku_local_web.rs`; OS randomness, refusal before writes, exclusive
+creation and retained partial output agree with the documented operator contract.
+Runtime, Registry trust, private/save/share and saved-data formats are unchanged.
+Windows ACL enforcement, concurrent path mutation, transactional pairs and recovery
+remain outside this helper's declared scope; no broader onboarding claim is made.
+
+Direct scoped `git ls-remote --heads origin` at 08:33 Asia/Saigon confirms main
+`04906dd`, qualification `4a8f29d` and no remote secrets branch. Main is the exact
+merge base; one implementation commit is local, with a docs review commit to follow.
+Detached `798eabf` is clean; qualification retains its 3 commits outside main.
+16 incoming file hashes and the exact 108-addition preparation diff are preserved
+outside review commits; backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain-secret-review-5fl8x047/`. No private custody was opened.
+Scoped whitespace, changed docs links and retained-work checks PASS. Reuse the
+4/4 Python, 3 CLI/1 host, build/vNext and prior save/restart/share results above;
+no implementation change justifies rerunning those checks.
+
+The review is ready for the owner to authorize merge/push of `b73e684` plus the
+scoped docs review at local HEAD. D-048 is not authorization for this new package.
+If authorized, freshly check remote and incoming hashes, separate preparation from
+integration, merge/push and verify actual remote state; retain source branches,
+worktree and dirty/untracked preparation. Actual HEAD/state stays in PROGRESS.
