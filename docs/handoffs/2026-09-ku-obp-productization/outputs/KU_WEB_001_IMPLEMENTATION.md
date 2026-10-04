@@ -228,6 +228,44 @@ config fields:
 
 Use the existing [Registry operator commands](../../../specs/vnext/CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md#4-operator-commands)
 to verify the package and inspect or activate the intended trusted release.
+The CLI takes a **public-key file path**, while the host config takes its
+**64-character value**. Use a public-key file obtained through your independent
+trust channel; neither a downloaded stamp's signer field nor a newly generated
+key establishes trust in that package. The Registry signing private key and the
+dataset's binary Vault key are different inputs and are unnecessary for these
+verification commands.
+
+From repository root, substitute your Registry root, exact release ID and trusted
+public-key file path, then run these read-only checks (PowerShell):
+
+```powershell
+$registryRoot = 'C:/OneBrainLocal/registry'
+$releaseId = '<exact received release directory name>'
+$trustedPublicKeyFile = 'C:/OneBrainLocal/trust/registry-public-key.txt'
+cargo run --locked --manifest-path src/Cargo.toml -p ku-core --example concept_registry_release -- verify (Join-Path $registryRoot "releases/$releaseId") $trustedPublicKeyFile
+cargo run --locked --manifest-path src/Cargo.toml -p ku-core --example concept_registry_release -- status $registryRoot $trustedPublicKeyFile
+```
+
+`verify` checks the signed package against that key; success alone does not
+activate it. `status` re-verifies the active package and returns its generation,
+release and signer. `registry_public_key_unreadable` means the CLI could not read
+`PUBLIC_KEY_FILE` as UTF-8; correct the file path/read permissions or encoding.
+`registry_public_key_invalid` requires exactly 64 lowercase hexadecimal
+characters after surrounding whitespace is trimmed, accepted by the shared
+Ed25519 parser. JSON, quotes, binary keys and uppercase hex are not accepted.
+These input errors occur before Registry inspection or activation. Relative
+paths resolve against the launch working directory; error messages omit the
+supplied path/value. A well-formed wrong key still fails package verification.
+
+If the received package verifies but a **new** Registry has no active release,
+the operator can deliberately activate that exact release with the existing
+`activate REGISTRY_ROOT RELEASE_ID PUBLIC_KEY_FILE` command. This writes a new
+activation generation; it is not part of the read-only checks. For an existing
+Registry, retain releases/state and inspect the current generation before any
+intentional change. Do not run `keygen`, re-sign the package, delete state or
+substitute an unsigned OBR to fix verification. Obtaining a complete signed
+package and its independently trusted key remains an external prerequisite.
+
 This failure exits before creating the dataset or starting the API. Retry with
 the same `data_dir`, Vault key and admitted source files. This example requires
 a verified Registry even for saved reads; with a valid Registry, the existing
