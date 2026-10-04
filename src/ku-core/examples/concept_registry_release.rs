@@ -153,8 +153,24 @@ fn read_signing_key(path: &Path) -> Result<SigningKey, Box<dyn Error>> {
 }
 
 fn read_public_key(path: &Path) -> Result<ed25519_dalek::VerifyingKey, Box<dyn Error>> {
-    let value = fs::read_to_string(path)?;
-    Ok(parse_concept_registry_verifying_key(value.trim())?)
+    // This CLI receives a path, unlike the host config's inline public key.
+    // Keep shared parsing unchanged and omit operator paths/values from errors.
+    let value = fs::read_to_string(path).map_err(|_| {
+        "registry_public_key_unreadable: cannot read PUBLIC_KEY_FILE as UTF-8. \
+        Supply an existing readable public-key file from your independent Registry trust \
+        channel; relative paths resolve against the launch working directory. This CLI \
+        expects a file path, not the host config's registry_public_key value. No Registry \
+        state has been changed; retain the package, activation state, dataset and Vault key."
+    })?;
+    parse_concept_registry_verifying_key(value.trim()).map_err(|_| {
+        "registry_public_key_invalid: PUBLIC_KEY_FILE must contain exactly 64 lowercase \
+        hexadecimal characters after trimming surrounding whitespace, accepted by the \
+        shared Ed25519 parser. Supply plain UTF-8 text, not JSON, quotes, a binary Vault key \
+        or a private signing key. Use the independently trusted public key; do not generate \
+        a replacement signer or re-sign the received package. No Registry state has been \
+        changed; retain existing custody inputs."
+            .into()
+    })
 }
 
 fn decode_hex_32(value: &str, label: &str) -> Result<[u8; 32], Box<dyn Error>> {
@@ -207,4 +223,67 @@ fn write_secret_key(path: &Path, value: &str) -> Result<(), Box<dyn Error>> {
 
 fn usage() -> &'static str {
     "usage:\n  concept_registry_release keygen PRIVATE_KEY_FILE PUBLIC_KEY_FILE\n  concept_registry_release package REGISTRY_ROOT RELEASE_ID OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE\n  concept_registry_release verify RELEASE_DIR PUBLIC_KEY_FILE\n  concept_registry_release capacity REGISTRY_ROOT OBR_PATH SPDX_SBOM_PATH\n  concept_registry_release activate REGISTRY_ROOT RELEASE_ID PUBLIC_KEY_FILE\n  concept_registry_release rollback REGISTRY_ROOT PUBLIC_KEY_FILE\n  concept_registry_release status REGISTRY_ROOT PUBLIC_KEY_FILE"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_key_input_errors_are_actionable_without_disclosing_inputs() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("operator-path-canary.txt");
+        let missing = read_public_key(&path).unwrap_err().to_string();
+        assert!(missing.starts_with("registry_public_key_unreadable:"));
+        assert!(missing.contains("PUBLIC_KEY_FILE"));
+        assert!(missing.contains("file path"));
+        assert!(!path.exists());
+        assert!(!missing.contains("operator-path-canary"));
+        let directory_error = read_public_key(root.path()).unwrap_err().to_string();
+        assert_eq!(directory_error, missing);
+
+        for bytes in [
+            vec![0xff, 0xfe],
+            b"operator-value-canary".to_vec(),
+            b"\"operator-value-canary\"".to_vec(),
+            b"{\"key\":\"operator-value-canary\"}".to_vec(),
+            vec![b'A'; 64],
+            vec![b'a'; 63],
+            vec![b'a'; 65],
+        ] {
+            fs::write(&path, &bytes).unwrap();
+            let error = read_public_key(&path).unwrap_err().to_string();
+            let code = if std::str::from_utf8(&bytes).is_err() {
+                "registry_public_key_unreadable:"
+            } else {
+                "registry_public_key_invalid:"
+            };
+            assert!(error.starts_with(code));
+            assert!(error.contains("PUBLIC_KEY_FILE"));
+            assert!(!error.contains("operator-path-canary"));
+            assert!(!error.contains("operator-value-canary"));
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn public_key_acceptance_still_uses_shared_parser_without_granting_trust() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("public-key.txt");
+        // Test-only signer: neither this key nor the fixture grants operator trust.
+        let public = SigningKey::from_bytes(&[17; 32]).verifying_key();
+        for value in [
+            encode_hex(public.as_bytes()),
+            format!(" \r\n{}\t\n", encode_hex(public.as_bytes())),
+        ] {
+            fs::write(&path, &value).unwrap();
+            assert_eq!(read_public_key(&path).unwrap(), public);
+            assert_eq!(fs::read_to_string(&path).unwrap(), value);
+        }
+        let missing_registry = root.path().join("registry");
+        // Parsing does not create/activate a Registry or bypass package checks.
+        assert!(resolve_active_concept_registry_release(&missing_registry, &public).is_err());
+        assert!(!missing_registry.exists());
+    }
 }
