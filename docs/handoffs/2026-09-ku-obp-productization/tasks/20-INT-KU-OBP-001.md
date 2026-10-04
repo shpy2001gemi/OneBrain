@@ -413,6 +413,11 @@ Broader provisioning/composition remains open.
   Verify success through the existing host's token/key readers, refusal and
   partial-write preservation; document the same guide/CONTRIBUTING entry.
   This additional slice is Review local, outside D-048's merged package.
+- [x] Review the committed new-dataset helper package against main; verify scoped
+  inclusion/exclusion, host format compatibility and retained work. Ready for owner
+  integration decision; implementation tests reused because code is unchanged.
+- [ ] Obtain separate owner authorization before merging/pushing this secrets slice;
+  D-048 covers only the previous manual diagnostics package.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -706,3 +711,31 @@ Task 23, its preparation reports/modules, 108 preparation history additions and
 retained branches/worktree are excluded. This is an additional local contribution;
 D-048 does not authorize its merge/push. Registry provisioning, host composition,
 secret recovery/rotation and product sharing remain contributor backlog.
+
+### New-dataset secrets integration review — 2026-10-04
+
+Reviewed `04906dd..b73e684` (7 files): helper/test, CONTRIBUTING, the existing Web
+run guide, this parent task, PROGRESS and task overview. No scoped integration
+blocker found. Binary 32-byte key and 64-character ASCII hex token match the host
+readers in `ku_local_web.rs`; OS randomness, refusal before writes, exclusive
+creation and retained partial output agree with the documented operator contract.
+Runtime, Registry trust, private/save/share and saved-data formats are unchanged.
+Windows ACL enforcement, concurrent path mutation, transactional pairs and recovery
+remain outside this helper's declared scope; no broader onboarding claim is made.
+
+Direct scoped `git ls-remote --heads origin` at 08:33 Asia/Saigon confirms main
+`04906dd`, qualification `4a8f29d` and no remote secrets branch. Main is the exact
+merge base; one implementation commit is local, with a docs review commit to follow.
+Detached `798eabf` is clean; qualification retains its 3 commits outside main.
+16 incoming file hashes and the exact 108-addition preparation diff are preserved
+outside review commits; backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain-secret-review-5fl8x047/`. No private custody was opened.
+Scoped whitespace, changed docs links and retained-work checks PASS. Reuse the
+4/4 Python, 3 CLI/1 host, build/vNext and prior save/restart/share results above;
+no implementation change justifies rerunning those checks.
+
+The review is ready for the owner to authorize merge/push of `b73e684` plus the
+scoped docs review at local HEAD. D-048 is not authorization for this new package.
+If authorized, freshly check remote and incoming hashes, separate preparation from
+integration, merge/push and verify actual remote state; retain source branches,
+worktree and dirty/untracked preparation. Actual HEAD/state stays in PROGRESS.
