@@ -407,6 +407,12 @@ Broader provisioning/composition remains open.
 - [x] Under explicit owner authorization D-048, merge `ac83f2a..4d01775`
   into main and push origin; merge `403bbbb` exactly matches the reviewed tree.
   Fresh remote/index/retained-work checks PASS; preserve preparation outside Git.
+- [x] Provide one explicit new-dataset secret helper for the missing initial
+  Vault-key/API-token step: OS randomness, fresh private output only, no secret
+  values in diagnostics, no existing-dataset recovery/overwrite or host action.
+  Verify success through the existing host's token/key readers, refusal and
+  partial-write preservation; document the same guide/CONTRIBUTING entry.
+  This additional slice is Review local, outside D-048's merged package.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog
@@ -666,3 +672,37 @@ detached worktree remain intact. Backup: `%LOCALAPPDATA%/Temp/onebrain-manual-me
 No private inputs, Registry or live hosts were opened. This closes integration
 of the three diagnostics slices; non-transactional writes, broader provisioning,
 host composition and product share projection remain contributor backlog.
+
+### New-dataset secret provisioning — 2026-10-04
+
+The run guide previously required a stable binary Vault key and a random token
+without a runnable creation step. `scripts/base/prepare_ku_local_secrets.py`
+now supplies an explicit standard-library command for a new local dataset.
+It generates 32 binary key bytes and a 64-character random hex token using OS
+randomness, requires a fresh custody directory under an existing private parent,
+and rejects existing datasets/custody, repository paths and overlapping targets.
+It does not create the dataset, read existing custody, activate a Registry,
+start a host, save/share or change any runtime/schema/qualification behavior.
+Windows permissions inherit the operator-controlled parent ACL; the helper
+does not configure/assess that ACL. Writes are exclusive but not transactional;
+a failed pair is retained and cannot be reused/resumed by this command.
+
+Checks on Windows/Python 3.13: `python -m unittest
+scripts.base.test_prepare_ku_local_secrets -v` PASS 4/4, including existing
+saved bytes/key preservation and a forced second-write failure with safe guidance.
+`cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api --example
+ku_local_web` PASS (existing duplicate-target/dead-code warnings). Three actual
+helper CLI calls and one rebuilt host call PASS: new pair accepted by host readers,
+expected missing-Registry rejection before dataset creation, no private output,
+and unchanged custody after refused retries/existing synthetic saved data.
+No signed Registry fixture, private inputs, live hosts or full demo were opened.
+`python scripts/ci/validate_vnext_contracts.py` and whitespace/link checks PASS;
+reuse the previously accepted save/restart/share checks because no runtime changed.
+
+Review scope: two Python files, the existing guide/CONTRIBUTING and task/ledger/
+overview updates; based on main `04906dd`, local branch
+`codex/ku-new-dataset-secrets`. Actual commit/integration state is in PROGRESS.
+Task 23, its preparation reports/modules, 108 preparation history additions and
+retained branches/worktree are excluded. This is an additional local contribution;
+D-048 does not authorize its merge/push. Registry provisioning, host composition,
+secret recovery/rotation and product sharing remain contributor backlog.

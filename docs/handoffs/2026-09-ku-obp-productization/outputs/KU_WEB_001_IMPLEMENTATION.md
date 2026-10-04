@@ -68,7 +68,8 @@ Prepare these actual host inputs outside the repository:
    empty; see [manual source setup](#provision-a-developer-owned-manual-source).
 3. A stable 32-byte **binary** Vault key file and an API token file with at least
    32 random ASCII letters/digits (hyphen/underscore also accepted). Supply these
-   through the operator's local secret-management process; retain the same Vault
+   through the operator's local secret-management process, or use the explicit
+   [new-dataset helper](#provision-secrets-for-a-new-dataset). Retain the same Vault
    key and dataset directory on restart. Keys are never generated from fixture
    constants or sent to the Web.
 
@@ -109,6 +110,43 @@ API port, rebuild with `VITE_API_BASE` pointing at that loopback port; the
 existing Web client otherwise defaults to port 4280. This task does not deploy
 a website or configure `onebrain.live`.
 
+### Provision secrets for a new dataset
+
+For a new local demo, Python 3.10+ can create the required files using the operating
+system's random source. First choose an existing operator-controlled private
+parent outside the repository, with access restricted to the intended local user.
+On Windows the new directory/files inherit that parent's ACL; this helper does
+not configure or assess Windows permissions. On POSIX it requests directory mode
+0700 and file mode 0600. Keep the generated files out of Git and reports.
+
+From repository root (PowerShell), with both target directories still absent:
+
+```powershell
+python scripts/base/prepare_ku_local_secrets.py --data-dir C:/OneBrainLocal/dataset --output-dir C:/OneBrainLocal/secrets
+```
+
+Only `ku_local_secrets_ready` means both files were written: `vault.key` contains
+32 binary bytes and `api-token.txt` contains a 64-character random hex token.
+Set the host's `data_dir` to the chosen new dataset path and its `vault_key_file`
+and `api_token_file` to these two files, as in the config above. The command prints
+filenames/guidance without printing private paths, key bytes or the token. Obtain
+the token locally through your secret-management process when opening the Web.
+The dataset is created later by a successful host startup, after its prerequisites
+pass; this helper does not initialize a Registry, source, host, save or share.
+
+The helper refuses an existing `data_dir`, even an empty directory, or an existing
+`output_dir`. It also refuses repository paths, overlapping targets and a missing
+output parent. For an existing dataset, retain/recover its original Vault key and
+token; do not use this command as a repair or rotation tool. Path checks are setup
+guards for a trusted local operator, not a lock against concurrent path changes.
+
+If `ku_local_secrets_write_failed` occurs, retain any partial output, inspect local
+permissions/space and choose a new output directory for the retry. Do not configure
+the host from a failed attempt. Files are created exclusively, but the pair is not
+transactional and there is no automatic cleanup or resume. Once a pair succeeds,
+keep that pair and the same dataset path through Registry/source corrections and
+restarts; those failures do not require new secrets.
+
 ### Resolve config or API-token setup failures
 
 The host reports these failures before creating a dataset or starting the API:
@@ -125,8 +163,9 @@ The host reports these failures before creating a dataset or starting the API:
 Config/token diagnostics omit input values, private paths and token bytes. Inspect
 the indicated config position locally; do not paste custody contents into reports.
 Correct the setup and retry with the same `data_dir`, Vault key and source files.
-The host does not generate or replace secrets on failure. Secret provisioning
-remains a contributor follow-up.
+The host does not generate or replace secrets on failure. The explicit
+[new-dataset helper](#provision-secrets-for-a-new-dataset) is available only for
+initial creation; existing-dataset recovery and rotation remain operator work.
 
 ### Resolve Vault-key setup failures
 

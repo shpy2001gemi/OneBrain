@@ -22,7 +22,9 @@ service/provider boundary, not a separate implementation inside each frontend.
 
 The primary MVP surface is local Web backed by the Rust node/API. You need the
 Rust toolchain, Node/npm and the prerequisites declared by the existing host
-instructions. Python is used by contract checks. This is not yet a one-command
+instructions. Python is used by contract checks and the optional
+[new-dataset secret helper](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#provision-secrets-for-a-new-dataset).
+This is not yet a one-command
 installation: the integration host currently needs a signed Registry, local Vault
 key/API token and host configuration outside Git. Simplifying that setup is part
 of the MVP contributor-entry work; do not invent production trust or use secrets
