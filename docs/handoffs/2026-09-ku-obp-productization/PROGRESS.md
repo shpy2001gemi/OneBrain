@@ -6,45 +6,44 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 17/10/2026 22:58 (Asia/Saigon). Task 20 follow-up: registered editor Public KU share projection — committed/published theo D-050.**
+**Cập nhật: 17/10/2026 23:18 (Asia/Saigon). Task 20 follow-up: `/ku` Web Public KU share & peer inspection UI — committed/published theo D-050.**
 
-- **Mục tiêu hiện tại:** chiếu seam chia sẻ Public KU theo D-045 (`share_prepare`,
-  `share_confirm`, `share_intent`, `share_inspect`) lên bề mặt đã đăng ký
-  `POST /api/vnext/ku/editor` (`KuServices::editor`) trong task20 mà không thêm
-  HTTP route chưa đăng ký hay bật networking mặc định; MVP giữ 22 Merged / 2 Deferred.
-- **Vừa xong:** `bef0d28` trên main thêm các request/response closed-schema
-  (`#[serde(deny_unknown_fields)]`) cho `share_prepare`, `share_confirm`,
-  `share_intent`, `share_inspect` vào `ku_manual.rs` / `base_runtime.rs` /
-  `ku_product.rs`, gắn `PublicKuShareCoordinator` và live opt-in
-  `VNextNetworkRuntime` (`Listening`) qua `vnext_product_runtime.rs` /
-  `ku_host::attach_live_public_reader`, trả `503 capability_disabled`
-  (`ku_public_share_network_unavailable`) khi chưa bật network mà không làm mất
-  `prepared_id` dùng một lần, và cập nhật
-  `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md` cùng
+- **Mục tiêu hiện tại:** chiếu các action chia sẻ Public KU theo D-045 (`share_prepare`,
+  `share_confirm`, `share_intent`, `share_inspect`) đã đăng ký trên
+  `POST /api/vnext/ku/editor` lên client và giao diện `/ku` (`src/onebrain-web`)
+  mà không thêm route chưa đăng ký hay bật networking mặc định; MVP giữ 22 Merged / 2 Deferred.
+- **Vừa xong:** `25b89c5` trên main thêm `sharePrepare`, `shareConfirm`,
+  `shareIntent`, `shareInspect` vào `src/onebrain-web/src/api/ku.ts` và vùng
+  điều khiển D-045 trong `src/onebrain-web/src/pages/KuWorkflow.tsx` +
+  `kuFeedback.ts` (giữ bước preview → confirm tách biệt với `confirm_public: true`,
+  bảo toàn `prepared_id` trong bộ nhớ khi `share_confirm` trả `503 capability_disabled`
+  / `ku_public_share_network_unavailable`, ẩn private `ObjectCID`/source trong
+  share panels, phân biệt pending intent với delivery) cùng cập nhật
+  `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md` và
   `outputs/KU_WEB_001_IMPLEMENTATION.md`. Đã push/direct verify origin/main;
   docs closure ở HEAD cuối (`git log -1`).
 - **Còn lại / blocker:** signed Registry package/public key vẫn do distributor/
-  operator cung cấp; chưa có điều khiển UI trên `/ku` Web hoặc subcommand CLI
-  gọi các action `share_prepare`/`share_confirm`/`share_intent`/`share_inspect`
-  đã đăng ký trên `POST /api/vnext/ku/editor`; recovery/rotation và
+  operator cung cấp; `examples/ku_local_web.rs` hiện chưa có cấu hình opt-in
+  network runtime tùy chọn để gắn `attach_live_public_reader` /
+  `VNextNetworkRuntime` trực tiếp khi chạy host; recovery/rotation và
   proof/portability còn trong backlog.
-- **Bước tiếp theo:** rà soát `src/onebrain-web` (`/ku` local Web UI & transport
-  client) và `src/onebrain-cli` để xác định bước nhỏ tiếp theo nối UI `/ku` hoặc
-  CLI vào các action `share_prepare`, `share_confirm`, `share_intent`,
-  `share_inspect` của `POST /api/vnext/ku/editor`, giữ nguyên bước preview →
-  confirm tách biệt (`confirm_public: true`), ẩn private CID/source và phân biệt
-  pending intent với delivery. Không lặp phần backend `POST /api/vnext/ku/editor`
+- **Bước tiếp theo:** rà soát `src/onebrain-api/examples/ku_local_web.rs` và
+  `src/onebrain-api/src/ku_host.rs` để thêm cấu hình opt-in loopback
+  `VNextNetworkRuntime` tùy chọn (mặc định tắt khi không khai báo) cho
+  `ku_local_web`, gắn `attach_live_public_reader` khi operator bật rõ ràng để
+  chạy trọn luồng `/ku` Web `share_prepare` → `share_confirm` → `share_intent` /
+  `share_inspect` mà không bật networking mặc định. Không lặp phần backend/Web UI
   đã xong hoặc ENC-003.
-- **Đọc tiếp:** [task20 registered editor share result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--registered-editor-public-ku-share-projection-2026-10-17),
+- **Đọc tiếp:** [task20 Web share UI result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--ku-web-public-ku-share-and-peer-inspection-ui-2026-10-17),
   [guide section](outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045),
-  `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md`,
-  `src/onebrain-api/src/ku_host.rs`, `src/onebrain-node/src/ku_product.rs`,
-  `src/onebrain-node/src/ku_manual.rs`.
-- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `c337425`,
-  implementation/spec/guide `bef0d28` committed/pushed/direct verify. Docs closure là
+  `src/onebrain-api/examples/ku_local_web.rs`,
+  `src/onebrain-api/src/ku_host.rs`,
+  `src/onebrain-web/src/pages/KuWorkflow.tsx`.
+- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `642d895`,
+  implementation/spec/guide `25b89c5` committed/pushed/direct verify. Docs closure là
   HEAD cuối, push/direct verify cùng lượt. Fresh fetch/direct refs đầu lượt:
-  main `c337425`, qualification `4a8f29d`; direct verify sau implementation
-  `bef0d28`. Index rỗng sau closure; PROGRESS exact 108 prep additions (cùng
+  main `642d895`, qualification `4a8f29d`; direct verify sau implementation
+  `25b89c5`. Index rỗng sau closure; PROGRESS exact 108 prep additions (cùng
   ghi chú tra cứu SSH local) + task23 dirty, 15 untracked giữ ngoài commits.
   Detached `798eabf` xác minh sạch.
 - **Cần giữ:** 16 retained hashes và exact prep; backup tại
@@ -52,11 +51,11 @@
   `4a8f29d` giữ 3 unmerged commits; Registry `6bc146c`, secrets `f3780c7`,
   source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`, detached `798eabf` và
   mọi fixture/demo/backup cũ giữ nguyên.
-- **Kiểm tra:** 17/10 khoảng 22:39–55 `onebrain-api --lib` 39/39,
-  `onebrain-api --features vnext-network-runtime --lib` 42/42 (`ku_host::tests`
-  3/3), `ku_public_share::tests` 4/4, `ku_product` 19/19, `ku_local_web` 6/6,
-  `ku_peer_demo` check, scoped rustfmt, KU/vNext validators và whitespace PASS.
-  Retained hashes/prep, docs links/scope kiểm tra khi closure; không model/mobile.
+- **Kiểm tra:** 17/10 khoảng 23:08–15 `npm run test:ku` 92/92 (`kuWorkflow.test.tsx`
+  17/17 + `axe`, `kuTransport.test.ts` 2/2), `npm run build` (`tsc -b && vite build`),
+  `npm run lint` (0 errors), KU/vNext validators và whitespace PASS; reuse Rust
+  `onebrain-api` / `onebrain-node` từ `bef0d28`. Retained hashes/prep kiểm tra khi
+  closure; không model/mobile.
 - **Quyết định/giới hạn:** D-050 standing merge/push; D-044/D-045 contracts giữ
   nguyên. Không thêm HTTP route chưa đăng ký, không bật networking mặc định,
   không đụng private operator input/live host/model/mobile hay tuyên bố
@@ -85,7 +84,7 @@ The following docs closure changes only coordination state and is pushed with ma
 
 | Location | Actual state | How it affects the plan |
 |---|---|---|
-| `main`, `origin/main` | D-050 merge `2b14b23`, `e77202c`, `832425b`, normal-host share seam `2eb30d4`, registered editor share projection `bef0d28` + docs closure at HEAD; directly verified 2026-10-17 22:55; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics, normal-host share seam and registered editor share projection Merged/published |
+| `main`, `origin/main` | D-050 merge `2b14b23`, `e77202c`, `832425b`, normal-host share seam `2eb30d4`, registered editor share projection `bef0d28`, `/ku` Web share UI `25b89c5` + docs closure at HEAD; directly verified 2026-10-17 23:15; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics, normal-host share seam, registered editor share projection and `/ku` Web share UI Merged/published |
 | `codex/ku-registry-public-key-diagnostics` | Retained at `6bc146c`; `645c6bc` + scoped docs integrated through `2b14b23` under D-050; root on main | No branch deletion; standing merge/push authority recorded; preparation outside commits |
 | `codex/ku-new-dataset-secrets` | Retained at `f3780c7`; `b73e684` + reviewed docs integrated through `ea92e8a` under D-049; root now on main | No source branch deletion/publication; 17 incoming paths outside integration commits |
 | `codex/ku-manual-provisioning-diagnostics` | Retained at `4d01775`; scoped commits merged through `403bbbb` under D-048; root now on main | No source branch deletion/publication; task23/untracked/108 preparation lines outside integration commits |
@@ -119,6 +118,16 @@ was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by mai
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
 ## Historical checkpoints — not current execution instructions
+
+### 2026-10-17 — `/ku` Web Public KU share and peer inspection UI published
+
+[Same parent result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--ku-web-public-ku-share-and-peer-inspection-ui-2026-10-17):
+`25b89c5` wires `sharePrepare`, `shareConfirm`, `shareIntent` and `shareInspect`
+into `src/onebrain-web/src/api/ku.ts` and `KuWorkflow.tsx` (`kuFeedback.ts`),
+keeping preview → confirm separate (`confirm_public: true`), preserving `prepared_id`
+on `503 capability_disabled`, hiding private CIDs/sources in share panels, and
+distinguishing pending intent from delivery. `npm run test:ku` 92/92, `npm run build`,
+`npm run lint`, KU/vNext PASS; retained work unchanged.
 
 ### 2026-10-17 — Registered editor Public KU share projection published
 
@@ -862,7 +871,7 @@ task ledger for current state.
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
 | 19 | `OBP-MIG-001` | Merged | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | D-042 merge `0604b55`; retained implementation `1d649ce`; [migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
-| 20 | `INT-KU-OBP-001` | Merged | MVP `0b050a4`, first-run `1c4c78a` and manual provisioning `4d01775` integrated in main | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 accepts [A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01); D-047 publishes five fixes (`cbb7d58`); D-048 publishes [three manual diagnostics](tasks/20-INT-KU-OBP-001.md#owner-directed-manual-provisioning-merge--2026-10-04) through `403bbbb`, tree matches reviewed tip. Post-merge vNext/whitespace PASS; prior Rust 6/6/build/smoke/save/share checks reused. Preparation retained outside integration commits; writes non-transactional, broader setup/product-share open. Additional [new-dataset secrets](tasks/20-INT-KU-OBP-001.md#new-dataset-secret-provisioning--2026-10-04) helper Merged/published through `ea92e8a` under D-049 from `f3780c7`; exact tree/retained work/post-merge vNext/whitespace PASS; Python 4/4 + 3 CLI/1 host/build and save/share checks reused. Additional [Registry public-key input](tasks/20-INT-KU-OBP-001.md#owner-directed-registry-integration--2026-10-04) Merged/published through `2b14b23` under D-050 from `6bc146c` (implementation/guide `645c6bc`), based on `3de6a11`; exact tree/parents/post-merge vNext/whitespace/retained-work PASS, example 2/2 + signer/artifact 1/1/build/4 CLI refusals reused. D-050 grants standing merge/push permission; broader package acquisition/composition stays open. Additional [received-package guidance](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--received-registry-package-2026-10-04) committed/pushed `e77202c` under D-050: example 3/3 + signer/artifact 1/1, build/12 CLI calls/vNext PASS; shared authority/activation unchanged. Additional [composed-host config](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04) committed/pushed `832425b` under D-050: one UTF-8 BOM, strict byte/schema bounds, PS5.1 NoClobber composition and two isolated host starts; example 6/6 + saved-read restart 1/1/build/vNext PASS. Additional [normal-host public reader and D-045 share seam](tasks/20-INT-KU-OBP-001.md#latest-follow-up--normal-host-public-reader-and-d-045-share-seam-2026-10-17) committed/pushed `2eb30d4` under D-050: `CanonicalPublicReader` in `ku_host` + shared `PublicKuShareCoordinator` (`ku_public_share` 4/4, `ku_product` 1/1, `ku_host` 1/1 + 2/2 feature, `ku_local_web` 6/6, `ku_peer_demo` check, KU/vNext/rustfmt PASS). Additional [registered editor Public KU share projection](tasks/20-INT-KU-OBP-001.md#latest-follow-up--registered-editor-public-ku-share-projection-2026-10-17) committed/pushed `bef0d28` under D-050: `share_prepare`, `share_confirm`, `share_intent`, `share_inspect` on `POST /api/vnext/ku/editor` (`KuServices::editor`, `onebrain-api` 39/39 + 42/42 feature `ku_host::tests` 3/3, `ku_public_share` 4/4, `ku_product` 19/19, `ku_local_web` 6/6, `ku_peer_demo` check, KU/vNext/rustfmt PASS). Web/CLI share UI projection remains backlog. |
+| 20 | `INT-KU-OBP-001` | Merged | MVP `0b050a4`, first-run `1c4c78a` and manual provisioning `4d01775` integrated in main | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 accepts [A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01); D-047 publishes five fixes (`cbb7d58`); D-048 publishes [three manual diagnostics](tasks/20-INT-KU-OBP-001.md#owner-directed-manual-provisioning-merge--2026-10-04) through `403bbbb`, tree matches reviewed tip. Post-merge vNext/whitespace PASS; prior Rust 6/6/build/smoke/save/share checks reused. Preparation retained outside integration commits; writes non-transactional, broader setup/product-share open. Additional [new-dataset secrets](tasks/20-INT-KU-OBP-001.md#new-dataset-secret-provisioning--2026-10-04) helper Merged/published through `ea92e8a` under D-049 from `f3780c7`; exact tree/retained work/post-merge vNext/whitespace PASS; Python 4/4 + 3 CLI/1 host/build and save/share checks reused. Additional [Registry public-key input](tasks/20-INT-KU-OBP-001.md#owner-directed-registry-integration--2026-10-04) Merged/published through `2b14b23` under D-050 from `6bc146c` (implementation/guide `645c6bc`), based on `3de6a11`; exact tree/parents/post-merge vNext/whitespace/retained-work PASS, example 2/2 + signer/artifact 1/1/build/4 CLI refusals reused. D-050 grants standing merge/push permission; broader package acquisition/composition stays open. Additional [received-package guidance](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--received-registry-package-2026-10-04) committed/pushed `e77202c` under D-050: example 3/3 + signer/artifact 1/1, build/12 CLI calls/vNext PASS; shared authority/activation unchanged. Additional [composed-host config](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04) committed/pushed `832425b` under D-050: one UTF-8 BOM, strict byte/schema bounds, PS5.1 NoClobber composition and two isolated host starts; example 6/6 + saved-read restart 1/1/build/vNext PASS. Additional [normal-host public reader and D-045 share seam](tasks/20-INT-KU-OBP-001.md#latest-follow-up--normal-host-public-reader-and-d-045-share-seam-2026-10-17) committed/pushed `2eb30d4` under D-050: `CanonicalPublicReader` in `ku_host` + shared `PublicKuShareCoordinator` (`ku_public_share` 4/4, `ku_product` 1/1, `ku_host` 1/1 + 2/2 feature, `ku_local_web` 6/6, `ku_peer_demo` check, KU/vNext/rustfmt PASS). Additional [registered editor Public KU share projection](tasks/20-INT-KU-OBP-001.md#latest-follow-up--registered-editor-public-ku-share-projection-2026-10-17) committed/pushed `bef0d28` under D-050: `share_prepare`, `share_confirm`, `share_intent`, `share_inspect` on `POST /api/vnext/ku/editor` (`KuServices::editor`, `onebrain-api` 39/39 + 42/42 feature `ku_host::tests` 3/3, `ku_public_share` 4/4, `ku_product` 19/19, `ku_local_web` 6/6, `ku_peer_demo` check, KU/vNext/rustfmt PASS). Additional [`/ku` Web Public KU share & peer inspection UI](tasks/20-INT-KU-OBP-001.md#latest-follow-up--ku-web-public-ku-share-and-peer-inspection-ui-2026-10-17) committed/pushed `25b89c5` under D-050 (`npm run test:ku` 92/92, `npm run build`, `npm run lint`, KU/vNext PASS). Opt-in `ku_local_web` network attachment remains backlog. |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Deferred | Retained `codex/ku-enc-003-model-qualification` at `4a8f29d`; newer preparation retained uncommitted in the original working tree | KU-ENC-002; formal qualification inputs when resumed | D-044 removes this from MVP critical path. 200-source export and 85-test preparation retained; full harness/reviewer/run lock unfinished; model unqualified. |

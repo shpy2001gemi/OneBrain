@@ -6,6 +6,47 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — `/ku` Web Public KU share and peer inspection UI (2026-10-17)
+
+Implementation/spec/guide `25b89c5`, based on main `642d895`, is committed/pushed
+and directly verified under D-050. Note that `onebrain ku` CLI remains scoped by
+[KU_LOCAL_CLI_PROJECTION_V1](../../../specs/vnext/KU_LOCAL_CLI_PROJECTION_V1.md)
+to the eleven Base KU operations (`POST /api/vnext/ku/operations`), whereas the
+local `/ku` Web workspace is the contracted client of `POST /api/vnext/ku/editor`.
+
+- `src/onebrain-web/src/api/ku.ts` adds typed `sharePrepare`, `shareConfirm`,
+  `shareIntent` and `shareInspect` methods over the dedicated `no-store` /
+  `credentials: "omit"` `/api/vnext/ku/editor` transport without debug logging.
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` and `kuFeedback.ts` project a
+  four-step D-045 section from the currently inspected `LOCAL_ONLY`
+  `accepted_known` artifact: (1) prepare a new Public manual kernel preview,
+  (2) review the public preview/consequence and separately check/click explicit
+  confirmation (`confirm_public: true`), preserving the single-use `prepared_id`
+  in memory if the host returns `503 capability_disabled`
+  (`ku_public_share_network_unavailable`), (3) inspect sender outbound intent
+  status (`claims_network_completion: false`), and (4) inspect receiver accepted
+  Public KU content and authenticated transport/selector provenance
+  (`fidelity: "unassessed"`, `authorizes_reward: false`) while keeping private
+  `ObjectCID` and source references out of the share panels.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the `/ku` Web projection and boundaries.
+
+Windows focused checks on 17/10, approximately 23:08–15 Asia/Saigon:
+`npm run test:ku` 92/92 PASS across 7 test files (`kuWorkflow.test.tsx` 17/17
+including `axe-core` accessibility and the end-to-end D-045 prepare →
+disabled-network preservation → explicit confirm → intent status → receiver
+inspect journey; `kuTransport.test.ts` 2/2), `npm run build` (`tsc -b && vite
+build`) PASS, `npm run lint` PASS (0 errors), KU/vNext contract validators and
+whitespace PASS. Reuse the prior Rust `onebrain-api` / `onebrain-node` checks
+from `bef0d28` because no Rust runtime code changed. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect whether
+`examples/ku_local_web.rs` should accept an optional opt-in loopback
+`VNextNetworkRuntime` block (default off) so operators can exercise `/ku` Web
+share confirmation and peer inspection directly from `ku_local_web`.
+
 ## Latest follow-up — registered editor public KU share projection (2026-10-17)
 
 Implementation/spec/guide `bef0d28`, based on main `c337425`, is committed/pushed
@@ -691,9 +732,19 @@ Broader provisioning/composition remains open.
   `ku_product` 19/19, `ku_local_web` 6/6, `ku_peer_demo` check, scoped rustfmt
   and KU/vNext PASS.
 
-Preserve Registry trust and private source/key custody. Web/CLI share UI
-projection, richer roots and source/author/fidelity proof remain separate backlog
-entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
+- [x] Project `share_prepare`, `share_confirm`, `share_intent` and `share_inspect`
+  in the `/ku` Web transport client (`src/onebrain-web/src/api/ku.ts`) and
+  workspace (`src/onebrain-web/src/pages/KuWorkflow.tsx`, `kuFeedback.ts`),
+  keeping preview and confirmation separate (`confirm_public: true`), preserving
+  `prepared_id` on `503 capability_disabled` (`ku_public_share_network_unavailable`),
+  hiding private `ObjectCID`/source refs in share panels, and distinguishing
+  pending durable intent from delivery. Commit/push `25b89c5` under D-050;
+  `npm run test:ku` 92/92 (`kuWorkflow.test.tsx` 17/17 + `axe`, `kuTransport.test.ts`
+  2/2), `npm run build`, `npm run lint` and KU/vNext validators PASS.
+
+Preserve Registry trust and private source/key custody. Opt-in `ku_local_web`
+network attachment, richer roots and source/author/fidelity proof remain separate
+backlog entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
 
 Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
 -p onebrain-api --example ku_local_web` 1/1 PASS; `cargo build --locked --manifest-path
