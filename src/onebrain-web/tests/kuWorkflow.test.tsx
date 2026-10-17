@@ -47,12 +47,16 @@ function fixture(
     prepareWait?: Promise<void>;
     prepareFailure?: "deadline" | "resource" | "oneof" | "concept_label" | "duplicate_id";
     reservedAfterFailure?: boolean;
+    shareNetworkDisabled?: boolean;
   } = {},
 ) {
   let saved = false;
   let failed = false;
   let currentOp = op;
   let currentSession = { ...session };
+  const publicObject = "d".repeat(64),
+    preparedShareId = "e".repeat(64),
+    shareIntent = "f".repeat(64);
   const calls: { path: string; body: any; init: RequestInit }[] = [];
   const prepared = () => ({
     operation_id: currentOp,
@@ -171,6 +175,94 @@ function fixture(
               implementation_commitment: "9".repeat(64),
               semantic_profile: "ku-semantic-content/1.0",
               destination: "LOCAL_ONLY",
+            };
+            break;
+          case "share_prepare":
+            payload = {
+              event: "share_prepared",
+              prepared_id: preparedShareId,
+              intent_id: shareIntent,
+              public_object_cid: publicObject,
+              semantic_content_cid: semantic,
+              canonical_base64: "Ag==",
+              semantic: {
+                semantic_content_cid: semantic,
+                statements: [
+                  {
+                    predicate_ccid: ccid,
+                    text_arguments: ["Water is a liquid."],
+                  },
+                ],
+                fidelity: "unassessed",
+              },
+              expected_node_id: body.request.payload.expected_node_id,
+              address: body.request.payload.address,
+              selector: body.request.payload.selector,
+              namespace: body.request.payload.namespace,
+              expires_at: 1900000900,
+              consequence:
+                "This new object and its semantic content become Public. The recipient may retain and forward it permanently. The private source and original private object are not included. Provenance is authenticated transport only, not original-source, author or fidelity verification.",
+              enqueued: false,
+              payload_sent: false,
+              support: "one predicate and one text literal only",
+            };
+            break;
+          case "share_confirm":
+            if (options.shareNetworkDisabled)
+              return new Response(
+                JSON.stringify({
+                  ok: false,
+                  error: {
+                    code: "capability_disabled",
+                    failure: {
+                      code: "CapabilityDisabled",
+                      retryable: false,
+                      reconcile_before_retry: false,
+                      limitations: ["ku_public_share_network_unavailable"],
+                    },
+                  },
+                }),
+                { status: 503 },
+              );
+            payload = {
+              event: "share_confirmed",
+              intent_id: shareIntent,
+              public_object_cid: publicObject,
+              outbox: "Enqueued",
+              delivery: "pending; inspect intent for acknowledgement",
+              authorizes_reward: false,
+            };
+            break;
+          case "share_intent":
+            payload = {
+              event: "intent",
+              intent_id: body.request.payload.intent_id,
+              public_object_cid: publicObject,
+              state: "Acknowledged",
+              terminal_sequence: 1,
+              claims_network_completion: false,
+            };
+            break;
+          case "share_inspect":
+            payload = {
+              event: "public_object",
+              object_cid: body.request.payload.object_cid,
+              canonical_base64: "Ag==",
+              semantic: {
+                semantic_content_cid: semantic,
+                statements: [
+                  {
+                    predicate_ccid: ccid,
+                    text_arguments: ["Water is a liquid."],
+                  },
+                ],
+                fidelity: "unassessed",
+              },
+              authenticated_source_peers: ["12".repeat(32)],
+              provenance:
+                "transport/selector only; original source withheld and unverifiable",
+              fidelity: "unassessed",
+              authorizes_reward: false,
             };
             break;
         }
@@ -692,5 +784,136 @@ describe("local KU component journey", () => {
       false,
     );
     await preview();
+  });
+  it("projects D-045 Public KU share preview, separate confirmation, disabled-network preservation, intent status and receiver inspection without exposing private CIDs", async () => {
+    const options = { emptyCatalog: true, shareNetworkDisabled: true };
+    const f = fixture(options);
+    render(<KuWorkflowPage client={f.client} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    const peer = "12".repeat(32),
+      selector = "ab".repeat(32),
+      namespace = "cd".repeat(32),
+      publicObject = "d".repeat(64),
+      preparedShareId = "e".repeat(64),
+      shareIntent = "f".repeat(64);
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: peer } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+      target: { value: selector },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: namespace } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    const preparedRegion = await screen.findByRole("article", {
+      name: "Prepared public share preview",
+    });
+    expect(preparedRegion.textContent).toContain(publicObject);
+    expect(preparedRegion.textContent).toContain(semantic);
+    expect(preparedRegion.textContent).toContain("Water is a liquid.");
+    expect(preparedRegion.textContent).toContain("Enqueued: false");
+    expect(preparedRegion.textContent).toContain("Payload sent: false");
+    expect(preparedRegion.textContent).not.toContain(object);
+    expect(preparedRegion.textContent).not.toContain(source);
+    expect(
+      f.calls.find((c) => c.body?.request?.action === "share_prepare")!.body
+        .request.payload,
+    ).toEqual({
+      object_cid: object,
+      expected_node_id: peer,
+      address: "127.0.0.1:41999",
+      selector,
+      namespace,
+    });
+    expect(
+      f.calls.some((c) => c.body?.request?.action === "share_confirm"),
+    ).toBe(false);
+    const confirmBtn = screen.getByRole("button", {
+      name: "Confirm public share",
+    }) as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    expect(confirmBtn.disabled).toBe(false);
+    fireEvent.click(confirmBtn);
+    await screen.findByRole("heading", {
+      name: "Public KU share network runtime is disabled",
+    });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Any unexpired prepared share preview remains available in memory",
+    );
+    expect(
+      screen.getByRole("article", { name: "Prepared public share preview" })
+        .textContent,
+    ).toContain(preparedShareId);
+    options.shareNetworkDisabled = false;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm public share" }),
+    );
+    const confirmedRegion = await screen.findByRole("article", {
+      name: "Confirmed public share intent",
+    });
+    expect(confirmedRegion.textContent).toContain(shareIntent);
+    expect(confirmedRegion.textContent).toContain(publicObject);
+    expect(confirmedRegion.textContent).toContain(
+      "pending; inspect intent for acknowledgement",
+    );
+    expect(confirmedRegion.textContent).toContain("Reward authorized: false");
+    expect(confirmedRegion.textContent).not.toContain(object);
+    expect(
+      screen.queryByRole("article", { name: "Prepared public share preview" }),
+    ).toBeNull();
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "share_confirm").at(-1)!
+        .body.request.payload,
+    ).toEqual({
+      prepared_id: preparedShareId,
+      confirm_public: true,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect share intent" }),
+    );
+    const intentRegion = await screen.findByRole("article", {
+      name: "Outbound share intent status",
+    });
+    expect(intentRegion.textContent).toContain("Acknowledged");
+    expect(intentRegion.textContent).toContain(
+      "Claims network completion: false",
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted Public ObjectCID (64 lowercase hex)"),
+      { target: { value: publicObject } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: selector } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    const inspectRegion = await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+    expect(inspectRegion.textContent).toContain(publicObject);
+    expect(inspectRegion.textContent).toContain(semantic);
+    expect(inspectRegion.textContent).toContain(peer);
+    expect(inspectRegion.textContent).toContain(
+      "transport/selector only; original source withheld and unverifiable",
+    );
+    expect(inspectRegion.textContent).toContain("Reward authorized: false");
+    expect(inspectRegion.textContent).not.toContain(object);
+    expect(inspectRegion.textContent).not.toContain(source);
   });
 });

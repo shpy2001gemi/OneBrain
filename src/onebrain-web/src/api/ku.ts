@@ -111,6 +111,76 @@ export interface Draft {
   selected_ccid?: string;
   argument_text: string;
 }
+export interface PublicSharePrepareInput {
+  object_cid: string;
+  expected_node_id: string;
+  address: string;
+  selector: string;
+  namespace: string;
+}
+export interface PublicShareSemantic {
+  semantic_content_cid: string;
+  statements: {
+    predicate_ccid: string;
+    text_arguments: (string | null)[];
+  }[];
+  fidelity: "unassessed";
+}
+export interface PublicSharePrepared {
+  event: "share_prepared";
+  prepared_id: string;
+  intent_id: string;
+  public_object_cid: string;
+  semantic_content_cid: string;
+  canonical_base64: string;
+  semantic: PublicShareSemantic;
+  expected_node_id: string;
+  address: string;
+  selector: string;
+  namespace: string;
+  expires_at: number;
+  consequence: string;
+  enqueued: false;
+  payload_sent: false;
+  support: string;
+}
+export interface PublicShareConfirmInput {
+  prepared_id: string;
+  confirm_public: boolean;
+}
+export interface PublicShareConfirmed {
+  event: "share_confirmed";
+  intent_id: string;
+  public_object_cid: string;
+  outbox: string;
+  delivery: string;
+  authorizes_reward: false;
+}
+export interface PublicShareIntentInput {
+  intent_id: string;
+}
+export interface PublicShareIntentView {
+  event: "intent";
+  intent_id: string;
+  public_object_cid: string;
+  state: string;
+  terminal_sequence: number | null;
+  claims_network_completion: false;
+}
+export interface PublicShareInspectInput {
+  object_cid: string;
+  selector: string;
+}
+export interface PublicShareObjectView {
+  event: "public_object";
+  object_cid: string;
+  canonical_base64: string;
+  semantic: PublicShareSemantic;
+  authenticated_source_peers: string[];
+  provenance: string;
+  fidelity: "unassessed";
+  authorizes_reward: false;
+}
 export class KuError extends Error {
   readonly failure?: Failure;
   readonly uncertain: boolean;
@@ -236,6 +306,30 @@ export function createKuClient(
         session,
         budget,
         request: { action: "draft", payload },
+      }),
+    sharePrepare: (session: Session, payload: PublicSharePrepareInput) =>
+      request<PublicSharePrepared>("editor", {
+        session,
+        budget,
+        request: { action: "share_prepare", payload },
+      }),
+    shareConfirm: (session: Session, payload: PublicShareConfirmInput) =>
+      request<PublicShareConfirmed>("editor", {
+        session,
+        budget,
+        request: { action: "share_confirm", payload },
+      }),
+    shareIntent: (session: Session, payload: PublicShareIntentInput) =>
+      request<PublicShareIntentView>("editor", {
+        session,
+        budget,
+        request: { action: "share_intent", payload },
+      }),
+    shareInspect: (session: Session, payload: PublicShareInspectInput) =>
+      request<PublicShareObjectView>("editor", {
+        session,
+        budget,
+        request: { action: "share_inspect", payload },
       }),
     invoke: <K extends keyof Operations>(
       session: Session,

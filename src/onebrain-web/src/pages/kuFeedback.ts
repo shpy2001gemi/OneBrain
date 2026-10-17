@@ -7,6 +7,9 @@ export function describeKuError(error: unknown) {
   const diagnostics = reasons.filter(reason => reason.startsWith("schema: ") || reason.startsWith("grounding: "));
   const conceptLabel = reasons.includes("concept_label");
   const duplicateId = reasons.includes("duplicate_id");
+  const shareNetworkUnavailable =
+    failure?.code === "CapabilityDisabled" &&
+    reasons.includes("ku_public_share_network_unavailable");
   const invalidCandidate = diagnostics.length > 0 || reasons.includes("oneof") || conceptLabel || duplicateId;
   const technical = [
     error instanceof Error ? error.message : "Local operation failed",
@@ -17,15 +20,17 @@ export function describeKuError(error: unknown) {
       : "",
   ].filter(Boolean).join(" · ");
   return {
-    title: deadline ? "Encoding timed out" : duplicateId ? "AI output repeats an internal identifier" : conceptLabel ? "AI concept label differs from its source evidence" : invalidCandidate ? "AI output does not match the KU schema" : "Local operation could not finish",
+    title: deadline ? "Encoding timed out" : shareNetworkUnavailable ? "Public KU share network runtime is disabled" : duplicateId ? "AI output repeats an internal identifier" : conceptLabel ? "AI concept label differs from its source evidence" : invalidCandidate ? "AI output does not match the KU schema" : "Local operation could not finish",
     explanation: deadline
       ? "The host exhausted the encoding time budget before returning a validated preview. The current experimental Ollama workflow has a 600-second (10-minute) budget, including worker startup, model inference, any repair call and validation."
+      : shareNetworkUnavailable ? "The host keeps networking disabled by default. Confirming a Public KU share or inspecting outbound/accepted peer share state requires an active opt-in VNextNetworkRuntime attached to this host."
       : duplicateId ? "The model reused an identifier within a collection of concepts, statements or coverage entries. Distinct items need distinct keys; references must point to the intended item. Each required unit needs one coverage entry. No validated preview was produced."
       : conceptLabel ? "A concept.label returned by the model does not exactly match its evidence.quote. The label must copy the source wording, including case, accents and spelling. No validated preview was produced. This error does not establish that the concept is missing from the Registry or that your sentence is factually wrong."
       : invalidCandidate ? "The host rejected the model's structured output. No validated preview was produced. The schema issues below identify fields to repair; they do not judge whether your source is factually true."
       : "The host did not return a successful result for this request. Read the technical reason below before deciding whether to retry.",
     context: deadline
       ? "Here, rate_limited is the API category for ResourceExhausted; deadline identifies a time limit. It does not indicate an AI account quota, prove that RAM ran out, or mean your sentence is incorrect. The reply does not identify the exact internal step that timed out."
+      : shareNetworkUnavailable ? "No payload was enqueued or sent. Any unexpired prepared share preview remains available in memory."
       : invalidCandidate ? "DependencyUnavailable is the transport category for this failure; it does not mean Ollama is disconnected. The automatic repair allowance is bounded; checking the recorded outcome will not run another repair."
       : "An interrupted response does not establish whether a write completed. Existing saved knowledge remains separate from this request.",
     recovery: failure?.reconcile_before_retry || (error instanceof KuError && error.uncertain)

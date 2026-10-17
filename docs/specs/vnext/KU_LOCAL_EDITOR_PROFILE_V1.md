@@ -111,4 +111,11 @@ sender's durable outbox state (`claims_network_completion: false`), and
 `share_inspect` inspects an accepted Public KU and its authenticated transport/selector
 provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`
-`get` and `export` (`mode: "canonical_public_exchange"`).
+`get` and `export` (`mode: "canonical_public_exchange"`). The `/ku` Web client
+(`createKuClient`) and workspace (`KuWorkflowPage`) project these four actions
+from the currently inspected `LOCAL_ONLY` `accepted_known` artifact with a
+separate preview-then-confirm gesture (`confirm_public: true`), preserve the
+in-memory preview when `share_confirm` returns `503 capability_disabled`
+(`ku_public_share_network_unavailable`), keep private `ObjectCID` and source
+bytes out of the share preview/inspect UI, and distinguish durable outbox
+intent creation from peer delivery.

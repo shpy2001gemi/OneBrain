@@ -33,3 +33,63 @@ it("preserves typed Base error policy without logging private request or respons
   log.mockRestore();
   error.mockRestore();
 });
+it("projects sharePrepare, shareConfirm, shareIntent and shareInspect through POST /api/vnext/ku/editor without logging", async () => {
+  const log = vi.spyOn(console, "log"),
+    error = vi.spyOn(console, "error");
+  const session = {
+    process_generation: "6".repeat(64),
+    dataset_generation: "7".repeat(64),
+  };
+  const calls: { url: string; init: RequestInit }[] = [];
+  const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init: init! });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        data: { session, payload: { event: "ok" }, model_qualified: false },
+        meta: {
+          lifecycle: "active",
+          coverage: "local_only",
+          limitations: [],
+          continuation: null,
+        },
+      }),
+      { status: 200 },
+    );
+  });
+  const client = createKuClient(
+    async () => ({ baseUrl: "http://local", token: "secret" }),
+    fetcher as typeof fetch,
+  );
+  await client.sharePrepare(session, {
+    object_cid: "1".repeat(64),
+    expected_node_id: "2".repeat(64),
+    address: "127.0.0.1:41999",
+    selector: "3".repeat(64),
+    namespace: "4".repeat(64),
+  });
+  await client.shareConfirm(session, {
+    prepared_id: "5".repeat(64),
+    confirm_public: true,
+  });
+  await client.shareIntent(session, { intent_id: "8".repeat(64) });
+  await client.shareInspect(session, {
+    object_cid: "9".repeat(64),
+    selector: "3".repeat(64),
+  });
+  expect(
+    calls.map((c) => JSON.parse(String(c.init.body)).request.action),
+  ).toEqual(["share_prepare", "share_confirm", "share_intent", "share_inspect"]);
+  expect(
+    calls.every(
+      (c) =>
+        c.url === "http://local/api/vnext/ku/editor" &&
+        c.init.cache === "no-store" &&
+        c.init.credentials === "omit",
+    ),
+  ).toBe(true);
+  expect(log).not.toHaveBeenCalled();
+  expect(error).not.toHaveBeenCalled();
+  log.mockRestore();
+  error.mockRestore();
+});

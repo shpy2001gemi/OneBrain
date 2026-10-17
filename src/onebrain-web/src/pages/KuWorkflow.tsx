@@ -14,6 +14,10 @@ import type {
   OperationRef,
   Meta,
   Models,
+  PublicSharePrepared,
+  PublicShareConfirmed,
+  PublicShareIntentView,
+  PublicShareObjectView,
 } from "../api/ku";
 import "./kuWorkflow.css";
 import { describeKuError as describeError } from "./kuFeedback";
@@ -63,6 +67,20 @@ export function KuWorkflowPage({
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [recovery, setRecovery] = useState("");
+  const [sharePeer, setSharePeer] = useState("");
+  const [shareAddress, setShareAddress] = useState("");
+  const [shareSelector, setShareSelector] = useState("");
+  const [shareNamespace, setShareNamespace] = useState("");
+  const [sharePrepared, setSharePrepared] = useState<PublicSharePrepared>();
+  const [shareConfirmPublic, setShareConfirmPublic] = useState(false);
+  const [shareConfirmed, setShareConfirmed] = useState<PublicShareConfirmed>();
+  const [shareIntentId, setShareIntentId] = useState("");
+  const [shareIntentView, setShareIntentView] =
+    useState<PublicShareIntentView>();
+  const [shareInspectCid, setShareInspectCid] = useState("");
+  const [shareInspectSelector, setShareInspectSelector] = useState("");
+  const [shareInspectView, setShareInspectView] =
+    useState<PublicShareObjectView>();
   const [error, setError] = useState<ReturnType<typeof describeError>>();
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
@@ -776,6 +794,8 @@ export function KuWorkflowPage({
                             })
                           ).data.payload,
                         );
+                        setSharePrepared(undefined);
+                        setShareConfirmPublic(false);
                         requestAnimationFrame(() =>
                           inspectRef.current?.focus(),
                         );
@@ -847,6 +867,324 @@ export function KuWorkflowPage({
           </button>
         </section>
       )}
+      <section className="glass-card" aria-labelledby="ku-share-title">
+        <h2 id="ku-share-title">Public KU share and peer inspection (D-045)</h2>
+        <p>
+          Explicit two-step disclosure: prepare a new Public manual kernel from
+          the currently inspected saved private artifact, review the exact
+          public preview and permanent consequence, then separately confirm
+          public disclosure. Private ObjectCIDs, source bytes and spans are
+          never included. Confirmation records a pending durable outbound intent
+          only; it is not peer delivery, original-source verification, adoption,
+          Use or reward.
+        </p>
+        <p>
+          {view?.disclosure_class === "LOCAL_ONLY" &&
+          view.artifact_validity === "accepted_known"
+            ? `Ready to prepare a new Public object from the currently inspected private artifact (SemanticContentCID: ${view.semantic_content_cid ?? "unavailable"}).`
+            : "Inspect an accepted saved LOCAL_ONLY artifact above before preparing a new Public share preview."}
+        </p>
+        <fieldset
+          disabled={
+            busy ||
+            !session ||
+            view?.disclosure_class !== "LOCAL_ONLY" ||
+            view?.artifact_validity !== "accepted_known"
+          }
+        >
+          <legend>1. Prepare a Public KU share preview</legend>
+          <label htmlFor="ku-share-peer">
+            Recipient NodeID (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-peer"
+            className="input"
+            value={sharePeer}
+            maxLength={64}
+            onChange={(e) => {
+              setSharePeer(e.target.value);
+              setSharePrepared(undefined);
+              setShareConfirmPublic(false);
+            }}
+          />
+          <label htmlFor="ku-share-address">Peer loopback address</label>
+          <input
+            id="ku-share-address"
+            className="input"
+            value={shareAddress}
+            maxLength={64}
+            onChange={(e) => {
+              setShareAddress(e.target.value);
+              setSharePrepared(undefined);
+              setShareConfirmPublic(false);
+            }}
+          />
+          <label htmlFor="ku-share-selector">
+            Selector CID (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-selector"
+            className="input"
+            value={shareSelector}
+            maxLength={64}
+            onChange={(e) => {
+              setShareSelector(e.target.value);
+              setSharePrepared(undefined);
+              setShareConfirmPublic(false);
+            }}
+          />
+          <label htmlFor="ku-share-namespace">
+            Namespace commitment (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-namespace"
+            className="input"
+            value={shareNamespace}
+            maxLength={64}
+            onChange={(e) => {
+              setShareNamespace(e.target.value);
+              setSharePrepared(undefined);
+              setShareConfirmPublic(false);
+            }}
+          />
+          <button
+            className="btn btn-primary"
+            disabled={
+              !view ||
+              !/^[0-9a-f]{64}$/.test(sharePeer) ||
+              !shareAddress.trim() ||
+              !/^[0-9a-f]{64}$/.test(shareSelector) ||
+              !/^[0-9a-f]{64}$/.test(shareNamespace)
+            }
+            onClick={() =>
+              void run(async () => {
+                const current = await refresh();
+                const result = await client.sharePrepare(current, {
+                  object_cid: view!.object_cid,
+                  expected_node_id: sharePeer,
+                  address: shareAddress.trim(),
+                  selector: shareSelector,
+                  namespace: shareNamespace,
+                });
+                setSharePrepared(result.data.payload);
+                setShareConfirmPublic(false);
+                setShareConfirmed(undefined);
+                setShareIntentId(result.data.payload.intent_id);
+                setMetadata(result.meta);
+              })
+            }
+          >
+            Prepare public share preview
+          </button>
+        </fieldset>
+        {sharePrepared && (
+          <article aria-label="Prepared public share preview">
+            <h3>2. Review and confirm Public KU share</h3>
+            <p>
+              <strong>{sharePrepared.consequence}</strong>
+            </p>
+            <p className="ku-id">
+              Public ObjectCID: {sharePrepared.public_object_cid}
+              <br />
+              SemanticContentCID: {sharePrepared.semantic_content_cid}
+              <br />
+              Prepared ID: {sharePrepared.prepared_id} · Intent ID:{" "}
+              {sharePrepared.intent_id}
+            </p>
+            <p className="ku-id">
+              Recipient NodeID: {sharePrepared.expected_node_id} · Address:{" "}
+              {sharePrepared.address}
+              <br />
+              Selector: {sharePrepared.selector} · Namespace:{" "}
+              {sharePrepared.namespace}
+            </p>
+            <p>
+              Expires at (Unix s): {sharePrepared.expires_at} · Enqueued:{" "}
+              {String(sharePrepared.enqueued)} · Payload sent:{" "}
+              {String(sharePrepared.payload_sent)} · Support:{" "}
+              {sharePrepared.support} · Fidelity:{" "}
+              {sharePrepared.semantic.fidelity}
+            </p>
+            {sharePrepared.semantic.statements.map((stmt, idx) => (
+              <p key={idx} className="ku-id">
+                Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                {stmt.text_arguments.filter(Boolean).join(", ")}
+              </p>
+            ))}
+            <details>
+              <summary>Public canonical preview (base64)</summary>
+              <pre>{sharePrepared.canonical_base64}</pre>
+            </details>
+            <label htmlFor="ku-share-confirm-public">
+              <input
+                id="ku-share-confirm-public"
+                type="checkbox"
+                checked={shareConfirmPublic}
+                disabled={busy || !session}
+                onChange={(e) => setShareConfirmPublic(e.target.checked)}
+              />{" "}
+              Confirm public disclosure of this exact preview (confirm_public:
+              true)
+            </label>
+            <button
+              className="btn btn-primary"
+              disabled={busy || !session || !shareConfirmPublic}
+              onClick={() =>
+                void run(async () => {
+                  const current = await refresh();
+                  const result = await client.shareConfirm(current, {
+                    prepared_id: sharePrepared.prepared_id,
+                    confirm_public: true,
+                  });
+                  setShareConfirmed(result.data.payload);
+                  setShareIntentId(result.data.payload.intent_id);
+                  setSharePrepared(undefined);
+                  setShareConfirmPublic(false);
+                  setMetadata(result.meta);
+                })
+              }
+            >
+              Confirm public share
+            </button>
+          </article>
+        )}
+        {shareConfirmed && (
+          <article aria-label="Confirmed public share intent">
+            <h3>Public share intent recorded</h3>
+            <p className="ku-id">
+              Intent ID: {shareConfirmed.intent_id}
+              <br />
+              Public ObjectCID: {shareConfirmed.public_object_cid}
+            </p>
+            <p>
+              Outbox: <strong>{shareConfirmed.outbox}</strong> · Delivery:{" "}
+              <strong>{shareConfirmed.delivery}</strong> · Reward authorized:{" "}
+              {String(shareConfirmed.authorizes_reward)}
+            </p>
+            <p>
+              Confirmation records a durable outbound intent only. Inspect the
+              outbound intent below to check peer acknowledgement.
+            </p>
+          </article>
+        )}
+        <fieldset disabled={busy || !session}>
+          <legend>3. Inspect outbound share intent</legend>
+          <label htmlFor="ku-share-intent-id">
+            Outbound intent ID (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-intent-id"
+            className="input"
+            value={shareIntentId}
+            maxLength={64}
+            onChange={(e) => setShareIntentId(e.target.value)}
+          />
+          <button
+            className="btn"
+            disabled={!/^[0-9a-f]{64}$/.test(shareIntentId)}
+            onClick={() =>
+              void run(async () => {
+                const current = await refresh();
+                const result = await client.shareIntent(current, {
+                  intent_id: shareIntentId,
+                });
+                setShareIntentView(result.data.payload);
+                setMetadata(result.meta);
+              })
+            }
+          >
+            Inspect share intent
+          </button>
+        </fieldset>
+        {shareIntentView && (
+          <article aria-label="Outbound share intent status">
+            <h3>Outbound intent status: {shareIntentView.state}</h3>
+            <p className="ku-id">
+              Intent ID: {shareIntentView.intent_id}
+              <br />
+              Public ObjectCID: {shareIntentView.public_object_cid}
+            </p>
+            <p>
+              State: <strong>{shareIntentView.state}</strong> · Terminal
+              sequence: {shareIntentView.terminal_sequence ?? "none"} · Claims
+              network completion:{" "}
+              {String(shareIntentView.claims_network_completion)}
+            </p>
+          </article>
+        )}
+        <fieldset disabled={busy || !session}>
+          <legend>4. Inspect accepted Public KU</legend>
+          <label htmlFor="ku-share-inspect-cid">
+            Accepted Public ObjectCID (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-inspect-cid"
+            className="input"
+            value={shareInspectCid}
+            maxLength={64}
+            onChange={(e) => setShareInspectCid(e.target.value)}
+          />
+          <label htmlFor="ku-share-inspect-selector">
+            Accepted selector CID (64 lowercase hex)
+          </label>
+          <input
+            id="ku-share-inspect-selector"
+            className="input"
+            value={shareInspectSelector}
+            maxLength={64}
+            onChange={(e) => setShareInspectSelector(e.target.value)}
+          />
+          <button
+            className="btn"
+            disabled={
+              !/^[0-9a-f]{64}$/.test(shareInspectCid) ||
+              !/^[0-9a-f]{64}$/.test(shareInspectSelector)
+            }
+            onClick={() =>
+              void run(async () => {
+                const current = await refresh();
+                const result = await client.shareInspect(current, {
+                  object_cid: shareInspectCid,
+                  selector: shareInspectSelector,
+                });
+                setShareInspectView(result.data.payload);
+                setMetadata(result.meta);
+              })
+            }
+          >
+            Inspect accepted Public KU
+          </button>
+        </fieldset>
+        {shareInspectView && (
+          <article aria-label="Accepted Public KU inspection">
+            <h3>Accepted Public KU</h3>
+            <p className="ku-id">
+              Public ObjectCID: {shareInspectView.object_cid}
+              <br />
+              SemanticContentCID: {shareInspectView.semantic.semantic_content_cid}
+            </p>
+            <p>
+              Fidelity: <strong>{shareInspectView.fidelity}</strong> · Reward
+              authorized: {String(shareInspectView.authorizes_reward)} ·
+              Provenance: {shareInspectView.provenance}
+            </p>
+            <p className="ku-id">
+              Authenticated source peers:{" "}
+              {shareInspectView.authenticated_source_peers.join(", ") || "none"}
+            </p>
+            {shareInspectView.semantic.statements.map((stmt, idx) => (
+              <p key={idx} className="ku-id">
+                Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                {stmt.text_arguments.filter(Boolean).join(", ")}
+              </p>
+            ))}
+            <details>
+              <summary>Accepted Public canonical bytes (base64)</summary>
+              <pre>{shareInspectView.canonical_base64}</pre>
+            </details>
+          </article>
+        )}
+      </section>
       <section className="glass-card">
         <h2>Recover an operation from this Web workspace</h2>
         <p>

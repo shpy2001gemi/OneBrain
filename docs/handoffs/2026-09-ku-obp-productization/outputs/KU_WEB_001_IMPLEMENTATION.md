@@ -507,9 +507,18 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   accepted Public KU content plus authenticated transport/selector provenance
   (`fidelity: "unassessed"`, `authorizes_reward: false`) through the same
   registered `POST /api/vnext/ku/editor` envelope.
-- **Boundary**: no unregistered HTTP share routes are added and networking
-  remains opt-in. Browser UI controls for Public KU sharing remain separate Web
-  backlog work.
+- **Web `/ku` projection & boundary**: `src/onebrain-web/src/api/ku.ts`
+  (`sharePrepare`, `shareConfirm`, `shareIntent`, `shareInspect`) and
+  `src/onebrain-web/src/pages/KuWorkflow.tsx` project the four registered
+  `POST /api/vnext/ku/editor` share actions from the currently inspected
+  `LOCAL_ONLY` `accepted_known` artifact. The UI keeps preview and confirmation
+  strictly separate (`confirm_public: true`), omits private `ObjectCID` and
+  source references from the prepared preview and receiver inspection panels,
+  preserves the in-memory `prepared_id` preview if `share_confirm` fails closed
+  with `503 capability_disabled` (`ku_public_share_network_unavailable`), and
+  distinguishes durable outbound intent creation from peer delivery. No
+  unregistered HTTP share routes are added and networking remains opt-in
+  (`ku_local_web` does not start a network listener by default).
 
 ## Limits and contribution boundaries
 
