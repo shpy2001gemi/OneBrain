@@ -6,6 +6,48 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up ? normal-host public reader and D-045 share seam (2026-10-17)
+
+Implementation/guide `2eb30d4`, based on main `7290c0c`, is committed/pushed and
+directly verified under D-050. Previously `ku_host::prepare_ku_runtime` (and its
+`read_only` fallback) hard-coded `KuRuntimeConfig.public = None`, while the D-045
+prepare/confirm state machine (`PreparedPublicKu` map, 16-item capacity, 15-minute
+TTL, single-use consumption, and public/intent inspection) lived inside
+`examples/ku_peer_demo.rs`.
+
+- `ku_product.rs` now provides `CanonicalPublicReader::for_data_dir` (plus
+  `bind_canonical_path` in `KuStore::open` and `register_live_public_reader` /
+  `KuPublicReader` for `VNextNetworkRuntime`), reading accepted
+  `DisclosureClass::Public` objects from an active in-process reader or an
+  existing committed `vnext_verified.redb` without creating `vnext_verified.redb`
+  prematurely on a local-only host or holding a duplicate `redb` handle.
+  `KuStore::get` now computes `semantic_content_cid` for known `ObjectKind(2)` v1
+  public semantic kernels while keeping unknown schemas `AcceptedOpaque`.
+- `ku_public_share.rs` now owns `PublicKuShareCoordinator`, `saved_ku_view`,
+  `inspect_accepted_public_ku` and `inspect_outbound_intent`; `ku_peer_demo.rs`
+  delegates to this shared module with identical JSONL behavior.
+- `ku_host.rs` wires `CanonicalPublicReader::for_data_dir(&node_config.data_dir)`
+  into `prepare_ku_runtime` and `read_only`, and exposes `host_ku_services`,
+  `attach_live_public_reader`, `prepare_host_public_ku_share` and
+  `confirm_host_public_ku_share`. The [same guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  documents this normal-host reader and bounded share seam. No unregistered HTTP
+  routes are added and networking remains opt-in.
+
+Windows focused checks on 17/10, approximately 21:13?36 Asia/Saigon:
+`ku_public_share::tests` 4/4 PASS, `ku_product::tests::public_reader` 1/1 PASS,
+`onebrain-api --lib ku_host::tests` 1/1 PASS, `onebrain-api --features
+vnext-network-runtime --lib ku_host::tests` 2/2 PASS (covering private manual save,
+public-export conflict on `LOCAL_ONLY`, `prepare_host_public_ku_share`,
+`confirm_public=false` refusal, single-use `confirm_host_public_ku_share`,
+loopback delivery, receiver normal-host registered `get`/`export` with matching
+`semantic_content_cid`, and unchanged private catalog), `ku_local_web` example
+tests 6/6 PASS, `ku_peer_demo` check PASS, scoped rustfmt, KU/vNext validators
+and whitespace PASS. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect the registered
+additive contract/API/Web projection boundary for share prepare/confirm.
+
 ## Latest first-run follow-up — composed host config (2026-10-04)
 
 Implementation/guide `832425b`, based on main `03bf179`, is committed/pushed and
@@ -588,6 +630,14 @@ Broader provisioning/composition remains open.
   under D-050; example 6/6, saved-read BOM restart 1/1, build/vNext/rustfmt and
   PS5.1 composition + two real synthetic host starts PASS. Existing config,
   Registry, secrets, private bytes/receipt retained; no activation/save/share added.
+
+- [x] Wire `CanonicalPublicReader::for_data_dir` into `ku_host::prepare_ku_runtime`
+  and `read_only`, and extract the shared D-045 `PublicKuShareCoordinator` +
+  in-process host prepare/confirm/inspect seam (`ku_public_share.rs`, `ku_host.rs`,
+  `ku_peer_demo.rs`) without unregistered HTTP routes or default networking.
+  Commit/push `2eb30d4` under D-050; `ku_public_share` 4/4, `ku_product` public
+  reader 1/1, `ku_host::tests` 1/1 default + 2/2 `vnext-network-runtime`,
+  `ku_local_web` 6/6, `ku_peer_demo` check, scoped rustfmt and KU/vNext PASS.
 
 Preserve Registry trust and private source/key custody. Product API/Web share
 projection, richer roots and source/author/fidelity proof remain separate backlog

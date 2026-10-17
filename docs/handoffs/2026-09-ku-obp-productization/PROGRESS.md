@@ -6,48 +6,56 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 04/10/2026 20:46 (Asia/Saigon). Task 20.C: composed host config — committed/published theo D-050.**
+**C?p nh?t: 17/10/2026 21:38 (Asia/Saigon). Task 20 follow-up: normal-host public reader & D-045 share seam ? committed/published theo D-050.**
 
-- **Mục tiêu hiện tại:** cải thiện normal host composition trong task20; MVP giữ
-  22 Merged / 2 Deferred. Config first-run đã có cách ghép input độc lập.
-- **Vừa xong:** `832425b` trên main sửa config UTF-8 BOM bị từ chối tại 1:1;
-  giữ một BOM đầu file trong giới hạn 65536 bytes và schema nghiêm ngặt. Guide
-  ghép trusted public-key file + custody paths bằng PowerShell, không overwrite.
-  Đã push/direct verify origin/main; docs closure ở HEAD cuối (`git log -1`).
-- **Còn lại / blocker:** signed Registry package/public key vẫn do distributor/
-  operator cung cấp; không endpoint/bundle. Normal networking/share host
-  composition, API/Web sharing, recovery/rotation và proof/portability còn backlog.
-- **Bước tiếp theo:** đối chiếu `ku_host.rs` (`KuRuntimeConfig.public=None`) với
-  `ku_peer_demo.rs` và `ku_public_share.rs` prepare/confirm; đọc task20 A/D-045 và
-  registered additive surface để xác định seam nhỏ đưa share module đã có vào
-  normal host. Chỉ triển khai trong authority/contract đã được phép; không thêm
-  share route chưa đăng ký hoặc bật networking mặc định. Không lặp BOM/ENC-003.
-- **Đọc tiếp:** [task20 composed-config result](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04)
-  và mục A disclosure boundary; `src/onebrain-api/src/ku_host.rs`,
-  `src/onebrain-node/examples/ku_peer_demo.rs`, `src/onebrain-node/src/ku_public_share.rs`,
-  `docs/specs/vnext/ADDITIVE_KU_WORKFLOW_SURFACE_V1.md`; D-045 khi cần authority.
-- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `03bf179`,
-  implementation `832425b` committed/pushed/direct verify. Docs closure là HEAD
-  cuối, push/direct verify cùng lượt. Fresh fetch/direct refs đầu lượt: main
-  `03bf179`, qualification `4a8f29d`; direct verify sau implementation `832425b`.
-  Index rỗng sau closure; PROGRESS exact 108 prep additions + task23 dirty,
-  15 untracked giữ ngoài commits. Detached `798eabf` xác minh sạch.
-- **Cần giữ:** 16 retained hashes và exact prep; backup/synthetic smoke tại
-  `%LOCALAPPDATA%/Temp/onebrain-host-composition-ok_guppm/`. Synthetic PS5.1 host
-  processes đã dừng. Qualification `4a8f29d` giữ 3 unmerged commits; Registry
-  `6bc146c`, secrets `f3780c7`, source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`,
-  detached `798eabf` và mọi fixture/demo/backup cũ giữ nguyên.
-- **Kiểm tra:** 04/10 khoảng 20:36–43 example 6/6 + saved-read BOM restart 1/1,
-  build/scoped rustfmt/vNext/whitespace PASS. PS5.1 guide composition, NoClobber
-  refusal + BOM/non-BOM real host starts/status/catalog/wrong-token PASS; config,
-  Registry, secrets và original synthetic package bytes giữ nguyên. Saved IDs,
-  LOCAL_ONLY bytes/receipt giữ sau restart trong focused test. Share checks reuse.
-  Retained hashes/prep, docs links/scope kiểm tra khi closure; không model/mobile.
-- **Quyết định/giới hạn:** D-050 standing merge/push; D-044/D-045 contracts giữ
-  nguyên. Chỉ config loading/composition; không trust thay thế, automatic activation,
-  private input/live maintainer host/model/mobile hoặc production/NAT qualification.
-  Config slice hoàn tất; first-run tổng thể và normal product sharing chưa xong.
-
+- **M?c ti?u hi?n t?i:** n?i D-045 share module v? public reader v?o normal host
+  trong task20 m? kh?ng m? route ch?a ??ng k? hay b?t networking m?c ??nh; MVP
+  gi? 22 Merged / 2 Deferred.
+- **V?a xong:** `2eb30d4` tr?n main n?i `CanonicalPublicReader::for_data_dir` v?o
+  `ku_host::prepare_ku_runtime` / `read_only` (ph?c v? `get` v?
+  `CanonicalPublicExchange` `export` cho Public KU ?? nh?n k?m `semantic_content_cid`
+  kh?p sender, kh?ng t?o s?m `vnext_verified.redb` hay m? kh?a redb tr?ng) v?
+  ??a `PublicKuShareCoordinator` + `prepare_host_public_ku_share` /
+  `confirm_host_public_ku_share` v?o `ku_public_share.rs` / `ku_host.rs`, d?ng
+  chung v?i `ku_peer_demo.rs`. ?? push/direct verify origin/main; docs closure
+  ? HEAD cu?i (`git log -1`).
+- **C?n l?i / blocker:** signed Registry package/public key v?n do distributor/
+  operator cung c?p; ch?a c? contract/action HTTP/Web ?? ??ng k? cho thao t?c
+  share prepare/confirm tr?n `/ku`; recovery/rotation v? proof/portability c?n
+  trong backlog.
+- **B??c ti?p theo:** r? so?t `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md`,
+  `docs/specs/vnext/ADDITIVE_KU_WORKFLOW_SURFACE_V1.md`, `src/onebrain-node/src/ku_manual.rs`
+  v? `src/onebrain-api/src/ku_api.rs` ?? x?c ??nh b??c nh? ti?p theo chi?u
+  seam prepare/confirm/inspect c?a D-045 l?n b? m?t s?n ph?m ?? ??ng k? (ho?c
+  c?p nh?t additive contract tr??c n?u c?n), gi? nguy?n explicit confirmation,
+  ?n private CID/source v? ph?n bi?t pending intent v?i delivery. Kh?ng l?p
+  ph?n seam `ku_host.rs` ?? xong ho?c ENC-003.
+- **??c ti?p:** [task20 normal-host share seam result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--normal-host-public-reader-and-d-045-share-seam-2026-10-17),
+  [guide section](outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045),
+  `src/onebrain-api/src/ku_host.rs`, `src/onebrain-node/src/ku_public_share.rs`,
+  `docs/specs/vnext/ADDITIVE_KU_WORKFLOW_SURFACE_V1.md`,
+  `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md`.
+- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `7290c0c`,
+  implementation/guide `2eb30d4` committed/pushed/direct verify. Docs closure l?
+  HEAD cu?i, push/direct verify c?ng l??t. Fresh fetch/direct refs ??u l??t:
+  main `7290c0c`, qualification `4a8f29d`; direct verify sau implementation
+  `2eb30d4`. Index r?ng sau closure; PROGRESS exact 108 prep additions (c?ng
+  ghi ch? tra c?u SSH local) + task23 dirty, 15 untracked gi? ngo?i commits.
+  Detached `798eabf` x?c minh s?ch.
+- **C?n gi?:** 16 retained hashes v? exact prep; backup t?i
+  `%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Qualification
+  `4a8f29d` gi? 3 unmerged commits; Registry `6bc146c`, secrets `f3780c7`,
+  source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`, detached `798eabf` v?
+  m?i fixture/demo/backup c? gi? nguy?n.
+- **Ki?m tra:** 17/10 kho?ng 21:13?36 `ku_public_share::tests` 4/4,
+  `ku_product::tests::public_reader` 1/1, `onebrain-api --lib ku_host::tests`
+  1/1 default + 2/2 `vnext-network-runtime`, `ku_local_web` 6/6,
+  `ku_peer_demo` check, scoped rustfmt, KU/vNext validators v? whitespace PASS.
+  Retained hashes/prep, docs links/scope ki?m tra khi closure; kh?ng model/mobile.
+- **Quy?t ??nh/gi?i h?n:** D-050 standing merge/push; D-044/D-045 contracts gi?
+  nguy?n. Kh?ng th?m HTTP route ch?a ??ng k?, kh?ng b?t networking m?c ??nh,
+  kh?ng ??ng private operator input/live host/model/mobile hay tuy?n b?
+  production/NAT qualification.
 <!-- CURRENT_CHECKPOINT_END -->
 
 Quy trình cập nhật và prompt cố định: [NEXT_CONVERSATION](NEXT_CONVERSATION.md).
@@ -72,7 +80,7 @@ The following docs closure changes only coordination state and is pushed with ma
 
 | Location | Actual state | How it affects the plan |
 |---|---|---|
-| `main`, `origin/main` | D-050 merge `2b14b23` + docs closure at HEAD; merge directly verified 2026-10-04 15:29; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics Merged/published |
+| `main`, `origin/main` | D-050 merge `2b14b23`, `e77202c`, `832425b`, normal-host share seam `2eb30d4` + docs closure at HEAD; directly verified 2026-10-17 21:36; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics and normal-host share seam Merged/published |
 | `codex/ku-registry-public-key-diagnostics` | Retained at `6bc146c`; `645c6bc` + scoped docs integrated through `2b14b23` under D-050; root on main | No branch deletion; standing merge/push authority recorded; preparation outside commits |
 | `codex/ku-new-dataset-secrets` | Retained at `f3780c7`; `b73e684` + reviewed docs integrated through `ea92e8a` under D-049; root now on main | No source branch deletion/publication; 17 incoming paths outside integration commits |
 | `codex/ku-manual-provisioning-diagnostics` | Retained at `4d01775`; scoped commits merged through `403bbbb` under D-048; root now on main | No source branch deletion/publication; task23/untracked/108 preparation lines outside integration commits |
@@ -105,9 +113,19 @@ The prior `KU-SEM-001` ledger text saying its whole implementation was unmerged
 was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by main's
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
-## Historical checkpoints — not current execution instructions
+## Historical checkpoints ? not current execution instructions
 
-### 2026-10-04 — PowerShell composed-host config published
+### 2026-10-17 ? Normal-host Public KU reader and D-045 share seam published
+
+[Same parent result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--normal-host-public-reader-and-d-045-share-seam-2026-10-17):
+`2eb30d4` wires `CanonicalPublicReader::for_data_dir` into `ku_host` (`get` +
+`CanonicalPublicExchange` `export` with matching `semantic_content_cid`) and
+shares `PublicKuShareCoordinator` + host prepare/confirm helpers across
+`ku_public_share.rs`, `ku_host.rs` and `ku_peer_demo.rs`. `ku_public_share` 4/4,
+`ku_product` 1/1, `ku_host` 1/1 + 2/2 feature, `ku_local_web` 6/6,
+`ku_peer_demo` check, KU/vNext/rustfmt PASS; retained work unchanged.
+
+### 2026-10-04 ? PowerShell composed-host config published
 
 [Same parent result](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04):
 `832425b` accepts one UTF-8 BOM with strict schema/byte bounds; actual PS5.1 guide
@@ -828,7 +846,7 @@ task ledger for current state.
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
 | 19 | `OBP-MIG-001` | Merged | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | D-042 merge `0604b55`; retained implementation `1d649ce`; [migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
-| 20 | `INT-KU-OBP-001` | Merged | MVP `0b050a4`, first-run `1c4c78a` and manual provisioning `4d01775` integrated in main | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 accepts [A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01); D-047 publishes five fixes (`cbb7d58`); D-048 publishes [three manual diagnostics](tasks/20-INT-KU-OBP-001.md#owner-directed-manual-provisioning-merge--2026-10-04) through `403bbbb`, tree matches reviewed tip. Post-merge vNext/whitespace PASS; prior Rust 6/6/build/smoke/save/share checks reused. Preparation retained outside integration commits; writes non-transactional, broader setup/product-share open. Additional [new-dataset secrets](tasks/20-INT-KU-OBP-001.md#new-dataset-secret-provisioning--2026-10-04) helper Merged/published through `ea92e8a` under D-049 from `f3780c7`; exact tree/retained work/post-merge vNext/whitespace PASS; Python 4/4 + 3 CLI/1 host/build and save/share checks reused. Additional [Registry public-key input](tasks/20-INT-KU-OBP-001.md#owner-directed-registry-integration--2026-10-04) Merged/published through `2b14b23` under D-050 from `6bc146c` (implementation/guide `645c6bc`), based on `3de6a11`; exact tree/parents/post-merge vNext/whitespace/retained-work PASS, example 2/2 + signer/artifact 1/1/build/4 CLI refusals reused. D-050 grants standing merge/push permission; broader package acquisition/composition stays open. Additional [received-package guidance](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--received-registry-package-2026-10-04) committed/pushed `e77202c` under D-050: example 3/3 + signer/artifact 1/1, build/12 CLI calls/vNext PASS; shared authority/activation unchanged. Additional [composed-host config](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04) committed/pushed `832425b` under D-050: one UTF-8 BOM, strict byte/schema bounds, PS5.1 NoClobber composition and two isolated host starts; example 6/6 + saved-read restart 1/1/build/vNext PASS. Normal host sharing remains backlog. |
+| 20 | `INT-KU-OBP-001` | Merged | MVP `0b050a4`, first-run `1c4c78a` and manual provisioning `4d01775` integrated in main | KU-QA-001 MVP and accepted OBP-QA-001; D-044/D-045 | D-046 accepts [A–D](tasks/20-INT-KU-OBP-001.md#actual-local-result--2026-10-01); D-047 publishes five fixes (`cbb7d58`); D-048 publishes [three manual diagnostics](tasks/20-INT-KU-OBP-001.md#owner-directed-manual-provisioning-merge--2026-10-04) through `403bbbb`, tree matches reviewed tip. Post-merge vNext/whitespace PASS; prior Rust 6/6/build/smoke/save/share checks reused. Preparation retained outside integration commits; writes non-transactional, broader setup/product-share open. Additional [new-dataset secrets](tasks/20-INT-KU-OBP-001.md#new-dataset-secret-provisioning--2026-10-04) helper Merged/published through `ea92e8a` under D-049 from `f3780c7`; exact tree/retained work/post-merge vNext/whitespace PASS; Python 4/4 + 3 CLI/1 host/build and save/share checks reused. Additional [Registry public-key input](tasks/20-INT-KU-OBP-001.md#owner-directed-registry-integration--2026-10-04) Merged/published through `2b14b23` under D-050 from `6bc146c` (implementation/guide `645c6bc`), based on `3de6a11`; exact tree/parents/post-merge vNext/whitespace/retained-work PASS, example 2/2 + signer/artifact 1/1/build/4 CLI refusals reused. D-050 grants standing merge/push permission; broader package acquisition/composition stays open. Additional [received-package guidance](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--received-registry-package-2026-10-04) committed/pushed `e77202c` under D-050: example 3/3 + signer/artifact 1/1, build/12 CLI calls/vNext PASS; shared authority/activation unchanged. Additional [composed-host config](tasks/20-INT-KU-OBP-001.md#latest-first-run-follow-up--composed-host-config-2026-10-04) committed/pushed `832425b` under D-050: one UTF-8 BOM, strict byte/schema bounds, PS5.1 NoClobber composition and two isolated host starts; example 6/6 + saved-read restart 1/1/build/vNext PASS. Additional [normal-host public reader and D-045 share seam](tasks/20-INT-KU-OBP-001.md#latest-follow-up--normal-host-public-reader-and-d-045-share-seam-2026-10-17) committed/pushed `2eb30d4` under D-050: `CanonicalPublicReader` in `ku_host` + shared `PublicKuShareCoordinator` (`ku_public_share` 4/4, `ku_product` 1/1, `ku_host` 1/1 + 2/2 feature, `ku_local_web` 6/6, `ku_peer_demo` check, KU/vNext/rustfmt PASS). Registered API/Web share projection remains backlog. |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Deferred | Retained `codex/ku-enc-003-model-qualification` at `4a8f29d`; newer preparation retained uncommitted in the original working tree | KU-ENC-002; formal qualification inputs when resumed | D-044 removes this from MVP critical path. 200-source export and 85-test preparation retained; full harness/reviewer/run lock unfinished; model unqualified. |
