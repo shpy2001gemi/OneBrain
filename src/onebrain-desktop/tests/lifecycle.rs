@@ -692,3 +692,524 @@ async fn real_shared_service_preserves_disabled_generation_and_reconciles_origin
     assert_eq!(retained.canonical_bytes, intent.canonical_bytes);
     assert_eq!(retained.expected_peer, intent.expected_peer);
 }
+
+#[cfg(feature = "vnext-network-runtime")]
+async fn provision_ku_with_opt_in_vnext(
+    cfg: &config::DesktopConfig,
+    token: &str,
+    signer_seed: u8,
+    install_base_before_network: bool,
+) -> (HostNode, String, std::net::SocketAddr) {
+    use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+    use onebrain_base_contract::ku_payload::hex;
+    use onebrain_node::{LocalPolicyRegistry, LocalPolicyVersion, VNextProductRuntimeDependencies};
+
+    let mut node_config = cfg.to_node_config();
+    node_config.vnext.enabled.object_event_v1 = true;
+    node_config.vnext.enabled.obp_rp = true;
+    std::fs::create_dir_all(&node_config.data_dir).unwrap();
+
+    let ku_cfg = cfg.ku_host.as_ref().unwrap();
+    let (ku_runtime, ku_issue) =
+        onebrain_api::ku_host::prepare_ku_runtime(&node_config, ku_cfg).unwrap();
+    assert_eq!(ku_issue, None);
+
+    let mut node = OneBrainNode::new(node_config).await.unwrap();
+    let policies = LocalPolicyRegistry::new([(
+        LocalPolicyVersion::new(1).unwrap(),
+        MetabolicViewPolicy {
+            policy_ref: ObjectReference::new(0, [3; 32]),
+            accepted_evidence_policies: vec![ObjectReference::new(0, [4; 32])],
+            recent_event_horizon: 64,
+        },
+    )])
+    .unwrap();
+    node.set_vnext_identity_signer(std::sync::Arc::new(ed25519_dalek::SigningKey::from_bytes(
+        &[signer_seed; 32],
+    )));
+    node.set_vnext_product_dependencies(VNextProductRuntimeDependencies::new(
+        ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes([signer_seed ^ 0x55; 32]),
+        policies,
+    ))
+    .unwrap();
+
+    let mut base = onebrain_api::base_runtime_config_for_api_token(token);
+    base.ku = Some(ku_runtime);
+    if install_base_before_network {
+        node.install_base_runtime(base).unwrap();
+        node.start_network().await.unwrap();
+    } else {
+        node.start_network().await.unwrap();
+        node.install_base_runtime(base).unwrap();
+    }
+
+    let status = node.vnext_product_runtime_status().unwrap().unwrap();
+    let peer_hex = hex(&status.network.principal);
+    let peer_addr = std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        status.network.listen_addr.port(),
+    ));
+    #[cfg(feature = "vnext-outbound-first")]
+    let binding = {
+        let host = node.obp_host().unwrap();
+        let control = host.control([1; 32]).unwrap();
+        Some(onebrain_api::obp_api::Binding::new([1; 32], Some(control)))
+    };
+    (
+        HostNode {
+            node,
+            ku_issue: None,
+            #[cfg(feature = "vnext-outbound-first")]
+            binding,
+        },
+        peer_hex,
+        peer_addr,
+    )
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+#[tokio::test]
+async fn vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_share_and_get_export() {
+    let sender_dir = tempfile::tempdir().unwrap();
+    let receiver_dir = tempfile::tempdir().unwrap();
+    let sender_cfg = ku_config(sender_dir.path());
+    let receiver_cfg = ku_config(receiver_dir.path());
+
+    let (sender_host, sender_peer_hex, _) =
+        provision_ku_with_opt_in_vnext(&sender_cfg, "SENDER_TOKEN", 0x31, true).await;
+    let (receiver_host, receiver_peer_hex, receiver_vnext_addr) =
+        provision_ku_with_opt_in_vnext(&receiver_cfg, "RECEIVER_TOKEN", 0x32, false).await;
+
+    let sender_sup = Supervisor::default();
+    let receiver_sup = Supervisor::default();
+    let (sender_node, sender_port) = sender_sup
+        .start(sender_host, "SENDER_TOKEN".into(), 0)
+        .await
+        .unwrap();
+    let (_, receiver_port) = receiver_sup
+        .start(receiver_host, "RECEIVER_TOKEN".into(), 0)
+        .await
+        .unwrap();
+
+    let sender_ku_root = format!("http://127.0.0.1:{sender_port}/api/vnext/ku");
+    let receiver_ku_root = format!("http://127.0.0.1:{receiver_port}/api/vnext/ku");
+
+    let (code, sender_status) = ku_http(&sender_ku_root, "SENDER_TOKEN", "/status", None).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{sender_status}");
+    let sender_session = &sender_status["data"]["session"];
+
+    let (code, receiver_status) =
+        ku_http(&receiver_ku_root, "RECEIVER_TOKEN", "/status", None).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{receiver_status}");
+    let receiver_session = &receiver_status["data"]["session"];
+
+    let editor_req = |session: &Value, action: &str, payload: Value| {
+        json!({
+            "session": session,
+            "budget": {
+                "max_items": 64,
+                "max_bytes": 1048576,
+                "max_work_units": 1000000
+            },
+            "request": {
+                "action": action,
+                "payload": payload
+            }
+        })
+    };
+
+    let (_, catalog) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(sender_session, "catalog", json!({}))),
+    )
+    .await;
+    let source = &catalog["data"]["payload"]["sources"][0]["source_ref"];
+    let (_, reserved) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/reservations",
+        Some(json!({"session": sender_session})),
+    )
+    .await;
+    let op = &reserved["data"]["payload"]["operation_id"];
+    let (code, draft) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "draft",
+            json!({
+                "operation_id": op,
+                "idempotency_key": op,
+                "source_ref": source,
+                "predicate_label": "water",
+                "selected_ccid": "07".repeat(16),
+                "argument_text": "Desktop opt-in public share statement"
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{draft}");
+    let (code, prepared) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            sender_session,
+            "prepare",
+            draft["data"]["payload"].clone(),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{prepared}");
+    let private_cid_hex = prepared["data"]["payload"]["object_cids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let sem_cid_hex = prepared["data"]["payload"]["artifacts"][0]["semantic_content_cid"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (code, saved) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            sender_session,
+            "save",
+            json!({
+                "operation_id": op,
+                "idempotency_key": op,
+                "object_cids": [private_cid_hex]
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{saved}");
+
+    let selector_hex = "02".repeat(32);
+    let namespace_hex = "03".repeat(32);
+    let (code, share_prepared) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_prepare",
+            json!({
+                "object_cid": private_cid_hex,
+                "expected_node_id": receiver_peer_hex,
+                "address": receiver_vnext_addr.to_string(),
+                "selector": selector_hex,
+                "namespace": namespace_hex
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{share_prepared}");
+    let preview = &share_prepared["data"]["payload"];
+    assert_eq!(preview["event"], "share_prepared");
+    assert_eq!(preview["enqueued"], false);
+    assert_eq!(preview["payload_sent"], false);
+    let prepared_id = preview["prepared_id"].as_str().unwrap().to_owned();
+    let public_cid_hex = preview["public_object_cid"].as_str().unwrap().to_owned();
+    assert_ne!(public_cid_hex, private_cid_hex);
+    assert_eq!(preview["semantic_content_cid"], sem_cid_hex);
+    assert!(!preview.to_string().contains(&private_cid_hex));
+    assert!(!preview.to_string().contains("Desktop private source"));
+
+    // Explicit confirmation is required.
+    let (code, unconfirmed) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_confirm",
+            json!({
+                "prepared_id": prepared_id,
+                "confirm_public": false
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::BAD_REQUEST, "{unconfirmed}");
+    assert_eq!(
+        unconfirmed["error"]["message"],
+        "explicit_public_confirmation_required"
+    );
+
+    // Killing VNextRuntimeLane::Network fences share_confirm and share_inspect with
+    // capability_disabled while preserving the single-use prepared_id.
+    sender_node
+        .lock()
+        .await
+        .kill_vnext_runtime_lane(onebrain_node::VNextRuntimeLane::Network)
+        .unwrap();
+    let (code, fenced_confirm) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_confirm",
+            json!({
+                "prepared_id": prepared_id,
+                "confirm_public": true
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(
+        code,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "{fenced_confirm}"
+    );
+    assert_eq!(fenced_confirm["error"]["code"], "capability_disabled");
+    assert_eq!(
+        fenced_confirm["error"]["message"],
+        "ku_public_share_network_unavailable"
+    );
+
+    sender_node
+        .lock()
+        .await
+        .reenable_vnext_runtime_lane(onebrain_node::VNextRuntimeLane::Network)
+        .unwrap();
+
+    let (code, confirmed_resp) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_confirm",
+            json!({
+                "prepared_id": prepared_id,
+                "confirm_public": true
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{confirmed_resp}");
+    let confirmed = &confirmed_resp["data"]["payload"];
+    assert_eq!(confirmed["event"], "share_confirmed");
+    assert_eq!(confirmed["public_object_cid"], public_cid_hex);
+    assert_eq!(confirmed["authorizes_reward"], false);
+    let intent_id = confirmed["intent_id"].as_str().unwrap().to_owned();
+
+    let (code, replay_confirm) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_confirm",
+            json!({
+                "prepared_id": prepared_id,
+                "confirm_public": true
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::NOT_FOUND, "{replay_confirm}");
+    assert_eq!(replay_confirm["error"]["message"], "prepared_share_missing");
+
+    let (code, intent_resp) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "share_intent",
+            json!({ "intent_id": intent_id }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{intent_resp}");
+    assert_eq!(intent_resp["data"]["payload"]["event"], "intent");
+    assert_eq!(
+        intent_resp["data"]["payload"]["public_object_cid"],
+        public_cid_hex
+    );
+    assert_eq!(
+        intent_resp["data"]["payload"]["claims_network_completion"],
+        false
+    );
+
+    let mut accepted = None;
+    for _ in 0..60 {
+        let (code, inspect_resp) = ku_http(
+            &receiver_ku_root,
+            "RECEIVER_TOKEN",
+            "/editor",
+            Some(editor_req(
+                receiver_session,
+                "share_inspect",
+                json!({
+                    "object_cid": public_cid_hex,
+                    "selector": selector_hex
+                }),
+            )),
+        )
+        .await;
+        if code == reqwest::StatusCode::OK {
+            accepted = Some(inspect_resp["data"]["payload"].clone());
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let accepted = accepted.expect("receiver VNextProductRuntime should accept shared public KU");
+    assert_eq!(accepted["event"], "public_object");
+    assert_eq!(accepted["semantic"]["semantic_content_cid"], sem_cid_hex);
+    assert_eq!(
+        accepted["authenticated_source_peers"],
+        json!([sender_peer_hex])
+    );
+    assert_eq!(
+        accepted["provenance"],
+        "transport/selector only; original source withheld and unverifiable"
+    );
+    assert_eq!(accepted["fidelity"], "unassessed");
+    assert_eq!(accepted["authorizes_reward"], false);
+
+    let (code, get_resp) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            receiver_session,
+            "get",
+            json!({ "object_cid": public_cid_hex }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{get_resp}");
+    let view = &get_resp["data"]["payload"];
+    assert_eq!(view["object_cid"], public_cid_hex);
+    assert_eq!(view["disclosure_class"], "PUBLIC");
+    assert_eq!(view["artifact_validity"], "accepted_known");
+    assert_eq!(view["semantic_content_cid"], sem_cid_hex);
+    assert_eq!(view["executable"], false);
+
+    let (code, export_resp) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            receiver_session,
+            "export",
+            json!({
+                "mode": "canonical_public_exchange",
+                "object_cids": [public_cid_hex]
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{export_resp}");
+    assert!(export_resp["data"]["payload"]["public_records"].is_string());
+
+    let (code, private_get) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            receiver_session,
+            "get",
+            json!({ "object_cid": private_cid_hex }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::NOT_FOUND, "{private_get}");
+
+    sender_sup.shutdown().await.unwrap();
+    receiver_sup.shutdown().await.unwrap();
+    drop(sender_node);
+
+    // Restart receiver in default local-only mode; committed public KU remains readable
+    // and exportable from paths.network.canonical (vnext_verified.redb) while share_inspect
+    // fails closed with capability_disabled.
+    let local_receiver_sup = std::sync::Arc::new(Supervisor::default());
+    let local_receiver_host = ku_start::provision_local(
+        receiver_cfg,
+        local_receiver_sup.clone(),
+        "LOCAL_RECEIVER_TOKEN".into(),
+    )
+    .await
+    .unwrap();
+    let (_, local_receiver_port) = local_receiver_sup
+        .start(local_receiver_host, "LOCAL_RECEIVER_TOKEN".into(), 0)
+        .await
+        .unwrap();
+    let local_receiver_root = format!("http://127.0.0.1:{local_receiver_port}/api/vnext/ku");
+    let (code, local_status) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/status",
+        None,
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_status}");
+    let local_session = &local_status["data"]["session"];
+
+    let (code, local_get) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            local_session,
+            "get",
+            json!({ "object_cid": public_cid_hex }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_get}");
+    assert_eq!(local_get["data"]["payload"]["disclosure_class"], "PUBLIC");
+
+    let (code, local_export) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            local_session,
+            "export",
+            json!({
+                "mode": "canonical_public_exchange",
+                "object_cids": [public_cid_hex]
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_export}");
+    assert!(local_export["data"]["payload"]["public_records"].is_string());
+
+    let (code, local_inspect) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            local_session,
+            "share_inspect",
+            json!({
+                "object_cid": public_cid_hex,
+                "selector": selector_hex
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(
+        code,
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        "{local_inspect}"
+    );
+    assert_eq!(local_inspect["error"]["code"], "capability_disabled");
+    assert_eq!(
+        local_inspect["error"]["message"],
+        "ku_public_share_network_unavailable"
+    );
+
+    local_receiver_sup.shutdown().await.unwrap();
+}

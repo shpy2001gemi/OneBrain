@@ -237,9 +237,7 @@ fn lookup_live_network_runtime(
     map.retain(|_, weak| weak.strong_count() > 0);
     for key in normalized_reader_paths(path) {
         if let Some(runtime) = map.get(&key).and_then(std::sync::Weak::upgrade) {
-            if runtime.status().state
-                == crate::vnext_network_runtime::VNextNetworkRuntimeState::Listening
-            {
+            if runtime.is_network_lane_active() {
                 return Some(runtime);
             }
         }
@@ -271,13 +269,24 @@ impl CanonicalPublicReader {
     }
 
     #[cfg(feature = "vnext-network-runtime")]
+    pub fn register_live_runtime_for_verified_store(
+        verified_store: &std::path::Path,
+        runtime: &Arc<crate::vnext_network_runtime::VNextNetworkRuntime>,
+    ) {
+        let reader: Arc<dyn KuPublicReader> = runtime.clone();
+        register_live_public_reader(verified_store, &reader);
+        register_live_network_runtime(verified_store, runtime);
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
     pub fn register_live_runtime_for_data_dir(
         data_dir: &std::path::Path,
         runtime: &Arc<crate::vnext_network_runtime::VNextNetworkRuntime>,
     ) {
-        let reader: Arc<dyn KuPublicReader> = runtime.clone();
-        Self::register_live_for_data_dir(data_dir, &reader);
-        register_live_network_runtime(&data_dir.join("vnext_verified.redb"), runtime);
+        Self::register_live_runtime_for_verified_store(
+            &data_dir.join("vnext_verified.redb"),
+            runtime,
+        );
     }
 }
 
@@ -330,7 +339,9 @@ impl KuPublicReader for CanonicalPublicReader {
     ) -> Option<Arc<crate::vnext_network_runtime::VNextNetworkRuntime>> {
         if let Ok(Some(live)) = self.live.lock().map(|g| g.clone()) {
             if let Some(runtime) = live.live_network_runtime() {
-                return Some(runtime);
+                if runtime.is_network_lane_active() {
+                    return Some(runtime);
+                }
             }
         }
         let paths = self.paths.lock().ok()?.clone();

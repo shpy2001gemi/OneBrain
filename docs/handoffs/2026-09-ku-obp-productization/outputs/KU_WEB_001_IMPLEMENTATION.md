@@ -534,6 +534,22 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   `start_host_loopback_network_runtime` after `OneBrainNode` / Base runtime
   installation, attaches it with `attach_live_public_reader`, and prints the
   loopback `node_id` and `listen_addr`.
+- **Automatic `VNextProductRuntime` binding for `OneBrainNode` and `onebrain-desktop`**:
+  When `VNextProductRuntime::start_with_paths` starts an opt-in
+  `VNextNetworkRuntime` (`OneBrainNode::start_network` / `onebrain-desktop`), it
+  registers that `Arc<VNextNetworkRuntime>` with `CanonicalPublicReader` for
+  both `paths.network.canonical` (`vnext_verified.redb`) and
+  `paths.operational` (`data_dir`), regardless of whether `install_base_runtime`
+  ran before or after `start_network`. Active network lookup checks
+  `VNextNetworkRuntime::is_network_lane_active()` (`Listening` and
+  `VNextRuntimeLane::Network` enabled in `VNextRolloutController`), so killing
+  the `Network` runtime lane fences `share_confirm`, `share_intent`, and
+  `share_inspect` with `503 capability_disabled`
+  (`ku_public_share_network_unavailable`) while preserving the single-use
+  `prepared_id` in memory and keeping in-process `CanonicalPublicReader` read
+  access for already-accepted `DisclosureClass::Public` objects; re-enabling the
+  `Network` lane wakes the product outbox and restores confirmation and peer
+  inspection without constructing a separate `VNextNetworkRuntime`.
 
 ## Limits and contribution boundaries
 

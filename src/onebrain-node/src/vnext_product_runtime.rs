@@ -633,14 +633,14 @@ impl VNextProductRuntime {
             startup_trace.push(VNextStartupPhase::Running);
             let startup_data_dir_created = !artifact_guard.data_dir_preexisting;
             let startup_artifacts = artifact_guard.commit();
-            {
-                let reader: Arc<dyn crate::ku_product::KuPublicReader> = network.clone();
-                crate::ku_product::register_live_public_reader(&paths.network.canonical, &reader);
-                crate::ku_product::register_live_network_runtime(
-                    &paths.network.canonical,
-                    &network,
-                );
-            }
+            crate::ku_product::CanonicalPublicReader::register_live_runtime_for_verified_store(
+                &paths.network.canonical,
+                &network,
+            );
+            crate::ku_product::CanonicalPublicReader::register_live_runtime_for_data_dir(
+                &paths.operational,
+                &network,
+            );
             let last_network_status = Arc::new(Mutex::new(last_network_status));
             let core = Arc::new(VNextProductServiceCore {
                 #[cfg(feature = "vnext-outbound-first")]
@@ -1311,6 +1311,11 @@ impl VNextProductServices {
     ) -> Result<VNextRuntimeRolloutSnapshot, VNextProductRuntimeError> {
         let lease = self.lease()?;
         lease.core.rollout.reenable(lane)?;
+        if lane == VNextRuntimeLane::Network {
+            if let Ok(network) = lease.core.network() {
+                network.wake_product_outbox();
+            }
+        }
         Ok(lease.core.rollout.snapshot()?)
     }
 

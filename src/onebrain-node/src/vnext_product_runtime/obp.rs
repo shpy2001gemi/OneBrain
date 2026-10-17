@@ -558,6 +558,9 @@ impl VNextProductServices {
                 core.rollout
                     .reenable(VNextRuntimeLane::Network)
                     .map_err(|_| Error::storage())?;
+                if let Ok(network) = core.network() {
+                    network.wake_product_outbox();
+                }
                 self.obp_status().await
             }
             "configure" => {

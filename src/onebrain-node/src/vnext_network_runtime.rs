@@ -1144,8 +1144,21 @@ impl VNextNetworkRuntime {
         connector.connect(peer).await
     }
 
-    #[cfg(feature = "vnext-outbound-first")]
-    pub(crate) fn wake_product_outbox(&self) { self.outbound_notify.notify_one(); }
+    pub(crate) fn is_network_lane_active(&self) -> bool {
+        if self.state != VNextNetworkRuntimeState::Listening {
+            return false;
+        }
+        match &self.outbound.rollout {
+            Some(rollout) => rollout
+                .snapshot()
+                .is_ok_and(|snapshot| snapshot.lane(VNextRuntimeLane::Network).enabled),
+            None => true,
+        }
+    }
+
+    pub(crate) fn wake_product_outbox(&self) {
+        self.outbound_notify.notify_one();
+    }
 
     pub fn outbound_intent(
         &self,
