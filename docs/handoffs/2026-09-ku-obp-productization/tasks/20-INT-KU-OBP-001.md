@@ -6,6 +6,62 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — `VNextProductRuntime` `CanonicalPublicReader` binding and network lane fence (2026-10-18)
+
+Implementation/guide `fbcda30`, based on main `f011134`, is committed/pushed and
+directly verified under D-050. Previously `VNextProductRuntime::start_with_paths`
+(`OneBrainNode::start_network` / `onebrain-desktop`) did not register its
+`Arc<VNextNetworkRuntime>` with `CanonicalPublicReader`, so `OneBrainNode` and
+`onebrain-desktop` hosts with opt-in `VNextProductRuntime` returned `503
+capability_disabled` (`ku_public_share_network_unavailable`) on `POST
+/api/vnext/ku/editor` `share_confirm`, `share_intent` and `share_inspect` unless
+a separate `VNextNetworkRuntime` was attached manually.
+
+- `src/onebrain-node/src/vnext_network_runtime.rs` adds
+  `VNextNetworkRuntime::is_network_lane_active()` (`state == Listening` and
+  `VNextRuntimeLane::Network` enabled in `VNextRolloutController`) and exposes
+  `wake_product_outbox()` whenever `vnext-network-runtime` is enabled.
+- `src/onebrain-node/src/ku_product.rs` adds
+  `CanonicalPublicReader::register_live_runtime_for_verified_store` and updates
+  `lookup_live_network_runtime` / `CanonicalPublicReader::live_network_runtime`
+  to check `runtime.is_network_lane_active()`, while keeping in-process
+  `lookup_live_public_reader` read access for already-accepted
+  `DisclosureClass::Public` objects in `vnext_verified.redb`.
+- `src/onebrain-node/src/vnext_product_runtime.rs` and
+  `src/onebrain-node/src/vnext_product_runtime/obp.rs` register the started
+  `Arc<VNextNetworkRuntime>` for both `paths.network.canonical` and
+  `paths.operational` in `VNextProductRuntime::start_with_paths` and wake the
+  product outbox when `VNextRuntimeLane::Network` is re-enabled.
+- `src/onebrain-desktop/tests/lifecycle.rs` adds
+  `vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_share_and_get_export`
+  verifying both `install_base_runtime`-before-`start_network` and
+  `start_network`-before-`install_base_runtime` initialization orders,
+  `share_prepare`, `confirm_public: false` rejection, `VNextRuntimeLane::Network`
+  kill-switch `503 capability_disabled` (`ku_public_share_network_unavailable`)
+  preserving the single-use `prepared_id`, `reenable_vnext_runtime_lane`,
+  `share_confirm` (`confirm_public: true`), replay rejection (`404
+  prepared_share_missing`), `share_intent`, loopback delivery to a receiver's
+  `VNextProductRuntime`, receiver `share_inspect`, receiver `POST
+  /api/vnext/ku/operations` `get` + `export` (`CanonicalPublicExchange`), and
+  local-only receiver restart preserving public `get`/`export` while fencing
+  `share_inspect`.
+- [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  documents the automatic `VNextProductRuntime` binding and `Network` lane fence.
+
+Windows focused checks on 18/10, approximately 00:25–42 Asia/Saigon:
+`onebrain-desktop --test lifecycle --features vnext-outbound-first` 11/11 PASS,
+`onebrain-desktop --test lifecycle --features vnext-network-runtime` 9/9 PASS,
+`onebrain-desktop --test lifecycle` 8/8 PASS, `onebrain-node --features
+vnext-network-runtime --lib ku_product` 19/19 PASS, `onebrain-api --features
+vnext-network-runtime --lib ku_host::tests` 3/3 PASS, scoped rustfmt, Base/vNext
+contract validators and whitespace PASS. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next refresh the contributor
+entry instructions in `CONTRIBUTING.md` and `### Run the local-to-peer manual
+concept (D-045)` below so newcomers can see the registered `/ku` Web /
+`ku_local_web` opt-in loopback share path alongside `ku_peer_demo`.
+
 ## Latest follow-up — opt-in loopback network runtime config for `ku_local_web` (2026-10-18)
 
 Implementation/spec/guide `5dfc6bd`, based on main `57fc9c0`, is committed/pushed
@@ -787,8 +843,25 @@ Broader provisioning/composition remains open.
   `npm run test:ku` 92/92 (`kuWorkflow.test.tsx` 17/17 + `axe`, `kuTransport.test.ts`
   2/2), `npm run build`, `npm run lint` and KU/vNext validators PASS.
 
-Preserve Registry trust and private source/key custody. Opt-in `ku_local_web`
-network attachment, richer roots and source/author/fidelity proof remain separate
+- [x] Add optional opt-in loopback `VNextNetworkRuntime` config (`KuHostNetworkConfig
+  { network_opt_in, bind_addr }`, default `None`) to `examples/ku_local_web.rs`
+  and `ku_host.rs` (`start_host_loopback_network_runtime`, `attach_live_public_reader`),
+  validating `network_opt_in == true` and loopback `bind_addr` before Registry or
+  dataset access. Commit/push `5dfc6bd` under D-050; `ku_local_web` 7/7 default +
+  8/8 `vnext-network-runtime`, `ku_host::tests` 3/3, scoped rustfmt and KU/vNext PASS.
+
+- [x] Bind `VNextProductRuntime::start_with_paths` (`OneBrainNode::start_network` /
+  `onebrain-desktop`) to `CanonicalPublicReader` for both `paths.network.canonical`
+  and `paths.operational`, gate `lookup_live_network_runtime` on
+  `VNextNetworkRuntime::is_network_lane_active()` (`VNextRuntimeLane::Network`),
+  and wake the product outbox when `Network` is re-enabled. Commit/push `fbcda30`
+  under D-050; `onebrain-desktop --test lifecycle` 8/8 default + 9/9
+  `vnext-network-runtime` + 11/11 `vnext-outbound-first`, `ku_product` 19/19,
+  `ku_host::tests` 3/3, scoped rustfmt and Base/vNext validators PASS.
+
+Preserve Registry trust and private source/key custody. Refreshing the contributor
+entry instructions (`CONTRIBUTING.md` and `### Run the local-to-peer manual concept
+(D-045)`) plus richer roots and source/author/fidelity proof remain separate
 backlog entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
 
 Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
