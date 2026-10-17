@@ -54,6 +54,27 @@ pub struct Ollama {
     pub memory_limit_bytes: u64,
 }
 
+/// Optional opt-in loopback `VNextNetworkRuntime` configuration for a normal
+/// local KU host. Omitted by default so local hosts remain offline unless the
+/// operator explicitly enables loopback networking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KuHostNetworkConfig {
+    pub network_opt_in: bool,
+    pub bind_addr: std::net::SocketAddr,
+}
+
+impl KuHostNetworkConfig {
+    /// Enforce explicit opt-in and loopback-only binding before touching
+    /// Registry, custody inputs, or dataset directories.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.network_opt_in || !self.bind_addr.ip().is_loopback() {
+            return Err("ku_network_config_invalid");
+        }
+        Ok(())
+    }
+}
+
 struct ReadOnlyInputs;
 impl KuInputProvider for ReadOnlyInputs {
     fn implementation(&self, _: InputMode) -> Option<[u8; 32]> {
@@ -221,6 +242,27 @@ pub fn attach_live_public_reader(
     runtime: &Arc<onebrain_node::vnext_network_runtime::VNextNetworkRuntime>,
 ) {
     CanonicalPublicReader::register_live_runtime_for_data_dir(data_dir, runtime);
+}
+
+/// Start an opt-in loopback `VNextNetworkRuntime` for `data_dir` and bind it to
+/// the normal host's canonical public reader when `network` is configured.
+#[cfg(feature = "vnext-network-runtime")]
+pub async fn start_host_loopback_network_runtime(
+    data_dir: &Path,
+    network: &KuHostNetworkConfig,
+) -> Result<Arc<onebrain_node::vnext_network_runtime::VNextNetworkRuntime>, &'static str> {
+    network.validate()?;
+    let runtime = Arc::new(
+        onebrain_node::vnext_network_runtime::VNextNetworkRuntime::start(
+            data_dir,
+            network.bind_addr,
+            onebrain_node::vnext_config::VNextNetworkPolicy::default(),
+        )
+        .await
+        .map_err(|_| "ku_network_startup_failed")?,
+    );
+    attach_live_public_reader(data_dir, &runtime);
+    Ok(runtime)
 }
 
 /// Prepare a D-045 Public KU share directly from a normal host's authenticated

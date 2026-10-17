@@ -519,6 +519,21 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   distinguishes durable outbound intent creation from peer delivery. No
   unregistered HTTP share routes are added and networking remains opt-in
   (`ku_local_web` does not start a network listener by default).
+- **Opt-in loopback `VNextNetworkRuntime` in `ku_local_web`**: `Config.network`
+  (`onebrain_api::ku_host::KuHostNetworkConfig`) is optional and omitted by
+  default. When omitted, `ku_local_web` starts local-only with no network
+  listener. To exercise `/ku` Web `share_confirm`, `share_intent`, and
+  `share_inspect` directly from `ku_local_web`, add
+  `"network": { "network_opt_in": true, "bind_addr": "127.0.0.1:0" }` to the
+  host JSON config and launch with
+  `cargo run --locked -p onebrain-api --features vnext-network-runtime --example ku_local_web -- <host.json>`.
+  `ku_local_web` validates `network_opt_in == true` and a loopback `bind_addr`
+  before touching Registry or dataset files (failing closed with
+  `ku_network_config_invalid`, or `ku_network_runtime_unavailable` if built
+  without `vnext-network-runtime`), starts `VNextNetworkRuntime` via
+  `start_host_loopback_network_runtime` after `OneBrainNode` / Base runtime
+  installation, attaches it with `attach_live_public_reader`, and prints the
+  loopback `node_id` and `listen_addr`.
 
 ## Limits and contribution boundaries
 

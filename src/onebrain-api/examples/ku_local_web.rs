@@ -1,7 +1,9 @@
 //! Explicit local host integration; reads operator-owned inputs, never test fixtures.
+#[cfg(feature = "vnext-network-runtime")]
+use onebrain_api::ku_host::start_host_loopback_network_runtime;
 use onebrain_api::{
     base_runtime_config_for_api_token,
-    ku_host::{prepare_ku_runtime, KuHostInputsConfig, Ollama, Source},
+    ku_host::{prepare_ku_runtime, KuHostInputsConfig, KuHostNetworkConfig, Ollama, Source},
     ApiServer,
 };
 use onebrain_node::{ConceptRegistryMode, NodeConfig, OneBrainNode};
@@ -20,6 +22,8 @@ struct Config {
     sources: Vec<Source>,
     #[serde(default)]
     ollama: Option<Ollama>,
+    #[serde(default)]
+    network: Option<KuHostNetworkConfig>,
     web_dir: PathBuf,
     port: u16,
 }
@@ -29,6 +33,23 @@ const REGISTRY_SETUP_ERROR: &str = "ku_registry_unavailable: local KU host canno
     registry_public_key to its independently trusted public key. An unsigned concepts.obr \
     is insufficient. Follow 'Run the local MVP' in \
     docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md; \
+    retain the existing data_dir and Vault key when retrying.";
+
+const NETWORK_CONFIG_ERROR: &str = "ku_network_config_invalid: when network is present, \
+    set network.network_opt_in to true and network.bind_addr to a loopback socket address \
+    such as 127.0.0.1:0; omit network for local-only operation. Retain the existing \
+    data_dir and Vault key when retrying.";
+
+#[cfg(not(feature = "vnext-network-runtime"))]
+const NETWORK_RUNTIME_UNAVAILABLE_ERROR: &str = "ku_network_runtime_unavailable: network is \
+    configured, but ku_local_web was built without the vnext-network-runtime feature. \
+    Omit network for local-only operation, or run cargo with --features \
+    vnext-network-runtime; retain the existing data_dir and Vault key when retrying.";
+
+#[cfg(feature = "vnext-network-runtime")]
+const NETWORK_STARTUP_ERROR: &str = "ku_network_startup_failed: cannot start the opt-in \
+    loopback VNextNetworkRuntime. Check that network.bind_addr is an available local \
+    loopback UDP address (for example 127.0.0.1:0) and that data_dir is writable; \
     retain the existing data_dir and Vault key when retrying.";
 
 #[derive(Debug)]
@@ -74,7 +95,7 @@ fn load_config(path: &std::path::Path) -> Result<Config, Box<dyn std::error::Err
             serde_json::error::Category::Data => {
                 "check required fields and their types: data_dir, \
                 registry_root, registry_public_key, vault_key_file, api_token_file, web_dir, port. \
-                Unknown fields are rejected; sources and ollama are optional"
+                Unknown fields are rejected; sources, ollama and network are optional"
             }
             _ => "use complete UTF-8 JSON; escape Windows backslashes or use forward slashes",
         };
@@ -162,19 +183,24 @@ fn runtime_warning(reason: &'static str) -> &'static str {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args_os()
-        .nth(1)
-        .ok_or("usage: ku_local_web <trusted-host-config.json>")?;
-    let config = load_config(std::path::Path::new(&path))?;
-    run(config).await
+struct PreparedHost {
+    node: OneBrainNode,
+    token: String,
+    model_issue: Option<&'static str>,
+    #[cfg(feature = "vnext-network-runtime")]
+    network_runtime:
+        Option<std::sync::Arc<onebrain_node::vnext_network_runtime::VNextNetworkRuntime>>,
 }
 
-async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+async fn prepare_host(config: &Config) -> Result<PreparedHost, Box<dyn std::error::Error>> {
     let token = load_api_token(&config.api_token_file)?;
+    if let Some(network) = &config.network {
+        network.validate().map_err(|_| NETWORK_CONFIG_ERROR)?;
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        return Err(NETWORK_RUNTIME_UNAVAILABLE_ERROR.into());
+    }
     let node_config = NodeConfig {
-        data_dir: config.data_dir,
+        data_dir: config.data_dir.clone(),
         concept_registry_mode: ConceptRegistryMode::Required,
         concept_registry_release_root: Some(config.registry_root.clone()),
         concept_registry_release_public_key: Some(config.registry_public_key.clone()),
@@ -183,11 +209,11 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let (ku, model_issue) = prepare_ku_runtime(
         &node_config,
         &KuHostInputsConfig {
-            registry_root: config.registry_root,
-            registry_public_key: config.registry_public_key,
-            vault_key_file: config.vault_key_file,
-            sources: config.sources,
-            ollama: config.ollama,
+            registry_root: config.registry_root.clone(),
+            registry_public_key: config.registry_public_key.clone(),
+            vault_key_file: config.vault_key_file.clone(),
+            sources: config.sources.clone(),
+            ollama: config.ollama.clone(),
         },
     )
     .map_err(|reason| match reason {
@@ -220,18 +246,62 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         return Err(REGISTRY_SETUP_ERROR.into());
     }
     std::fs::create_dir_all(&node_config.data_dir)?;
-    let mut node = OneBrainNode::new(node_config).await?;
+    let mut node = OneBrainNode::new(node_config.clone()).await?;
     let mut base = base_runtime_config_for_api_token(&token);
     base.ku = Some(ku);
     node.install_base_runtime(base)?;
-    if let Some(reason) = model_issue {
+    #[cfg(feature = "vnext-network-runtime")]
+    let network_runtime = match &config.network {
+        Some(network) => Some(
+            start_host_loopback_network_runtime(&node_config.data_dir, network)
+                .await
+                .map_err(|reason| match reason {
+                    "ku_network_config_invalid" => NETWORK_CONFIG_ERROR,
+                    "ku_network_startup_failed" => NETWORK_STARTUP_ERROR,
+                    other => other,
+                })?,
+        ),
+        None => None,
+    };
+    Ok(PreparedHost {
+        node,
+        token,
+        model_issue,
+        #[cfg(feature = "vnext-network-runtime")]
+        network_runtime,
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::args_os()
+        .nth(1)
+        .ok_or("usage: ku_local_web <trusted-host-config.json>")?;
+    let config = load_config(std::path::Path::new(&path))?;
+    run(config).await
+}
+
+async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let host = prepare_host(&config).await?;
+    #[cfg(feature = "vnext-network-runtime")]
+    let _network_runtime = host.network_runtime;
+    if let Some(reason) = host.model_issue {
         eprintln!("{}", runtime_warning(reason));
     }
     println!(
         "Local KU: http://127.0.0.1:{}/ku — AI unqualified; no publication",
         config.port
     );
-    ApiServer::new(node, token, config.port)
+    #[cfg(feature = "vnext-network-runtime")]
+    if let Some(runtime) = &_network_runtime {
+        let status = runtime.status();
+        println!(
+            "Opt-in loopback OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
+            onebrain_base_contract::ku_payload::hex(&status.principal),
+            status.listen_addr
+        );
+    }
+    ApiServer::new(host.node, host.token, config.port)
         .with_web_dir(config.web_dir)
         .start()
         .await
@@ -637,6 +707,7 @@ mod tests {
         assert_eq!(config.port, 4280);
         assert!(config.sources.is_empty());
         assert!(config.ollama.is_none());
+        assert!(config.network.is_none());
         bytes.push(b' ');
         std::fs::write(&path, &bytes).unwrap();
         assert!(load_config(&path)
@@ -669,6 +740,7 @@ mod tests {
             config.sources[0].canonical_file,
             PathBuf::from("source.canonical")
         );
+        assert!(config.network.is_none());
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         bytes.resize(65536, b' ');
         std::fs::write(&path, &bytes).unwrap();
@@ -712,6 +784,7 @@ mod tests {
             api_token_file: token_path.clone(),
             sources: Vec::new(),
             ollama: None,
+            network: None,
             web_dir: root.path().join("web"),
             port: 0,
         };
@@ -772,6 +845,7 @@ mod tests {
             api_token_file: token_path.clone(),
             sources: Vec::new(),
             ollama: None,
+            network: None,
             web_dir: root.path().join("web"),
             port: 0,
         };
@@ -863,6 +937,7 @@ mod tests {
             api_token_file: token_path.clone(),
             sources: Vec::new(),
             ollama: None,
+            network: None,
             web_dir: root.path().join("web"),
             port: 0,
         };
@@ -899,5 +974,468 @@ mod tests {
         );
         assert_eq!(std::fs::read_dir(&data_dir).unwrap().count(), 1);
         assert_eq!(std::fs::read_dir(&registry_root).unwrap().count(), 1);
+    }
+
+    #[tokio::test]
+    async fn network_setup_failures_preserve_custody_and_stop_before_registry_or_dataset() {
+        let root = tempfile::tempdir().unwrap();
+        let token = "synthetic-private-token-canary-1234567890";
+        let key = [0x51; 32];
+        let token_path = root.path().join("private-token-canary.txt");
+        let key_path = root.path().join("private-key-canary.bin");
+        std::fs::write(&token_path, token).unwrap();
+        std::fs::write(&key_path, key).unwrap();
+        let data_dir = root.path().join("dataset");
+        let registry_root = root.path().join("registry");
+        let config_path = root.path().join("host-network-canary.json");
+
+        // Unknown field inside network must fail closed at JSON schema boundary.
+        let unknown_network_field = serde_json::json!({
+            "data_dir": data_dir,
+            "registry_root": registry_root,
+            "registry_public_key": "unused-private-key-canary",
+            "vault_key_file": key_path,
+            "api_token_file": token_path,
+            "network": {
+                "network_opt_in": true,
+                "bind_addr": "127.0.0.1:0",
+                "private-network-canary": "secret"
+            },
+            "web_dir": root.path().join("web"),
+            "port": 4280
+        });
+        let bytes = serde_json::to_vec(&unknown_network_field).unwrap();
+        std::fs::write(&config_path, &bytes).unwrap();
+        let schema_err = load_config(&config_path).err().unwrap().to_string();
+        assert!(schema_err.starts_with("ku_host_config_invalid:"));
+        assert!(schema_err.contains("network"));
+        assert!(!schema_err.contains("canary"));
+        assert!(!data_dir.exists());
+        assert!(!registry_root.exists());
+
+        std::fs::create_dir(&data_dir).unwrap();
+        let saved_path = data_dir.join("saved-private-canary");
+        std::fs::write(&saved_path, b"synthetic saved bytes").unwrap();
+
+        for invalid_network in [
+            KuHostNetworkConfig {
+                network_opt_in: false,
+                bind_addr: "127.0.0.1:0".parse().unwrap(),
+            },
+            KuHostNetworkConfig {
+                network_opt_in: true,
+                bind_addr: "0.0.0.0:0".parse().unwrap(),
+            },
+            KuHostNetworkConfig {
+                network_opt_in: true,
+                bind_addr: "192.0.2.10:4280".parse().unwrap(),
+            },
+        ] {
+            let cfg = Config {
+                data_dir: data_dir.clone(),
+                registry_root: registry_root.clone(),
+                registry_public_key: "unused-private-key-canary".into(),
+                vault_key_file: key_path.clone(),
+                api_token_file: token_path.clone(),
+                sources: Vec::new(),
+                ollama: None,
+                network: Some(invalid_network),
+                web_dir: root.path().join("web"),
+                port: 0,
+            };
+            let error = run(cfg).await.unwrap_err().to_string();
+            assert_eq!(error, NETWORK_CONFIG_ERROR);
+            assert!(!error.contains("canary"));
+            assert!(!error.contains("192.0.2.10"));
+            assert!(!registry_root.exists());
+            assert_eq!(
+                std::fs::read(&saved_path).unwrap(),
+                b"synthetic saved bytes"
+            );
+            assert_eq!(std::fs::read(&key_path).unwrap(), key);
+            assert_eq!(std::fs::read(&token_path).unwrap(), token.as_bytes());
+            assert_eq!(std::fs::read_dir(&data_dir).unwrap().count(), 1);
+        }
+
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        {
+            let cfg = Config {
+                data_dir: data_dir.clone(),
+                registry_root: registry_root.clone(),
+                registry_public_key: "unused-private-key-canary".into(),
+                vault_key_file: key_path.clone(),
+                api_token_file: token_path.clone(),
+                sources: Vec::new(),
+                ollama: None,
+                network: Some(KuHostNetworkConfig {
+                    network_opt_in: true,
+                    bind_addr: "127.0.0.1:0".parse().unwrap(),
+                }),
+                web_dir: root.path().join("web"),
+                port: 0,
+            };
+            let error = run(cfg).await.unwrap_err().to_string();
+            assert_eq!(error, NETWORK_RUNTIME_UNAVAILABLE_ERROR);
+            assert!(!registry_root.exists());
+            assert_eq!(
+                std::fs::read(&saved_path).unwrap(),
+                b"synthetic saved bytes"
+            );
+            assert_eq!(std::fs::read_dir(&data_dir).unwrap().count(), 1);
+        }
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    #[tokio::test]
+    async fn opt_in_loopback_network_config_enables_end_to_end_http_editor_public_ku_share_and_peer_reads(
+    ) {
+        use axum::http::StatusCode;
+        use ku_core::foundation::{
+            ObjectReference, ObservationGovernance, ResourceProfile, SourceArtifact,
+            SourceArtifactKind,
+        };
+        use onebrain_base_contract::ku_payload::hex;
+        use serde_json::json;
+        use std::time::Duration;
+
+        let root = tempfile::tempdir().unwrap();
+        let token = "synthetic-token-canary-1234567890123456";
+        let token_path = root.path().join("token.txt");
+        std::fs::write(&token_path, token).unwrap();
+        let key_path = root.path().join("vault.bin");
+        std::fs::write(&key_path, [0x51; 32]).unwrap();
+        let public_key = hex(ed25519_dalek::SigningKey::from_bytes(&[0x42; 32])
+            .verifying_key()
+            .as_bytes());
+        let reference = |n| ObjectReference::new(1, [n; 32]);
+        let (source_bytes, source_cid) = SourceArtifact {
+            source_kind: SourceArtifactKind::Text,
+            raw_bytes: b"synthetic-private-source-canary".to_vec(),
+            media_type_commitment: [2; 32],
+            capture_adapter: reference(1),
+            capture_sequence: 1,
+            governance: ObservationGovernance {
+                consent_policy: reference(2),
+                consent_receipt: reference(3),
+                revocation_policy: reference(4),
+                retention_policy: reference(5),
+                capture_scope_commitment: [3; 32],
+                authorization_assessment_commitment: [4; 32],
+                assessed_frontier: [5; 32],
+            },
+        }
+        .to_private_object()
+        .unwrap()
+        .encode(ResourceProfile::ObjectV1)
+        .unwrap();
+        let source_path = root.path().join("source.canonical");
+        std::fs::write(&source_path, &source_bytes).unwrap();
+
+        let write_host_config = |name: &str, opt_in_network: bool| -> PathBuf {
+            let host_dir = root.path().join(name);
+            std::fs::create_dir_all(&host_dir).unwrap();
+            if !host_dir.join("registry").exists() {
+                drop(registry_fixture::registry(&host_dir));
+            }
+            let mut value = json!({
+                "data_dir": host_dir.join("dataset"),
+                "registry_root": host_dir.join("registry"),
+                "registry_public_key": public_key,
+                "vault_key_file": key_path,
+                "api_token_file": token_path,
+                "sources": [{
+                    "label": "private-label-canary",
+                    "canonical_file": source_path
+                }],
+                "web_dir": host_dir.join("web"),
+                "port": 0
+            });
+            if opt_in_network {
+                value["network"] = json!({
+                    "network_opt_in": true,
+                    "bind_addr": "127.0.0.1:0"
+                });
+            }
+            let config_path = host_dir.join(if opt_in_network {
+                "host-network.json"
+            } else {
+                "host-local.json"
+            });
+            std::fs::write(&config_path, serde_json::to_vec(&value).unwrap()).unwrap();
+            config_path
+        };
+
+        let budget = json!({"max_items":256,"max_bytes":1048576,"max_work_units":1000000});
+        let editor = |session: &serde_json::Value, action, payload| json!({"session":session,"budget":budget,"request":{"action":action,"payload":payload}});
+        let operation = |session: &serde_json::Value, name, payload| json!({"session":session,"budget":budget,"request":{"operation":name,"payload":payload}});
+
+        // Start receiver with opt-in loopback networking enabled via host JSON config.
+        let receiver_config = load_config(&write_host_config("receiver", true)).unwrap();
+        let receiver_host = prepare_host(&receiver_config).await.unwrap();
+        let receiver_net = receiver_host
+            .network_runtime
+            .as_ref()
+            .expect("receiver opt-in network runtime must start")
+            .clone();
+        let receiver_peer_hex = hex(&receiver_net.status().principal);
+        let receiver_addr = receiver_net.status().listen_addr.to_string();
+        let receiver_router =
+            ApiServer::new(receiver_host.node, receiver_host.token, 0).build_router();
+
+        // Start sender first with default local-only config (network omitted).
+        let sender_local_config = load_config(&write_host_config("sender", false)).unwrap();
+        assert!(sender_local_config.network.is_none());
+        let sender_local_host = prepare_host(&sender_local_config).await.unwrap();
+        assert!(sender_local_host.network_runtime.is_none());
+        let sender_local_router =
+            ApiServer::new(sender_local_host.node, sender_local_host.token, 0).build_router();
+
+        let (_, sender_status) =
+            ku_request(&sender_local_router, token, "/api/vnext/ku/status", None).await;
+        let sender_local_session = sender_status["data"]["session"].clone();
+        let (_, reserved) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/reservations",
+            Some(json!({"session": sender_local_session})),
+        )
+        .await;
+        let op = reserved["data"]["payload"]["operation_id"].clone();
+        let (code, draft) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_local_session,
+                "draft",
+                json!({
+                    "operation_id": op,
+                    "idempotency_key": op,
+                    "source_ref": hex(&source_cid.into_bytes()),
+                    "predicate_label": "water",
+                    "selected_ccid": "07".repeat(16),
+                    "argument_text": "Water is a liquid."
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{draft}");
+        let (code, preview) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/operations",
+            Some(operation(
+                &sender_local_session,
+                "prepare",
+                draft["data"]["payload"].clone(),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{preview}");
+        let private_cid_hex = preview["data"]["payload"]["object_cids"][0]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let sem_cid_hex = preview["data"]["payload"]["artifacts"][0]["semantic_content_cid"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (code, saved) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/operations",
+            Some(operation(
+                &sender_local_session,
+                "save",
+                json!({
+                    "operation_id": op,
+                    "idempotency_key": op,
+                    "object_cids": [private_cid_hex]
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{saved}");
+
+        let selector_hex = "22".repeat(32);
+        let namespace_hex = "33".repeat(32);
+
+        // Local-only host can prepare a preview, but confirm_public=true fails closed with 503 capability_disabled.
+        let (code, local_prep) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_local_session,
+                "share_prepare",
+                json!({
+                    "object_cid": private_cid_hex,
+                    "expected_node_id": receiver_peer_hex,
+                    "address": receiver_addr,
+                    "selector": selector_hex,
+                    "namespace": namespace_hex
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{local_prep}");
+        let local_prepared_id = local_prep["data"]["payload"]["prepared_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let (code, disabled) = ku_request(
+            &sender_local_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_local_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": local_prepared_id,
+                    "confirm_public": true
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE, "{disabled}");
+        assert_eq!(
+            disabled["error"]["message"],
+            "ku_public_share_network_unavailable"
+        );
+        drop(sender_local_router);
+
+        // Restart sender with opt-in loopback network config on the same dataset.
+        let sender_net_config = load_config(&write_host_config("sender", true)).unwrap();
+        assert!(sender_net_config.network.is_some());
+        let sender_net_host = prepare_host(&sender_net_config).await.unwrap();
+        let sender_net = sender_net_host
+            .network_runtime
+            .as_ref()
+            .expect("sender opt-in network runtime must start")
+            .clone();
+        let sender_peer_hex = hex(&sender_net.status().principal);
+        let sender_router =
+            ApiServer::new(sender_net_host.node, sender_net_host.token, 0).build_router();
+
+        let (_, sender_status) =
+            ku_request(&sender_router, token, "/api/vnext/ku/status", None).await;
+        let sender_session = sender_status["data"]["session"].clone();
+        let (_, receiver_status) =
+            ku_request(&receiver_router, token, "/api/vnext/ku/status", None).await;
+        let receiver_session = receiver_status["data"]["session"].clone();
+
+        let (code, prep) = ku_request(
+            &sender_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_session,
+                "share_prepare",
+                json!({
+                    "object_cid": private_cid_hex,
+                    "expected_node_id": receiver_peer_hex,
+                    "address": receiver_addr,
+                    "selector": selector_hex,
+                    "namespace": namespace_hex
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{prep}");
+        let prepared_id = prep["data"]["payload"]["prepared_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let public_cid_hex = prep["data"]["payload"]["public_object_cid"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_ne!(public_cid_hex, private_cid_hex);
+        assert_eq!(prep["data"]["payload"]["semantic_content_cid"], sem_cid_hex);
+
+        let (code, confirmed) = ku_request(
+            &sender_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": prepared_id,
+                    "confirm_public": true
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{confirmed}");
+        assert_eq!(confirmed["data"]["payload"]["event"], "share_confirmed");
+        let intent_id = confirmed["data"]["payload"]["intent_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (code, intent) = ku_request(
+            &sender_router,
+            token,
+            "/api/vnext/ku/editor",
+            Some(editor(
+                &sender_session,
+                "share_intent",
+                json!({ "intent_id": intent_id }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{intent}");
+        assert_eq!(
+            intent["data"]["payload"]["claims_network_completion"],
+            false
+        );
+
+        let mut accepted = None;
+        for _ in 0..50 {
+            let (code, inspected) = ku_request(
+                &receiver_router,
+                token,
+                "/api/vnext/ku/editor",
+                Some(editor(
+                    &receiver_session,
+                    "share_inspect",
+                    json!({
+                        "object_cid": public_cid_hex,
+                        "selector": selector_hex
+                    }),
+                )),
+            )
+            .await;
+            if code == StatusCode::OK {
+                accepted = Some(inspected["data"]["payload"].clone());
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let accepted = accepted.expect("receiver host should accept and inspect Public KU");
+        assert_eq!(accepted["event"], "public_object");
+        assert_eq!(accepted["semantic"]["semantic_content_cid"], sem_cid_hex);
+        assert_eq!(
+            accepted["authenticated_source_peers"],
+            json!([sender_peer_hex])
+        );
+        assert_eq!(accepted["fidelity"], "unassessed");
+        assert_eq!(accepted["authorizes_reward"], false);
+
+        let (code, view) = ku_request(
+            &receiver_router,
+            token,
+            "/api/vnext/ku/operations",
+            Some(operation(
+                &receiver_session,
+                "get",
+                json!({ "object_cid": public_cid_hex }),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{view}");
+        assert_eq!(view["data"]["payload"]["disclosure_class"], "PUBLIC");
+        assert_eq!(view["data"]["payload"]["semantic_content_cid"], sem_cid_hex);
     }
 }

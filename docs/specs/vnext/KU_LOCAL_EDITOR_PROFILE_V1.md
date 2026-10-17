@@ -118,4 +118,11 @@ separate preview-then-confirm gesture (`confirm_public: true`), preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`
 (`ku_public_share_network_unavailable`), keep private `ObjectCID` and source
 bytes out of the share preview/inspect UI, and distinguish durable outbox
-intent creation from peer delivery.
+intent creation from peer delivery. In `ku_local_web`, `network` is omitted by
+default so normal launches start no network listener; when the operator
+explicitly configures `"network": { "network_opt_in": true, "bind_addr": "127.0.0.1:0" }`
+and runs `ku_local_web` with `--features vnext-network-runtime`,
+`start_host_loopback_network_runtime` validates the loopback opt-in before
+touching Registry or dataset state, starts a loopback `VNextNetworkRuntime`
+after node/Base initialization, and binds it via `attach_live_public_reader` so
+the `/ku` Web share confirmation and peer inspection actions run end-to-end.
