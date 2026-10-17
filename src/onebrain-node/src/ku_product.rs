@@ -47,7 +47,9 @@ pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
 /// supply authority booleans, or bypass its current custody/consent assessment.
 pub trait KuInputProvider: Send + Sync {
     /// Host activation gate; never selected by a private source or model reply.
-    fn review_selection_v2(&self) -> bool { false }
+    fn review_selection_v2(&self) -> bool {
+        false
+    }
     fn review_provider(
         &self,
         _model: &str,
@@ -150,6 +152,114 @@ fn charge_extraction(
 /// Read-only view of the already owned public acceptance store.
 pub trait KuPublicReader: Send + Sync {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError>;
+    fn bind_canonical_path(&self, _path: std::path::PathBuf) {}
+    fn set_live_reader(&self, _reader: Option<Arc<dyn KuPublicReader>>) {}
+}
+
+type LivePublicReaders = Mutex<BTreeMap<std::path::PathBuf, std::sync::Weak<dyn KuPublicReader>>>;
+
+static LIVE_PUBLIC_READERS: std::sync::OnceLock<LivePublicReaders> = std::sync::OnceLock::new();
+
+fn live_public_readers() -> &'static LivePublicReaders {
+    LIVE_PUBLIC_READERS.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn normalized_reader_paths(path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut keys = vec![path.to_path_buf()];
+    if let Ok(canonical) = path.canonicalize() {
+        if !keys.contains(&canonical) {
+            keys.push(canonical);
+        }
+    }
+    keys
+}
+
+pub fn register_live_public_reader(path: &std::path::Path, reader: &Arc<dyn KuPublicReader>) {
+    if let Ok(mut map) = live_public_readers().lock() {
+        map.retain(|_, weak| weak.strong_count() > 0);
+        for key in normalized_reader_paths(path) {
+            map.insert(key, Arc::downgrade(reader));
+        }
+    }
+}
+
+fn lookup_live_public_reader(path: &std::path::Path) -> Option<Arc<dyn KuPublicReader>> {
+    let mut map = live_public_readers().lock().ok()?;
+    map.retain(|_, weak| weak.strong_count() > 0);
+    for key in normalized_reader_paths(path) {
+        if let Some(reader) = map.get(&key).and_then(std::sync::Weak::upgrade) {
+            return Some(reader);
+        }
+    }
+    None
+}
+
+/// Normal-host read-only adapter over the node's canonical verified public
+/// store (`vnext_verified.redb`), delegating to an active in-process validated
+/// sink when present and opening committed on-disk records on demand otherwise.
+pub struct CanonicalPublicReader {
+    live: Mutex<Option<Arc<dyn KuPublicReader>>>,
+    paths: Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl CanonicalPublicReader {
+    pub fn for_data_dir(data_dir: &std::path::Path) -> Arc<Self> {
+        Arc::new(Self {
+            live: Mutex::new(None),
+            paths: Mutex::new(vec![data_dir.join("vnext_verified.redb")]),
+        })
+    }
+
+    pub fn register_live_for_data_dir(
+        data_dir: &std::path::Path,
+        reader: &Arc<dyn KuPublicReader>,
+    ) {
+        register_live_public_reader(&data_dir.join("vnext_verified.redb"), reader);
+    }
+}
+
+impl KuPublicReader for CanonicalPublicReader {
+    fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError> {
+        if let Some(live) = self.live.lock().map_err(|_| corrupt())?.clone() {
+            if let Some(bytes) = live.get_public_object(cid)? {
+                return Ok(Some(bytes));
+            }
+        }
+        let paths = self.paths.lock().map_err(|_| corrupt())?.clone();
+        for path in paths {
+            if let Some(live) = lookup_live_public_reader(&path) {
+                if let Some(bytes) = live.get_public_object(cid)? {
+                    return Ok(Some(bytes));
+                }
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let backend = RedbVerifiedBackend::open(&path).map_err(|_| corrupt())?;
+            let sink = crate::vnext_validated_sink::SharedVNextValidatedSink::new(
+                crate::vnext_validated_sink::VNextValidatedSink::new(backend),
+            );
+            if let Some(bytes) = sink.get_public_object(cid)? {
+                return Ok(Some(bytes));
+            }
+        }
+        Ok(None)
+    }
+
+    fn bind_canonical_path(&self, path: std::path::PathBuf) {
+        if let Ok(mut paths) = self.paths.lock() {
+            if !paths.contains(&path) {
+                paths.insert(0, path);
+            }
+        }
+    }
+
+    fn set_live_reader(&self, reader: Option<Arc<dyn KuPublicReader>>) {
+        if let Ok(mut live) = self.live.lock() {
+            *live = reader;
+        }
+    }
 }
 
 impl<B: ku_core::foundation::AtomicVerifiedBackend + Send> KuPublicReader
@@ -157,6 +267,14 @@ impl<B: ku_core::foundation::AtomicVerifiedBackend + Send> KuPublicReader
 {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError> {
         self.get_object(ObjectCid::from_bytes(cid))
+            .map_err(|_| corrupt())
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl KuPublicReader for crate::vnext_network_runtime::VNextNetworkRuntime {
+    fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError> {
+        self.public_object(ObjectCid::from_bytes(cid))
             .map_err(|_| corrupt())
     }
 }
@@ -509,6 +627,12 @@ impl KuStore {
             tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
+        if let (Some(public), Ok(canonical)) = (
+            config.public.as_ref(),
+            paths.owner_path(BaseStorageOwnerId::CANONICAL),
+        ) {
+            public.bind_canonical_path(canonical.join("vnext_verified.redb"));
+        }
         let store = Self {
             review_running: Mutex::new(BTreeMap::new()),
             review_gate: tokio::sync::Semaphore::new(1),
@@ -1376,7 +1500,18 @@ impl KuStore {
                     return Err(not_found());
                 }
                 let opaque = object.is_opaque();
-                let mut result = view(cid, bytes, None, DisclosureClass::Public);
+                let semantic_cid = match object.semantics() {
+                    ObjectSemantics::Known(envelope) if envelope.kind == ObjectKind(2) => {
+                        SemanticFrameSet::from_canonical_value(&envelope.payload)
+                            .ok()
+                            .and_then(|semantic| {
+                                normalize_semantic_content(&semantic, SEMANTIC_CONTENT_PROFILE).ok()
+                            })
+                            .map(|normalized| SemanticContentCID(normalized.cid.into_bytes()))
+                    }
+                    _ => None,
+                };
+                let mut result = view(cid, bytes, semantic_cid, DisclosureClass::Public);
                 if opaque {
                     result.artifact_validity = ArtifactValidity::AcceptedOpaque;
                 }

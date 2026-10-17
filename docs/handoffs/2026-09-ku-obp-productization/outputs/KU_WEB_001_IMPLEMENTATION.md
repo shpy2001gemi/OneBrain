@@ -460,6 +460,44 @@ Try the journey:
    uses its server-reserved operation ID as its idempotency key; the recovery
    form is for work created by this page, not arbitrary external operation keys.
 
+### Normal-host Public KU reader and bounded share seam (D-045)
+
+`prepare_ku_runtime` and its `read_only` fallback now wire
+`CanonicalPublicReader::for_data_dir(&node_config.data_dir)` into
+`KuRuntimeConfig.public` instead of leaving `public: None`. When an existing
+committed canonical verified store (`<data_dir>/CANONICAL/vnext_verified.redb`
+or `<data_dir>/vnext_verified.redb`) or an explicitly attached live
+`VNextNetworkRuntime` (`attach_live_public_reader`) holds an accepted
+`DisclosureClass::Public` KU, the normal host's registered `POST /api/vnext/ku/operations`
+`get` and `CanonicalPublicExchange` `export` serve its exact canonical bytes,
+`DisclosureClass::Public`, and (for known `ObjectKind(2)` v1 semantic kernels)
+the matching `semantic_content_cid`. Opening the normal host neither creates
+`vnext_verified.redb` on a local-only dataset nor starts a network listener;
+`LOCAL_ONLY` private objects and non-KU payloads remain excluded from the
+public reader and public exchange.
+
+The D-045 prepare/confirm state machine is shared in
+`onebrain_node::ku_public_share` (`PublicKuShareCoordinator`, `saved_ku_view`,
+`inspect_accepted_public_ku`, `inspect_outbound_intent`) and projected for
+in-process hosts in `onebrain_api::ku_host` (`host_ku_services`,
+`prepare_host_public_ku_share`, `confirm_host_public_ku_share`) alongside
+`ku_peer_demo`:
+
+- **Prepare** reads an explicitly selected, authorized saved `LOCAL_ONLY`
+  manual/resolved semantic kernel (one predicate + one text literal, with no
+  source references, spans or unsupported extensions) through the host's
+  authenticated `KuServices` and holds at most 16 single-use in-memory
+  previews (`MAX_PREPARED_PUBLIC_KU_SHARES`, max 15-minute TTL) for the new
+  `DisclosureClass::Public` object. Prepare does not write to the public store
+  or enqueue an outbound intent, and never logs the private `ObjectCID`.
+- **Confirm** requires a separate explicit call with `confirm_public: true`
+  before expiry, rechecks current authorized access to the exact saved private
+  view, consumes the single-use capability, and only then commits the public
+  record and durable `OutboundTransferIntent`.
+- **Boundary**: no unregistered HTTP share routes are added and networking
+  remains opt-in. Exposing share prepare/confirm in the registered HTTP/Web
+  surface remains separate contract and UI backlog work.
+
 ## Limits and contribution boundaries
 
 This is a finite manual editor, not arbitrary-text AI readiness. It supports one

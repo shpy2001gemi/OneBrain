@@ -1,20 +1,16 @@
 //! INT-KU-OBP-001: isolated, opt-in loopback topology using the existing runtime.
 //! JSONL on local stdin is trusted operator control; D-045 sharing is opt-in.
-use base64::{engine::general_purpose::STANDARD, Engine};
 use ku_core::foundation::NodeId;
-use ku_core::foundation::{NamespaceCommitment, ObjectCid, SelectorCid};
 use onebrain_base_contract::ku::KuViewV1;
 use onebrain_base_contract::ku_payload::{decode_hex, hex};
 use onebrain_node::ku_public_share::{
-    inspect_public_ku, prepare_public_ku, PreparedPublicKu, PUBLIC_CONSEQUENCE,
+    inspect_accepted_public_ku, inspect_outbound_intent, PublicKuShareCoordinator,
 };
 use onebrain_node::vnext_config::VNextNetworkPolicy;
 use onebrain_node::vnext_network_runtime::VNextNetworkRuntime;
-use onebrain_protocol::ReconcileManifestKind;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
-    collections::BTreeMap,
     io::BufRead,
     io::Read,
     net::SocketAddr,
@@ -176,7 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     status(&runtime, config.local_ku_host.is_some())?;
-    let mut prepared: BTreeMap<String, (String, PreparedPublicKu)> = BTreeMap::new();
+    let mut share = PublicKuShareCoordinator::new();
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
     let mut result = Ok(());
@@ -208,51 +204,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 namespace,
             } => {
                 let current_time = now()?;
-                prepared.retain(|_, (_, p)| p.expires_at() > current_time);
                 let result = async {
-                    if prepared.len() >= 16 {
-                        return Err("prepared_limit");
-                    }
+                    share.check_capacity(current_time)?;
                     let host = config
                         .local_ku_host
                         .as_ref()
                         .ok_or("ku_host_not_configured")?;
                     let view = saved_view(host, &object_cid).await?;
-                    let peer = NodeId::from_bytes(
-                        decode_hex::<32>(&expected_node_id).map_err(|_| "invalid_peer")?,
-                    );
-                    let selector_id = SelectorCid::from_bytes(
-                        decode_hex::<32>(&selector).map_err(|_| "invalid_selector")?,
-                    );
-                    let namespace_id = NamespaceCommitment::from_bytes(
-                        decode_hex::<32>(&namespace).map_err(|_| "invalid_namespace")?,
-                    );
-                    let proposal = prepare_public_ku(
+                    share.prepare_view(
+                        &object_cid,
                         &view,
-                        peer,
+                        &expected_node_id,
                         address,
-                        selector_id,
-                        namespace_id,
+                        &selector,
+                        &namespace,
                         current_time,
-                    )?;
-                    let mut nonce = [0; 32];
-                    getrandom::fill(&mut nonce).map_err(|_| "consent_randomness_unavailable")?;
-                    let prepared_id = hex(&nonce);
-                    let preview = json!({
-                        "event":"share_prepared", "prepared_id":prepared_id,
-                        "intent_id":hex(&proposal.intent_id()),
-                        "public_object_cid":hex(&proposal.public_cid()),
-                        "semantic_content_cid":hex(&proposal.semantic_cid()),
-                        "canonical_base64":STANDARD.encode(proposal.preview()),
-                        "semantic":inspect_public_ku(proposal.preview())?,
-                        "expected_node_id":expected_node_id, "address":address,
-                        "selector":selector, "namespace":namespace,
-                        "expires_at":proposal.expires_at(), "consequence":PUBLIC_CONSEQUENCE,
-                        "enqueued":false, "payload_sent":false,
-                        "support":"one predicate and one text literal only"
-                    });
-                    prepared.insert(prepared_id, (object_cid, proposal));
-                    Ok(preview)
+                    )
                 }
                 .await;
                 match result {
@@ -265,14 +232,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 confirm_public,
             } => {
                 let result = async {
-                    if !confirm_public { return Err("explicit_public_confirmation_required"); }
-                    let (cid, _) = prepared.get(&prepared_id).ok_or("prepared_share_missing")?;
-                    let view = saved_view(config.local_ku_host.as_ref().ok_or("ku_host_not_configured")?, cid).await?;
-                    let (_, proposal) = prepared.remove(&prepared_id).ok_or("prepared_share_missing")?;
-                    let intent = proposal.confirm(&view, now().map_err(|_| "invalid_clock")?)?;
-                    let outcome = runtime.enqueue_outbound(&intent).map_err(|_| "outbox_unavailable_reprepare_same_intent")?;
-                    Ok(json!({"event":"share_confirmed","intent_id":hex(&intent.id),"public_object_cid":hex(&intent.cid),"outbox":format!("{outcome:?}"),"delivery":"pending; inspect intent for acknowledgement","authorizes_reward":false}))
-                }.await;
+                    let cid = share
+                        .prepared_object_cid(&prepared_id, confirm_public)?
+                        .to_owned();
+                    let host = config
+                        .local_ku_host
+                        .as_ref()
+                        .ok_or("ku_host_not_configured")?;
+                    let view = saved_view(host, &cid).await?;
+                    let current_time = now().map_err(|_| "invalid_clock")?;
+                    share.confirm_view(&prepared_id, confirm_public, &view, &runtime, current_time)
+                }
+                .await;
                 match result {
                     Ok(result) => println!("{result}"),
                     Err(code) => println!("{}", json!({"event":"error","code":code})),
@@ -281,54 +252,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Command::Inspect {
                 object_cid,
                 selector,
-            } => {
-                let result = (|| -> Result<_, &'static str> {
-                    let cid = ObjectCid::from_bytes(
-                        decode_hex::<32>(&object_cid).map_err(|_| "invalid_public_identity")?,
-                    );
-                    let selector = SelectorCid::from_bytes(
-                        decode_hex::<32>(&selector).map_err(|_| "invalid_selector")?,
-                    );
-                    let bytes = runtime
-                        .public_object(cid)
-                        .map_err(|_| "public_store_unavailable")?
-                        .ok_or("public_object_not_found")?;
-                    let semantic = inspect_public_ku(&bytes)?;
-                    let peers: Vec<_> = runtime
-                        .record_source_peers(
-                            ReconcileManifestKind::Object,
-                            cid.into_bytes(),
-                            selector,
-                        )
-                        .map_err(|_| "provenance_unavailable")?
-                        .iter()
-                        .map(|id| hex(id.as_bytes()))
-                        .collect();
-                    Ok(
-                        json!({"event":"public_object","object_cid":object_cid,"canonical_base64":STANDARD.encode(bytes),"semantic":semantic,"authenticated_source_peers":peers,"provenance":"transport/selector only; original source withheld and unverifiable","fidelity":"unassessed","authorizes_reward":false}),
-                    )
-                })();
-                match result {
-                    Ok(result) => println!("{result}"),
-                    Err(code) => println!("{}", json!({"event":"error","code":code})),
-                }
-            }
-            Command::Intent { intent_id } => {
-                let result = (|| -> Result<_, &'static str> {
-                    let id = decode_hex::<32>(&intent_id).map_err(|_| "invalid_intent_identity")?;
-                    let intent = runtime
-                        .outbound_intent(&id)
-                        .map_err(|_| "outbox_unavailable")?
-                        .ok_or("intent_not_found")?;
-                    Ok(
-                        json!({"event":"intent","intent_id":intent_id,"public_object_cid":hex(&intent.cid),"state":format!("{:?}",intent.state),"terminal_sequence":intent.terminal_sequence,"claims_network_completion":false}),
-                    )
-                })();
-                match result {
-                    Ok(result) => println!("{result}"),
-                    Err(code) => println!("{}", json!({"event":"error","code":code})),
-                }
-            }
+            } => match inspect_accepted_public_ku(&runtime, &object_cid, &selector) {
+                Ok(result) => println!("{result}"),
+                Err(code) => println!("{}", json!({"event":"error","code":code})),
+            },
+            Command::Intent { intent_id } => match inspect_outbound_intent(&runtime, &intent_id) {
+                Ok(result) => println!("{result}"),
+                Err(code) => println!("{}", json!({"event":"error","code":code})),
+            },
             Command::Connect {
                 expected_node_id,
                 address,

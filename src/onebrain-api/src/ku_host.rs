@@ -10,8 +10,15 @@ use onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager;
 use onebrain_node::concept_registry_runtime::ConceptRegistryReaderLease;
 use onebrain_node::ku_manual::ManualKuInputs;
 use onebrain_node::ku_ollama::OllamaKuInputs;
-use onebrain_node::ku_product::{KuInputProvider, KuResolvedInput, KuRuntimeConfig};
-use onebrain_node::{BaseServiceError, NodeConfig};
+use onebrain_node::ku_product::{
+    CanonicalPublicReader, KuInputProvider, KuPublicReader, KuResolvedInput, KuRuntimeConfig,
+    KuServices,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use onebrain_node::ku_public_share::{
+    inspect_accepted_public_ku, inspect_outbound_intent, saved_ku_view, PublicKuShareCoordinator,
+};
+use onebrain_node::{BaseServiceError, NodeConfig, OneBrainNode};
 use serde::{Deserialize, Serialize};
 use std::{
     io::Read,
@@ -73,6 +80,7 @@ impl KuInputProvider for ReadOnlyInputs {
 }
 
 fn read_only(
+    public: Arc<dyn KuPublicReader>,
     key: [u8; 32],
     registry: Option<Arc<ConceptRegistryGenerationManager>>,
     reason: &'static str,
@@ -82,7 +90,7 @@ fn read_only(
             vault_key: VaultKey::from_bytes(key),
             registry,
             inputs: Arc::new(ReadOnlyInputs),
-            public: None,
+            public: Some(public),
         },
         Some(reason),
     )
@@ -110,8 +118,10 @@ pub fn prepare_ku_runtime(
     let key: [u8; 32] = read_bounded(&config.vault_key_file, 32)?
         .try_into()
         .map_err(|_| "ku_vault_key_invalid")?;
+    let public: Arc<dyn KuPublicReader> =
+        CanonicalPublicReader::for_data_dir(&node_config.data_dir);
     if config.sources.len() > 64 {
-        return Ok(read_only(key, None, "ku_host_source_limit"));
+        return Ok(read_only(public, key, None, "ku_host_source_limit"));
     }
     let mut registry_config = node_config.clone();
     registry_config.concept_registry_release_root = Some(config.registry_root.clone());
@@ -119,7 +129,7 @@ pub fn prepare_ku_runtime(
     registry_config.concept_registry_mode = onebrain_node::ConceptRegistryMode::Required;
     let registry = match ConceptRegistryGenerationManager::open(registry_config) {
         Ok(registry) => Arc::new(registry),
-        Err(_) => return Ok(read_only(key, None, "ku_registry_unavailable")),
+        Err(_) => return Ok(read_only(public, key, None, "ku_registry_unavailable")),
     };
     let sources = config
         .sources
@@ -133,17 +143,24 @@ pub fn prepare_ku_runtime(
         .collect::<Result<Vec<_>, &'static str>>();
     let sources = match sources {
         Ok(sources) => sources,
-        Err(reason) => return Ok(read_only(key, Some(registry), reason)),
+        Err(reason) => return Ok(read_only(public, key, Some(registry), reason)),
     };
     let manual = match ManualKuInputs::new([0; 32], registry.clone(), sources) {
         Ok(manual) => Arc::new(manual),
-        Err(_) => return Ok(read_only(key, Some(registry), "ku_source_admission_failed")),
+        Err(_) => {
+            return Ok(read_only(
+                public,
+                key,
+                Some(registry),
+                "ku_source_admission_failed",
+            ))
+        }
     };
     let mut providers: Vec<(String, Arc<dyn ExtractionProvider>, u64)> = Vec::new();
     let mut model_issue = None;
     if let Some(ollama) = &config.ollama {
         if ollama.models.is_empty() || ollama.models.len() > 8 {
-            return Ok(read_only(key, Some(registry), "ku_model_limit"));
+            return Ok(read_only(public, key, Some(registry), "ku_model_limit"));
         }
         let gate = Arc::new(tokio::sync::Semaphore::new(1));
         for name in &ollama.models {
@@ -163,7 +180,14 @@ pub fn prepare_ku_runtime(
     }
     let inputs = match OllamaKuInputs::new([0; 32], manual, registry.clone(), providers) {
         Ok(inputs) => inputs,
-        Err(_) => return Ok(read_only(key, Some(registry), "ku_custody_install_failed")),
+        Err(_) => {
+            return Ok(read_only(
+                public,
+                key,
+                Some(registry),
+                "ku_custody_install_failed",
+            ))
+        }
     };
     let inputs: Arc<dyn KuInputProvider> =
         Arc::new(if std::env::var("KU_SELECTION").as_deref() == Ok("2") {
@@ -176,8 +200,556 @@ pub fn prepare_ku_runtime(
             vault_key: VaultKey::from_bytes(key),
             registry: Some(registry),
             inputs,
-            public: None,
+            public: Some(public),
         },
         model_issue,
     ))
+}
+
+/// Acquire an authenticated `KuServices` handle from a normal host's
+/// `OneBrainNode` using the host's configured API token.
+pub fn host_ku_services(node: &OneBrainNode, api_token: &str) -> Result<KuServices, &'static str> {
+    node.ku_services([0; 32], api_token.trim().as_bytes())
+        .map_err(|_| "ku_authorization_unavailable")
+}
+
+/// Bind an active in-process `VNextNetworkRuntime` to the normal host's
+/// canonical public reader for `data_dir` while opt-in networking is running.
+#[cfg(feature = "vnext-network-runtime")]
+pub fn attach_live_public_reader(
+    data_dir: &Path,
+    runtime: &Arc<onebrain_node::vnext_network_runtime::VNextNetworkRuntime>,
+) {
+    let reader: Arc<dyn KuPublicReader> = runtime.clone();
+    CanonicalPublicReader::register_live_for_data_dir(data_dir, &reader);
+}
+
+/// Prepare a D-045 Public KU share directly from a normal host's authenticated
+/// `OneBrainNode` without exposing the private `ObjectCID` or adding routes.
+#[cfg(feature = "vnext-network-runtime")]
+#[allow(clippy::too_many_arguments)]
+pub async fn prepare_host_public_ku_share(
+    node: &OneBrainNode,
+    api_token: &str,
+    share: &mut PublicKuShareCoordinator,
+    object_cid: &str,
+    expected_node_id: &str,
+    address: std::net::SocketAddr,
+    selector: &str,
+    namespace: &str,
+    now: u64,
+) -> Result<serde_json::Value, &'static str> {
+    let services = host_ku_services(node, api_token)?;
+    share
+        .prepare_with_services(
+            &services,
+            object_cid,
+            expected_node_id,
+            address,
+            selector,
+            namespace,
+            now,
+        )
+        .await
+}
+
+/// Confirm a prepared D-045 Public KU share after rechecking current authorized
+/// access through the normal host's authenticated `OneBrainNode`.
+#[cfg(feature = "vnext-network-runtime")]
+pub async fn confirm_host_public_ku_share(
+    node: &OneBrainNode,
+    api_token: &str,
+    share: &mut PublicKuShareCoordinator,
+    prepared_id: &str,
+    confirm_public: bool,
+    runtime: &onebrain_node::vnext_network_runtime::VNextNetworkRuntime,
+    now: u64,
+) -> Result<serde_json::Value, &'static str> {
+    let services = host_ku_services(node, api_token)?;
+    share
+        .confirm_with_services(&services, prepared_id, confirm_public, runtime, now)
+        .await
+}
+
+#[cfg(test)]
+#[path = "ku_api/tests/registry_fixture.rs"]
+mod registry_fixture;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use ku_core::foundation::semantic::SemanticFrameSet;
+    use ku_core::foundation::{
+        decode_knowledge_object, DisclosureClass, KnownObjectKind, ObjectKind, ObjectReference,
+        ObjectSemantics, ObservationGovernance, ResourceProfile, SourceArtifact,
+        SourceArtifactKind, StoredRecordKind,
+    };
+    use onebrain_base_contract::ku::{
+        ArtifactDisclosure, ArtifactValidity, ExportMode, KuExportV1, KuGetV1, KuListV1,
+        KuRequestV1, KuResponseV1, KuSaveV1, ObjectCID, SourceArtifactCID,
+    };
+    #[cfg(feature = "vnext-network-runtime")]
+    use onebrain_base_contract::ku_payload::decode_hex;
+    use onebrain_base_contract::ku_payload::hex;
+    use onebrain_node::canonical_exchange::{
+        read_canonical_exchange, write_canonical_exchange, BaseExchangeEntryV1,
+    };
+    use onebrain_node::ku_manual::{ManualDraft, ManualEditorRequest, ManualEditorResponse};
+    use onebrain_node::ConceptRegistryMode;
+
+    fn budget() -> ResourceBudgetV1 {
+        ResourceBudgetV1::try_new(256, 1_032_192, 1_000_000).unwrap()
+    }
+
+    async fn setup_normal_host(
+        root: &Path,
+        name: &str,
+        token: &str,
+    ) -> (OneBrainNode, ObjectCID, PathBuf) {
+        let host_dir = root.join(name);
+        std::fs::create_dir_all(&host_dir).unwrap();
+        drop(registry_fixture::registry(&host_dir));
+        let key_path = host_dir.join("vault.bin");
+        std::fs::write(&key_path, [0x51; 32]).unwrap();
+        let reference = |n| ObjectReference::new(1, [n; 32]);
+        let (source_bytes, source_cid) = SourceArtifact {
+            source_kind: SourceArtifactKind::Text,
+            raw_bytes: b"synthetic-private-source-canary".to_vec(),
+            media_type_commitment: [2; 32],
+            capture_adapter: reference(1),
+            capture_sequence: 1,
+            governance: ObservationGovernance {
+                consent_policy: reference(2),
+                consent_receipt: reference(3),
+                revocation_policy: reference(4),
+                retention_policy: reference(5),
+                capture_scope_commitment: [3; 32],
+                authorization_assessment_commitment: [4; 32],
+                assessed_frontier: [5; 32],
+            },
+        }
+        .to_private_object()
+        .unwrap()
+        .encode(ResourceProfile::ObjectV1)
+        .unwrap();
+        let source_path = host_dir.join("source.canonical");
+        std::fs::write(&source_path, &source_bytes).unwrap();
+        let data_dir = host_dir.join("dataset");
+        let node_config = NodeConfig {
+            data_dir: data_dir.clone(),
+            concept_registry_mode: ConceptRegistryMode::Required,
+            concept_registry_release_root: Some(host_dir.join("registry")),
+            concept_registry_release_public_key: Some(hex(ed25519_dalek::SigningKey::from_bytes(
+                &[0x42; 32],
+            )
+            .verifying_key()
+            .as_bytes())),
+            ..Default::default()
+        };
+        let inputs = KuHostInputsConfig {
+            registry_root: node_config.concept_registry_release_root.clone().unwrap(),
+            registry_public_key: node_config
+                .concept_registry_release_public_key
+                .clone()
+                .unwrap(),
+            vault_key_file: key_path,
+            sources: vec![Source {
+                label: "private-source-label".into(),
+                canonical_file: source_path,
+            }],
+            ollama: None,
+        };
+        let (ku, issue) = prepare_ku_runtime(&node_config, &inputs).unwrap();
+        assert!(issue.is_none());
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let mut node = OneBrainNode::new(node_config).await.unwrap();
+        let mut base = crate::base_runtime_config_for_api_token(token);
+        base.ku = Some(ku);
+        node.install_base_runtime(base).unwrap();
+        (node, ObjectCID(source_cid.into_bytes()), data_dir)
+    }
+
+    async fn save_manual_private_ku(
+        node: &OneBrainNode,
+        token: &str,
+        source_cid: ObjectCID,
+    ) -> (ObjectCID, [u8; 32], Vec<u8>) {
+        let services = host_ku_services(node, token).unwrap();
+        let op = services.reserve().await.unwrap();
+        let ManualEditorResponse::Draft(prepare_req) = services
+            .editor(
+                ManualEditorRequest::Draft(ManualDraft {
+                    operation_id: op,
+                    idempotency_key: onebrain_base_contract::ku::IdempotencyKey(op.0),
+                    source_ref: SourceArtifactCID(source_cid.0),
+                    predicate_label: "water".into(),
+                    selected_ccid: Some(hex(&[7; 16])),
+                    argument_text: "Water is a liquid.".into(),
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let KuResponseV1::Prepare(prepared) = services
+            .invoke(KuRequestV1::Prepare(prepare_req), budget())
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let private_cid = prepared.object_cids[0];
+        let sem_cid = prepared.artifacts[0].semantic_content_cid.0;
+        let preview_bytes = STANDARD
+            .decode(&prepared.artifacts[0].canonical_preview)
+            .unwrap();
+        let KuResponseV1::Save(receipt) = services
+            .invoke(
+                KuRequestV1::Save(KuSaveV1 {
+                    operation_id: op,
+                    idempotency_key: onebrain_base_contract::ku::IdempotencyKey(op.0),
+                    object_cids: vec![private_cid],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(!receipt.published);
+        (private_cid, sem_cid, preview_bytes)
+    }
+
+    #[tokio::test]
+    async fn normal_host_reads_and_exports_accepted_public_ku_without_exposing_private_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let token = "synthetic-normal-host-token-1234567890";
+        let (mut node, source_cid, _) = setup_normal_host(temp.path(), "host", token).await;
+        assert!(!node.vnext_status().features.obp_rp);
+        let (private_cid, sem_cid, private_bytes) =
+            save_manual_private_ku(&node, token, source_cid).await;
+        let services = host_ku_services(&node, token).unwrap();
+
+        // Private LOCAL_ONLY KUs must fail closed on public export.
+        let err = services
+            .invoke(
+                KuRequestV1::Export(KuExportV1 {
+                    mode: ExportMode::CanonicalPublicExchange,
+                    object_cids: vec![private_cid],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err.code, BaseErrorCodeV1::Conflict);
+
+        // Admit a DisclosureClass::Public object with the same semantic kernel.
+        let decoded = decode_knowledge_object(
+            &private_bytes,
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(ObjectKind(2), 1)],
+            &[],
+        )
+        .unwrap();
+        let ObjectSemantics::Known(envelope) = decoded.semantics() else {
+            panic!()
+        };
+        let semantic = SemanticFrameSet::from_canonical_value(&envelope.payload).unwrap();
+        let (public_bytes, public_cid_raw) = semantic
+            .to_knowledge_object(DisclosureClass::Public)
+            .unwrap()
+            .encode(ResourceProfile::ObjectV1)
+            .unwrap();
+        let public_cid = ObjectCID(public_cid_raw.into_bytes());
+        assert_ne!(public_cid, private_cid);
+        let exchange_path = temp.path().join("public.obx");
+        write_canonical_exchange(
+            &[BaseExchangeEntryV1::VNextPublic {
+                kind: StoredRecordKind::Object,
+                cid: public_cid.0,
+                canonical_bytes: public_bytes.clone(),
+            }],
+            std::fs::File::create(&exchange_path).unwrap(),
+        )
+        .unwrap();
+        let imported = node.import_canonical_exchange(&exchange_path).unwrap();
+        assert_eq!(imported.imported, 1);
+
+        let KuResponseV1::Get(view) = services
+            .invoke(
+                KuRequestV1::Get(KuGetV1 {
+                    object_cid: public_cid,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(view.object_cid, public_cid);
+        assert_eq!(view.disclosure_class, ArtifactDisclosure::PUBLIC);
+        assert_eq!(view.artifact_validity, ArtifactValidity::AcceptedKnown);
+        assert_eq!(view.semantic_content_cid.unwrap().0, sem_cid);
+        assert!(!view.executable);
+        assert!(view.limitations.iter().any(|l| l == "fidelity_unassessed"));
+
+        let KuResponseV1::Export(exported) = services
+            .invoke(
+                KuRequestV1::Export(KuExportV1 {
+                    mode: ExportMode::CanonicalPublicExchange,
+                    object_cids: vec![public_cid],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        let exchange_bytes = STANDARD.decode(exported.public_records.unwrap()).unwrap();
+        assert_eq!(
+            read_canonical_exchange(exchange_bytes.as_slice())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Private list/search remains scoped to the principal's private owned store only.
+        let KuResponseV1::List(page) = services
+            .invoke(
+                KuRequestV1::List(KuListV1 {
+                    limit: 16,
+                    continuation: None,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].object_cid, private_cid);
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    #[tokio::test]
+    async fn normal_host_public_ku_share_seam_enforces_consent_and_serves_registered_public_reads()
+    {
+        use onebrain_node::vnext_config::VNextNetworkPolicy;
+        use onebrain_node::vnext_network_runtime::VNextNetworkRuntime;
+        use std::time::Duration;
+
+        let temp = tempfile::tempdir().unwrap();
+        let token = "synthetic-normal-host-token-1234567890";
+        let (sender_node, source_cid, sender_dir) =
+            setup_normal_host(temp.path(), "sender", token).await;
+        let (receiver_node, _, receiver_dir) =
+            setup_normal_host(temp.path(), "receiver", token).await;
+        let (private_cid, sem_cid, _) =
+            save_manual_private_ku(&sender_node, token, source_cid).await;
+        let private_cid_hex = hex(&private_cid.0);
+        let sem_cid_hex = hex(&sem_cid);
+
+        let sender_net = Arc::new(
+            VNextNetworkRuntime::start(
+                &sender_dir,
+                "127.0.0.1:0".parse().unwrap(),
+                VNextNetworkPolicy::default(),
+            )
+            .await
+            .unwrap(),
+        );
+        let receiver_net = Arc::new(
+            VNextNetworkRuntime::start(
+                &receiver_dir,
+                "127.0.0.1:0".parse().unwrap(),
+                VNextNetworkPolicy::default(),
+            )
+            .await
+            .unwrap(),
+        );
+        attach_live_public_reader(&receiver_dir, &receiver_net);
+
+        let sender_peer_hex = hex(&sender_net.status().principal);
+        let receiver_peer_hex = hex(&receiver_net.status().principal);
+        let receiver_addr = receiver_net.status().listen_addr;
+        let selector_hex = "02".repeat(32);
+        let namespace_hex = "03".repeat(32);
+        let mut share = PublicKuShareCoordinator::new();
+
+        let preview = prepare_host_public_ku_share(
+            &sender_node,
+            token,
+            &mut share,
+            &private_cid_hex,
+            &receiver_peer_hex,
+            receiver_addr,
+            &selector_hex,
+            &namespace_hex,
+            100,
+        )
+        .await
+        .unwrap();
+        assert_eq!(preview["event"], "share_prepared");
+        assert_eq!(preview["enqueued"], false);
+        assert_eq!(preview["payload_sent"], false);
+        let prepared_id = preview["prepared_id"].as_str().unwrap().to_owned();
+        let public_cid_hex = preview["public_object_cid"].as_str().unwrap().to_owned();
+        assert_ne!(public_cid_hex, private_cid_hex);
+        assert_eq!(preview["semantic_content_cid"], sem_cid_hex);
+        assert!(!preview.to_string().contains(&private_cid_hex));
+
+        // Explicit confirmation is required before enqueueing any outbound intent.
+        assert_eq!(
+            confirm_host_public_ku_share(
+                &sender_node,
+                token,
+                &mut share,
+                &prepared_id,
+                false,
+                &sender_net,
+                101,
+            )
+            .await,
+            Err("explicit_public_confirmation_required")
+        );
+
+        let confirmed = confirm_host_public_ku_share(
+            &sender_node,
+            token,
+            &mut share,
+            &prepared_id,
+            true,
+            &sender_net,
+            101,
+        )
+        .await
+        .unwrap();
+        assert_eq!(confirmed["event"], "share_confirmed");
+        assert_eq!(confirmed["public_object_cid"], public_cid_hex);
+        assert_eq!(confirmed["authorizes_reward"], false);
+        let intent_id = confirmed["intent_id"].as_str().unwrap().to_owned();
+
+        // Single-use prepared capability cannot be confirmed a second time.
+        assert_eq!(
+            confirm_host_public_ku_share(
+                &sender_node,
+                token,
+                &mut share,
+                &prepared_id,
+                true,
+                &sender_net,
+                102,
+            )
+            .await,
+            Err("prepared_share_missing")
+        );
+
+        let inspected_default_intent = inspect_outbound_intent(&sender_net, &intent_id).unwrap();
+        assert_eq!(
+            inspected_default_intent["public_object_cid"],
+            public_cid_hex
+        );
+        assert_eq!(inspected_default_intent["claims_network_completion"], false);
+
+        // Wait for loopback delivery to the receiver runtime.
+        let mut accepted = None;
+        for _ in 0..50 {
+            if let Ok(value) =
+                inspect_accepted_public_ku(&receiver_net, &public_cid_hex, &selector_hex)
+            {
+                accepted = Some(value);
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let accepted = accepted.expect("receiver should accept confirmed public KU");
+        assert_eq!(accepted["semantic"]["semantic_content_cid"], sem_cid_hex);
+        assert_eq!(
+            accepted["authenticated_source_peers"],
+            serde_json::json!([sender_peer_hex])
+        );
+        assert_eq!(
+            accepted["provenance"],
+            "transport/selector only; original source withheld and unverifiable"
+        );
+        assert_eq!(accepted["fidelity"], "unassessed");
+        assert_eq!(accepted["authorizes_reward"], false);
+
+        // Receiver normal host serves the accepted Public KU through registered get/export.
+        let receiver_services = host_ku_services(&receiver_node, token).unwrap();
+        let public_cid = ObjectCID(decode_hex::<32>(&public_cid_hex).unwrap());
+        let KuResponseV1::Get(view) = receiver_services
+            .invoke(
+                KuRequestV1::Get(KuGetV1 {
+                    object_cid: public_cid,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(view.object_cid, public_cid);
+        assert_eq!(view.disclosure_class, ArtifactDisclosure::PUBLIC);
+        assert_eq!(view.artifact_validity, ArtifactValidity::AcceptedKnown);
+        assert_eq!(view.semantic_content_cid.unwrap().0, sem_cid);
+        assert!(!view.executable);
+
+        let KuResponseV1::Export(exported) = receiver_services
+            .invoke(
+                KuRequestV1::Export(KuExportV1 {
+                    mode: ExportMode::CanonicalPublicExchange,
+                    object_cids: vec![public_cid],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(exported.public_records.is_some());
+
+        // Receiver private catalog remains empty; sender private KU remains LOCAL_ONLY.
+        let KuResponseV1::List(receiver_page) = receiver_services
+            .invoke(
+                KuRequestV1::List(KuListV1 {
+                    limit: 16,
+                    continuation: None,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert!(receiver_page.items.is_empty());
+
+        let sender_services = host_ku_services(&sender_node, token).unwrap();
+        let KuResponseV1::Get(sender_private) = sender_services
+            .invoke(
+                KuRequestV1::Get(KuGetV1 {
+                    object_cid: private_cid,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            sender_private.disclosure_class,
+            ArtifactDisclosure::LOCALONLY
+        );
+    }
 }
