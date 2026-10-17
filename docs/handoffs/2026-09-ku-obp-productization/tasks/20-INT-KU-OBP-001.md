@@ -6,7 +6,49 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up ? normal-host public reader and D-045 share seam (2026-10-17)
+## Latest follow-up — registered editor public KU share projection (2026-10-17)
+
+Implementation/spec/guide `bef0d28`, based on main `c337425`, is committed/pushed
+and directly verified under D-050. Previously `prepare_host_public_ku_share` and
+`confirm_host_public_ku_share` required caller-managed `PublicKuShareCoordinator`
+and `&VNextNetworkRuntime` in Rust, so authenticated HTTP callers on the
+registered `POST /api/vnext/ku/editor` surface could not prepare, confirm or
+inspect D-045 Public KU shares.
+
+- `ku_manual.rs` and `base_runtime.rs` add closed-schema (`#[serde(deny_unknown_fields)]`)
+  `share_prepare`, `share_confirm`, `share_intent` and `share_inspect` variants to
+  `ManualEditorRequest` and `ManualEditorResponse::PublicShare`, admitting
+  read-only `share_inspect` and `share_intent` in `recovery` mode while keeping
+  `share_prepare` and `share_confirm` `ready`-only.
+- `ku_product.rs`, `vnext_product_runtime.rs` and `ku_host.rs` own a host-scoped
+  `PublicKuShareCoordinator` in `KuStore` (`vnext-network-runtime`) and bind an
+  active opt-in `VNextNetworkRuntime` (`Listening`) via
+  `CanonicalPublicReader::register_live_runtime_for_data_dir` /
+  `attach_live_public_reader`. When no opt-in network runtime is active,
+  `share_confirm` (`confirm_public: true`), `share_intent` and `share_inspect`
+  fail closed with `503 capability_disabled` (`ku_public_share_network_unavailable`)
+  without starting networking or consuming a prepared share.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the four editor actions and their D-045 consent/provenance boundaries.
+
+Windows focused checks on 17/10, approximately 22:39–55 Asia/Saigon:
+`onebrain-api --lib` 39/39 PASS, `onebrain-api --features vnext-network-runtime
+--lib` 42/42 PASS (including `ku_host::tests` 3/3 covering `POST /api/vnext/ku/editor`
+`share_prepare`, `confirm_public=false` refusal, disabled-network `503` refusal
+preserving the single-use `prepared_id`, `attach_live_public_reader`,
+`confirm_public=true` enqueue, replay `404` refusal, `share_intent`, loopback
+delivery, and receiver `share_inspect` + `POST /api/vnext/ku/operations`
+`get`/`export`), `onebrain-node --features vnext-network-runtime --lib
+ku_public_share` 4/4 PASS, `onebrain-node --lib ku_product` 19/19 PASS,
+`ku_local_web` example tests 6/6 PASS, `ku_peer_demo` check PASS, KU/vNext
+validators, scoped rustfmt and whitespace PASS. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+or CLI projection over the registered `POST /api/vnext/ku/editor` share actions.
+
+## Latest follow-up — normal-host public reader and D-045 share seam (2026-10-17)
 
 Implementation/guide `2eb30d4`, based on main `7290c0c`, is committed/pushed and
 directly verified under D-050. Previously `ku_host::prepare_ku_runtime` (and its
@@ -33,7 +75,7 @@ TTL, single-use consumption, and public/intent inspection) lived inside
   documents this normal-host reader and bounded share seam. No unregistered HTTP
   routes are added and networking remains opt-in.
 
-Windows focused checks on 17/10, approximately 21:13?36 Asia/Saigon:
+Windows focused checks on 17/10, approximately 21:13–36 Asia/Saigon:
 `ku_public_share::tests` 4/4 PASS, `ku_product::tests::public_reader` 1/1 PASS,
 `onebrain-api --lib ku_host::tests` 1/1 PASS, `onebrain-api --features
 vnext-network-runtime --lib ku_host::tests` 2/2 PASS (covering private manual save,
@@ -639,7 +681,17 @@ Broader provisioning/composition remains open.
   reader 1/1, `ku_host::tests` 1/1 default + 2/2 `vnext-network-runtime`,
   `ku_local_web` 6/6, `ku_peer_demo` check, scoped rustfmt and KU/vNext PASS.
 
-Preserve Registry trust and private source/key custody. Product API/Web share
+- [x] Project D-045 Public KU share actions (`share_prepare`, `share_confirm`,
+  `share_intent`, `share_inspect`) onto the registered `POST /api/vnext/ku/editor`
+  and `KuServices::editor` surface with closed schemas, `recovery` read-only
+  admission for `share_inspect`/`share_intent`, and `503 capability_disabled`
+  (`ku_public_share_network_unavailable`) when no opt-in network runtime is active.
+  Commit/push `bef0d28` under D-050; `onebrain-api` 39/39 default + 42/42
+  `vnext-network-runtime` (`ku_host::tests` 3/3), `ku_public_share` 4/4,
+  `ku_product` 19/19, `ku_local_web` 6/6, `ku_peer_demo` check, scoped rustfmt
+  and KU/vNext PASS.
+
+Preserve Registry trust and private source/key custody. Web/CLI share UI
 projection, richer roots and source/author/fidelity proof remain separate backlog
 entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
 
