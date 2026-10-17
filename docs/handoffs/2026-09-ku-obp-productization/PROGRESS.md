@@ -6,44 +6,48 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 17/10/2026 23:18 (Asia/Saigon). Task 20 follow-up: `/ku` Web Public KU share & peer inspection UI — committed/published theo D-050.**
+**Cập nhật: 18/10/2026 00:02 (Asia/Saigon). Task 20 follow-up: opt-in loopback `VNextNetworkRuntime` config for `ku_local_web` — committed/published theo D-050.**
 
-- **Mục tiêu hiện tại:** chiếu các action chia sẻ Public KU theo D-045 (`share_prepare`,
-  `share_confirm`, `share_intent`, `share_inspect`) đã đăng ký trên
-  `POST /api/vnext/ku/editor` lên client và giao diện `/ku` (`src/onebrain-web`)
-  mà không thêm route chưa đăng ký hay bật networking mặc định; MVP giữ 22 Merged / 2 Deferred.
-- **Vừa xong:** `25b89c5` trên main thêm `sharePrepare`, `shareConfirm`,
-  `shareIntent`, `shareInspect` vào `src/onebrain-web/src/api/ku.ts` và vùng
-  điều khiển D-045 trong `src/onebrain-web/src/pages/KuWorkflow.tsx` +
-  `kuFeedback.ts` (giữ bước preview → confirm tách biệt với `confirm_public: true`,
-  bảo toàn `prepared_id` trong bộ nhớ khi `share_confirm` trả `503 capability_disabled`
-  / `ku_public_share_network_unavailable`, ẩn private `ObjectCID`/source trong
-  share panels, phân biệt pending intent với delivery) cùng cập nhật
+- **Mục tiêu hiện tại:** thêm cấu hình opt-in loopback `VNextNetworkRuntime` tùy
+  chọn (mặc định tắt khi không khai báo) cho `examples/ku_local_web.rs` và
+  `ku_host.rs`, gắn `attach_live_public_reader` khi operator bật rõ ràng để chạy
+  trọn luồng `/ku` Web `share_prepare` → `share_confirm` → `share_intent` /
+  `share_inspect` mà không bật networking mặc định; MVP giữ 22 Merged / 2 Deferred.
+- **Vừa xong:** `5dfc6bd` trên main thêm `KuHostNetworkConfig { network_opt_in,
+  bind_addr }` (`validate()` chặn `network_opt_in: false` hoặc địa chỉ không phải
+  loopback với `ku_network_config_invalid`) và `start_host_loopback_network_runtime`
+  trong `src/onebrain-api/src/ku_host.rs`, tích hợp trường tùy chọn `network` vào
+  `src/onebrain-api/examples/ku_local_web.rs` (kiểm tra trước khi chạm Registry/
+  dataset; báo `ku_network_runtime_unavailable` nếu build thiếu feature
+  `vnext-network-runtime`; khởi chạy sau `OneBrainNode::new` để tránh tranh chấp
+  khóa `vnext_verified.redb` khi restart) cùng cập nhật
   `docs/specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md` và
   `outputs/KU_WEB_001_IMPLEMENTATION.md`. Đã push/direct verify origin/main;
   docs closure ở HEAD cuối (`git log -1`).
 - **Còn lại / blocker:** signed Registry package/public key vẫn do distributor/
-  operator cung cấp; `examples/ku_local_web.rs` hiện chưa có cấu hình opt-in
-  network runtime tùy chọn để gắn `attach_live_public_reader` /
-  `VNextNetworkRuntime` trực tiếp khi chạy host; recovery/rotation và
-  proof/portability còn trong backlog.
-- **Bước tiếp theo:** rà soát `src/onebrain-api/examples/ku_local_web.rs` và
-  `src/onebrain-api/src/ku_host.rs` để thêm cấu hình opt-in loopback
-  `VNextNetworkRuntime` tùy chọn (mặc định tắt khi không khai báo) cho
-  `ku_local_web`, gắn `attach_live_public_reader` khi operator bật rõ ràng để
-  chạy trọn luồng `/ku` Web `share_prepare` → `share_confirm` → `share_intent` /
-  `share_inspect` mà không bật networking mặc định. Không lặp phần backend/Web UI
-  đã xong hoặc ENC-003.
-- **Đọc tiếp:** [task20 Web share UI result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--ku-web-public-ku-share-and-peer-inspection-ui-2026-10-17),
+  operator cung cấp; `VNextProductRuntime::start_with_paths` (dùng bởi
+  `OneBrainNode::start_network` / `onebrain-desktop`) hiện chưa đăng ký
+  `Arc<VNextNetworkRuntime>` với `CanonicalPublicReader` cho dataset; recovery/
+  rotation và proof/portability còn trong backlog.
+- **Bước tiếp theo:** rà soát `src/onebrain-node/src/vnext_product_runtime.rs`,
+  `src/onebrain-node/src/ku_product.rs` và `src/onebrain-desktop/tests/lifecycle.rs`
+  để khi `VNextProductRuntime::start_with_paths` khởi chạy opt-in
+  `VNextNetworkRuntime`, nó tự động đăng ký `Arc<VNextNetworkRuntime>` vào
+  `CanonicalPublicReader` cho `paths.network.verified_store`, giúp host
+  `OneBrainNode` / `onebrain-desktop` có bật opt-in `VNextProductRuntime` dùng
+  được `POST /api/vnext/ku/editor` (`share_confirm`, `share_intent`,
+  `share_inspect`) mà không cần tạo `VNextNetworkRuntime` rời. Không lặp phần
+  `ku_local_web` / Web UI đã xong hoặc ENC-003.
+- **Đọc tiếp:** [task20 ku_local_web network result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--opt-in-loopback-network-runtime-config-for-ku_local_web-2026-10-18),
   [guide section](outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045),
-  `src/onebrain-api/examples/ku_local_web.rs`,
-  `src/onebrain-api/src/ku_host.rs`,
-  `src/onebrain-web/src/pages/KuWorkflow.tsx`.
-- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `642d895`,
-  implementation/spec/guide `25b89c5` committed/pushed/direct verify. Docs closure là
+  `src/onebrain-node/src/vnext_product_runtime.rs`,
+  `src/onebrain-node/src/ku_product.rs`,
+  `src/onebrain-desktop/tests/lifecycle.rs`.
+- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `57fc9c0`,
+  implementation/spec/guide `5dfc6bd` committed/pushed/direct verify. Docs closure là
   HEAD cuối, push/direct verify cùng lượt. Fresh fetch/direct refs đầu lượt:
-  main `642d895`, qualification `4a8f29d`; direct verify sau implementation
-  `25b89c5`. Index rỗng sau closure; PROGRESS exact 108 prep additions (cùng
+  main `57fc9c0`, qualification `4a8f29d`; direct verify sau implementation
+  `5dfc6bd`. Index rỗng sau closure; PROGRESS exact 108 prep additions (cùng
   ghi chú tra cứu SSH local) + task23 dirty, 15 untracked giữ ngoài commits.
   Detached `798eabf` xác minh sạch.
 - **Cần giữ:** 16 retained hashes và exact prep; backup tại
@@ -51,11 +55,14 @@
   `4a8f29d` giữ 3 unmerged commits; Registry `6bc146c`, secrets `f3780c7`,
   source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`, detached `798eabf` và
   mọi fixture/demo/backup cũ giữ nguyên.
-- **Kiểm tra:** 17/10 khoảng 23:08–15 `npm run test:ku` 92/92 (`kuWorkflow.test.tsx`
-  17/17 + `axe`, `kuTransport.test.ts` 2/2), `npm run build` (`tsc -b && vite build`),
-  `npm run lint` (0 errors), KU/vNext validators và whitespace PASS; reuse Rust
-  `onebrain-api` / `onebrain-node` từ `bef0d28`. Retained hashes/prep kiểm tra khi
-  closure; không model/mobile.
+- **Kiểm tra:** 17/10 khoảng 23:53–57 `onebrain-api --example ku_local_web` 7/7,
+  `onebrain-api --features vnext-network-runtime --example ku_local_web` 8/8
+  (gồm từ chối cấu hình sai trước khi chạm Registry/dataset và trọn luồng 2 host
+  HTTP editor `share_prepare` → `share_confirm` → `share_intent` → loopback
+  delivery → receiver `share_inspect` + `get`/`export` và restart),
+  `onebrain-api --features vnext-network-runtime --lib ku_host::tests` 3/3,
+  scoped rustfmt, KU/vNext validators và whitespace PASS. Retained hashes/prep
+  kiểm tra khi closure; không model/mobile.
 - **Quyết định/giới hạn:** D-050 standing merge/push; D-044/D-045 contracts giữ
   nguyên. Không thêm HTTP route chưa đăng ký, không bật networking mặc định,
   không đụng private operator input/live host/model/mobile hay tuyên bố
@@ -84,7 +91,7 @@ The following docs closure changes only coordination state and is pushed with ma
 
 | Location | Actual state | How it affects the plan |
 |---|---|---|
-| `main`, `origin/main` | D-050 merge `2b14b23`, `e77202c`, `832425b`, normal-host share seam `2eb30d4`, registered editor share projection `bef0d28`, `/ku` Web share UI `25b89c5` + docs closure at HEAD; directly verified 2026-10-17 23:15; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics, normal-host share seam, registered editor share projection and `/ku` Web share UI Merged/published |
+| `main`, `origin/main` | D-050 merge `2b14b23`, `e77202c`, `832425b`, normal-host share seam `2eb30d4`, registered editor share projection `bef0d28`, `/ku` Web share UI `25b89c5`, `ku_local_web` opt-in loopback network config `5dfc6bd` + docs closure at HEAD; directly verified 2026-10-18 00:02; closure pushed/verified in same run | Accepted MVP, first-run/manual/secrets/Registry diagnostics, normal-host share seam, registered editor share projection, `/ku` Web share UI and `ku_local_web` opt-in loopback network config Merged/published |
 | `codex/ku-registry-public-key-diagnostics` | Retained at `6bc146c`; `645c6bc` + scoped docs integrated through `2b14b23` under D-050; root on main | No branch deletion; standing merge/push authority recorded; preparation outside commits |
 | `codex/ku-new-dataset-secrets` | Retained at `f3780c7`; `b73e684` + reviewed docs integrated through `ea92e8a` under D-049; root now on main | No source branch deletion/publication; 17 incoming paths outside integration commits |
 | `codex/ku-manual-provisioning-diagnostics` | Retained at `4d01775`; scoped commits merged through `403bbbb` under D-048; root now on main | No source branch deletion/publication; task23/untracked/108 preparation lines outside integration commits |
@@ -118,6 +125,15 @@ was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by mai
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
 ## Historical checkpoints — not current execution instructions
+
+### 2026-10-18 — Opt-in loopback network runtime config for `ku_local_web` published
+
+[Same parent result](tasks/20-INT-KU-OBP-001.md#latest-follow-up--opt-in-loopback-network-runtime-config-for-ku_local_web-2026-10-18):
+`5dfc6bd` adds `KuHostNetworkConfig` and `start_host_loopback_network_runtime` in
+`ku_host.rs` and optional `network` config in `examples/ku_local_web.rs` (default
+off; loopback + `network_opt_in: true` validated before Registry/dataset access).
+`ku_local_web` 7/7 + 8/8 feature, `ku_host::tests` 3/3, KU/vNext/rustfmt PASS;
+retained work unchanged.
 
 ### 2026-10-17 — `/ku` Web Public KU share and peer inspection UI published
 

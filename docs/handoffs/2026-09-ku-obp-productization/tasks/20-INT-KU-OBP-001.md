@@ -6,6 +6,51 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — opt-in loopback network runtime config for `ku_local_web` (2026-10-18)
+
+Implementation/spec/guide `5dfc6bd`, based on main `57fc9c0`, is committed/pushed
+and directly verified under D-050. Previously `examples/ku_local_web.rs` always
+started as a local-only host with no active `VNextNetworkRuntime`, so `POST
+/api/vnext/ku/editor` `share_confirm`, `share_intent` and `share_inspect` in a
+live `ku_local_web` process always returned `503 capability_disabled`
+(`ku_public_share_network_unavailable`).
+
+- `src/onebrain-api/src/ku_host.rs` adds `KuHostNetworkConfig { network_opt_in,
+  bind_addr }` (`#[serde(deny_unknown_fields)]`), `validate()` (failing closed
+  with `ku_network_config_invalid` unless `network_opt_in == true` and
+  `bind_addr.ip().is_loopback()`), and `#[cfg(feature =
+  "vnext-network-runtime")] start_host_loopback_network_runtime`, which starts
+  `VNextNetworkRuntime` on the loopback socket and attaches it via
+  `attach_live_public_reader(data_dir, &runtime)`.
+- `src/onebrain-api/examples/ku_local_web.rs` adds optional `#[serde(default)]
+  network: Option<KuHostNetworkConfig>` to `Config` (default `None` when
+  omitted), validates `network` in `prepare_host` before Registry verification or
+  dataset initialization (refusing non-`vnext-network-runtime` builds with
+  `ku_network_runtime_unavailable`), and starts/keeps alive the loopback
+  `VNextNetworkRuntime` after `OneBrainNode::new` + `install_base_runtime` so
+  restarts with an existing `vnext_verified.redb` never contend on the Windows
+  `redb` file lock.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the optional `network` block and feature requirement.
+
+Windows focused checks on 17/10, approximately 23:53–57 Asia/Saigon:
+`onebrain-api --example ku_local_web` 7/7 PASS, `onebrain-api --features
+vnext-network-runtime --example ku_local_web` 8/8 PASS (covering default-off
+refusal, `network_opt_in: false` and non-loopback `0.0.0.0:0` pre-Registry
+refusal without creating `node_data`, and end-to-end two-host HTTP editor
+`share_prepare` → `share_confirm` → `share_intent` → loopback delivery →
+receiver `share_inspect` + `POST /api/vnext/ku/operations` `get`/`export` and
+restart), `onebrain-api --features vnext-network-runtime --lib ku_host::tests`
+3/3 PASS, scoped rustfmt, KU/vNext validators and whitespace PASS. Backup/hash
+metadata is under `%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`.
+Task23, 15 untracked files and exact 108 PROGRESS preparation additions remain
+outside commits. Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect
+`VNextProductRuntime::start_with_paths` (`src/onebrain-node/src/vnext_product_runtime.rs`)
+and `src/onebrain-node/src/ku_product.rs` so node/Desktop hosts starting
+`VNextProductRuntime` also bind `CanonicalPublicReader` to their active
+`Arc<VNextNetworkRuntime>`.
+
 ## Latest follow-up — `/ku` Web Public KU share and peer inspection UI (2026-10-17)
 
 Implementation/spec/guide `25b89c5`, based on main `642d895`, is committed/pushed
