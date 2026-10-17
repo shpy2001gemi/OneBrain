@@ -154,6 +154,12 @@ pub trait KuPublicReader: Send + Sync {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError>;
     fn bind_canonical_path(&self, _path: std::path::PathBuf) {}
     fn set_live_reader(&self, _reader: Option<Arc<dyn KuPublicReader>>) {}
+    #[cfg(feature = "vnext-network-runtime")]
+    fn live_network_runtime(
+        &self,
+    ) -> Option<Arc<crate::vnext_network_runtime::VNextNetworkRuntime>> {
+        None
+    }
 }
 
 type LivePublicReaders = Mutex<BTreeMap<std::path::PathBuf, std::sync::Weak<dyn KuPublicReader>>>;
@@ -162,6 +168,22 @@ static LIVE_PUBLIC_READERS: std::sync::OnceLock<LivePublicReaders> = std::sync::
 
 fn live_public_readers() -> &'static LivePublicReaders {
     LIVE_PUBLIC_READERS.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+type LiveNetworkRuntimes = Mutex<
+    BTreeMap<
+        std::path::PathBuf,
+        std::sync::Weak<crate::vnext_network_runtime::VNextNetworkRuntime>,
+    >,
+>;
+
+#[cfg(feature = "vnext-network-runtime")]
+static LIVE_NETWORK_RUNTIMES: std::sync::OnceLock<LiveNetworkRuntimes> = std::sync::OnceLock::new();
+
+#[cfg(feature = "vnext-network-runtime")]
+fn live_network_runtimes() -> &'static LiveNetworkRuntimes {
+    LIVE_NETWORK_RUNTIMES.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
 fn normalized_reader_paths(path: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -183,12 +205,43 @@ pub fn register_live_public_reader(path: &std::path::Path, reader: &Arc<dyn KuPu
     }
 }
 
+#[cfg(feature = "vnext-network-runtime")]
+pub fn register_live_network_runtime(
+    path: &std::path::Path,
+    runtime: &Arc<crate::vnext_network_runtime::VNextNetworkRuntime>,
+) {
+    if let Ok(mut map) = live_network_runtimes().lock() {
+        map.retain(|_, weak| weak.strong_count() > 0);
+        for key in normalized_reader_paths(path) {
+            map.insert(key, Arc::downgrade(runtime));
+        }
+    }
+}
+
 fn lookup_live_public_reader(path: &std::path::Path) -> Option<Arc<dyn KuPublicReader>> {
     let mut map = live_public_readers().lock().ok()?;
     map.retain(|_, weak| weak.strong_count() > 0);
     for key in normalized_reader_paths(path) {
         if let Some(reader) = map.get(&key).and_then(std::sync::Weak::upgrade) {
             return Some(reader);
+        }
+    }
+    None
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+fn lookup_live_network_runtime(
+    path: &std::path::Path,
+) -> Option<Arc<crate::vnext_network_runtime::VNextNetworkRuntime>> {
+    let mut map = live_network_runtimes().lock().ok()?;
+    map.retain(|_, weak| weak.strong_count() > 0);
+    for key in normalized_reader_paths(path) {
+        if let Some(runtime) = map.get(&key).and_then(std::sync::Weak::upgrade) {
+            if runtime.status().state
+                == crate::vnext_network_runtime::VNextNetworkRuntimeState::Listening
+            {
+                return Some(runtime);
+            }
         }
     }
     None
@@ -215,6 +268,16 @@ impl CanonicalPublicReader {
         reader: &Arc<dyn KuPublicReader>,
     ) {
         register_live_public_reader(&data_dir.join("vnext_verified.redb"), reader);
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn register_live_runtime_for_data_dir(
+        data_dir: &std::path::Path,
+        runtime: &Arc<crate::vnext_network_runtime::VNextNetworkRuntime>,
+    ) {
+        let reader: Arc<dyn KuPublicReader> = runtime.clone();
+        Self::register_live_for_data_dir(data_dir, &reader);
+        register_live_network_runtime(&data_dir.join("vnext_verified.redb"), runtime);
     }
 }
 
@@ -259,6 +322,24 @@ impl KuPublicReader for CanonicalPublicReader {
         if let Ok(mut live) = self.live.lock() {
             *live = reader;
         }
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    fn live_network_runtime(
+        &self,
+    ) -> Option<Arc<crate::vnext_network_runtime::VNextNetworkRuntime>> {
+        if let Ok(Some(live)) = self.live.lock().map(|g| g.clone()) {
+            if let Some(runtime) = live.live_network_runtime() {
+                return Some(runtime);
+            }
+        }
+        let paths = self.paths.lock().ok()?.clone();
+        for path in paths {
+            if let Some(runtime) = lookup_live_network_runtime(&path) {
+                return Some(runtime);
+            }
+        }
+        None
     }
 }
 
@@ -408,13 +489,79 @@ pub(crate) struct KuStore {
     registry: Option<Arc<ConceptRegistryGenerationManager>>,
     releases: Mutex<BTreeMap<[u8; 32], ConceptRegistryReaderLease>>,
     public: Option<Arc<dyn KuPublicReader>>,
+    #[cfg(feature = "vnext-network-runtime")]
+    canonical_verified_path: Option<std::path::PathBuf>,
+    #[cfg(feature = "vnext-network-runtime")]
+    public_share: Mutex<crate::ku_public_share::PublicKuShareCoordinator>,
     /// Serializes validation/revision checks with journal commit publication.
     mutation: Mutex<()>,
     paging: Mutex<Paging>,
     catalog: Mutex<Catalog>,
 }
 
+#[cfg(feature = "vnext-network-runtime")]
+fn now_unix_seconds() -> Result<u64, BaseServiceError> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .map_err(|_| public_share_error("invalid_clock"))
+}
+
+fn public_share_network_unavailable() -> BaseServiceError {
+    BaseServiceError::new(
+        BaseErrorCodeV1::CapabilityDisabled,
+        "ku_public_share_network_unavailable",
+    )
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+fn public_share_error(code: &'static str) -> BaseServiceError {
+    let base_code = match code {
+        "explicit_public_confirmation_required"
+        | "unsupported_public_ku"
+        | "invalid_saved_ku"
+        | "invalid_public_ku"
+        | "invalid_public_ku_intent"
+        | "invalid_peer"
+        | "invalid_peer_address"
+        | "invalid_selector"
+        | "invalid_namespace"
+        | "invalid_public_identity"
+        | "invalid_intent_identity" => BaseErrorCodeV1::InvalidRequest,
+        "prepared_share_missing"
+        | "saved_ku_not_accessible"
+        | "public_object_not_found"
+        | "intent_not_found" => BaseErrorCodeV1::NotFound,
+        "saved_access_changed" => BaseErrorCodeV1::Conflict,
+        "public_ku_consent_expired" => BaseErrorCodeV1::Expired,
+        "prepared_limit" => BaseErrorCodeV1::ResourceExhausted,
+        "ku_public_share_network_unavailable" => BaseErrorCodeV1::CapabilityDisabled,
+        _ => BaseErrorCodeV1::DependencyUnavailable,
+    };
+    BaseServiceError::new(base_code, code)
+}
+
 impl KuStore {
+    #[cfg(feature = "vnext-network-runtime")]
+    fn live_network_runtime(
+        &self,
+    ) -> Result<Arc<crate::vnext_network_runtime::VNextNetworkRuntime>, BaseServiceError> {
+        if let Some(runtime) = self
+            .public
+            .as_ref()
+            .and_then(|public| public.live_network_runtime())
+        {
+            return Ok(runtime);
+        }
+        if let Some(runtime) = self
+            .canonical_verified_path
+            .as_deref()
+            .and_then(lookup_live_network_runtime)
+        {
+            return Ok(runtime);
+        }
+        Err(public_share_network_unavailable())
+    }
     fn intake_key(&self, operation: [u8; 32]) -> [u8; 32] {
         let mut hash = blake3::Hasher::new_derive_key("onebrain:ku:private-text-intake:1");
         hash.update(&self.dataset.0);
@@ -444,8 +591,116 @@ impl KuStore {
         request: crate::ku_manual::ManualEditorRequest,
         budget: &ResourceBudgetV1,
     ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
-        let crate::ku_manual::ManualEditorRequest::EncodeText(input) = request else {
-            return self.inputs.editor(principal, request, budget);
+        use crate::ku_manual::ManualEditorRequest as Req;
+        #[cfg(feature = "vnext-network-runtime")]
+        use crate::ku_manual::ManualEditorResponse as Resp;
+        let input = match request {
+            Req::EncodeText(input) => input,
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::SharePrepare(input) => {
+                let now = now_unix_seconds()?;
+                self.public_share
+                    .lock()
+                    .map_err(|_| corrupt())?
+                    .check_capacity(now)
+                    .map_err(public_share_error)?;
+                let cid = ObjectCID(
+                    decode_hex::<32>(&input.object_cid)
+                        .map_err(|_| public_share_error("invalid_saved_ku"))?,
+                );
+                let view = self
+                    .get(principal, cid)
+                    .map_err(|_| public_share_error("saved_ku_not_accessible"))?;
+                let preview = self
+                    .public_share
+                    .lock()
+                    .map_err(|_| corrupt())?
+                    .prepare_view(
+                        &input.object_cid,
+                        &view,
+                        &input.expected_node_id,
+                        input.address,
+                        &input.selector,
+                        &input.namespace,
+                        now,
+                    )
+                    .map_err(public_share_error)?;
+                if serde_json::to_vec(&preview).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(preview));
+            }
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::ShareConfirm(input) => {
+                let cid_hex = self
+                    .public_share
+                    .lock()
+                    .map_err(|_| corrupt())?
+                    .prepared_object_cid(&input.prepared_id, input.confirm_public)
+                    .map_err(public_share_error)?
+                    .to_owned();
+                let cid = ObjectCID(decode_hex::<32>(&cid_hex).map_err(|_| invalid())?);
+                let view = self
+                    .get(principal, cid)
+                    .map_err(|_| public_share_error("saved_access_changed"))?;
+                let runtime = self.live_network_runtime()?;
+                let now = now_unix_seconds()?;
+                let confirmed = self
+                    .public_share
+                    .lock()
+                    .map_err(|_| corrupt())?
+                    .confirm_view(
+                        &input.prepared_id,
+                        input.confirm_public,
+                        &view,
+                        &runtime,
+                        now,
+                    )
+                    .map_err(public_share_error)?;
+                if serde_json::to_vec(&confirmed).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(confirmed));
+            }
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::ShareInspect(input) => {
+                let runtime = self.live_network_runtime()?;
+                let inspected = crate::ku_public_share::inspect_accepted_public_ku(
+                    &runtime,
+                    &input.object_cid,
+                    &input.selector,
+                )
+                .map_err(public_share_error)?;
+                if serde_json::to_vec(&inspected).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(inspected));
+            }
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::ShareIntent(input) => {
+                let runtime = self.live_network_runtime()?;
+                let status =
+                    crate::ku_public_share::inspect_outbound_intent(&runtime, &input.intent_id)
+                        .map_err(public_share_error)?;
+                if serde_json::to_vec(&status).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(status));
+            }
+            #[cfg(not(feature = "vnext-network-runtime"))]
+            Req::SharePrepare(_)
+            | Req::ShareConfirm(_)
+            | Req::ShareInspect(_)
+            | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
+            other => return self.inputs.editor(principal, other, budget),
         };
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
         let operation = input.operation_id.0;
@@ -627,11 +882,14 @@ impl KuStore {
             tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
-        if let (Some(public), Ok(canonical)) = (
-            config.public.as_ref(),
-            paths.owner_path(BaseStorageOwnerId::CANONICAL),
-        ) {
-            public.bind_canonical_path(canonical.join("vnext_verified.redb"));
+        let canonical_verified_path = paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .ok()
+            .map(|canonical| canonical.join("vnext_verified.redb"));
+        if let (Some(public), Some(canonical)) =
+            (config.public.as_ref(), canonical_verified_path.as_ref())
+        {
+            public.bind_canonical_path(canonical.clone());
         }
         let store = Self {
             review_running: Mutex::new(BTreeMap::new()),
@@ -645,6 +903,10 @@ impl KuStore {
             inputs: config.inputs,
             registry: config.registry,
             public: config.public,
+            #[cfg(feature = "vnext-network-runtime")]
+            canonical_verified_path,
+            #[cfg(feature = "vnext-network-runtime")]
+            public_share: Mutex::new(crate::ku_public_share::PublicKuShareCoordinator::new()),
             releases: Mutex::new(BTreeMap::new()),
             mutation: Mutex::new(()),
             paging: Mutex::new(Paging::default()),

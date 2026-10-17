@@ -26,6 +26,10 @@ a closed tagged union using `action` and `payload`:
 | catalog | `{}` | `{sources:[{source_ref,label}], limitations}` |
 | resolve | `{label}` | `{candidates:[{ccid}], limitations}` |
 | draft | `{operation_id,idempotency_key,source_ref,predicate_label,selected_ccid?,argument_text}` | generated `KuPrepareV1` |
+| share_prepare | `{object_cid,expected_node_id,address,selector,namespace}` | `{event:"share_prepared",prepared_id,intent_id,public_object_cid,semantic_content_cid,canonical_base64,semantic,expected_node_id,address,selector,namespace,expires_at,consequence,enqueued:false,payload_sent:false,support}` |
+| share_confirm | `{prepared_id,confirm_public}` | `{event:"share_confirmed",intent_id,public_object_cid,outbox,delivery,authorizes_reward:false}` |
+| share_intent | `{intent_id}` | `{event:"intent",intent_id,public_object_cid,state,terminal_sequence,claims_network_completion:false}` |
+| share_inspect | `{object_cid,selector}` | `{event:"public_object",object_cid,canonical_base64,semantic,authenticated_source_peers,provenance,fidelity:"unassessed",authorizes_reward:false}` |
 
 Catalog returns only the authenticated principal's host-admitted sources (at most
 64, labels at most 128 UTF-8 bytes). Resolve accepts at most 256 UTF-8 bytes and
@@ -88,3 +92,23 @@ uses the same private review-job transport and node lifecycle. New jobs expose
 `draft_ready`. Model wire choices and assembly rules live in the common encoder,
 not in Web/CLI/Desktop or platform bridges. Previously recorded drafts remain
 readable with their original profile and state.
+
+Under D-045 (`INT-KU-OBP-001`), the same authenticated `POST /api/vnext/ku/editor`
+envelope projects explicit Public KU sharing (`share_prepare`, `share_confirm`,
+`share_intent`, `share_inspect`) without adding unregistered HTTP routes or enabling
+networking by default. `share_prepare` constructs a new `DisclosureClass::Public`
+manual kernel (one resolved predicate + one text literal, same `SemanticContentCID`,
+new `public_object_cid`) in a bounded in-memory coordinator (max 16 prepared items,
+900-second expiry) without returning the private `ObjectCID`, private source bytes,
+or source spans, and without enqueueing or sending any payload. `share_confirm`
+requires `confirm_public: true`, rechecks current caller access to the saved
+private KU, requires an active opt-in `VNextNetworkRuntime` attached to the host's
+canonical store (failing closed with `capability_disabled` /
+`ku_public_share_network_unavailable` when local-only), consumes the single-use
+`prepared_id`, and enqueues the durable outbound transfer intent while reporting
+delivery as pending (`authorizes_reward: false`). `share_intent` inspects the
+sender's durable outbox state (`claims_network_completion: false`), and
+`share_inspect` inspects an accepted Public KU and its authenticated transport/selector
+provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
+accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`
+`get` and `export` (`mode: "canonical_public_exchange"`).

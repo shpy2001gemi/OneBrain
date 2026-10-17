@@ -476,27 +476,40 @@ the matching `semantic_content_cid`. Opening the normal host neither creates
 `LOCAL_ONLY` private objects and non-KU payloads remain excluded from the
 public reader and public exchange.
 
-The D-045 prepare/confirm state machine is shared in
+The D-045 prepare/confirm/inspect state machine is shared in
 `onebrain_node::ku_public_share` (`PublicKuShareCoordinator`, `saved_ku_view`,
-`inspect_accepted_public_ku`, `inspect_outbound_intent`) and projected for
-in-process hosts in `onebrain_api::ku_host` (`host_ku_services`,
-`prepare_host_public_ku_share`, `confirm_host_public_ku_share`) alongside
+`inspect_accepted_public_ku`, `inspect_outbound_intent`), owned inside `KuStore`
+and projected onto the already-registered additive `POST /api/vnext/ku/editor`
+(`share_prepare`, `share_confirm`, `share_intent`, `share_inspect`) as well as
+the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
+`prepare_host_public_ku_share`, `confirm_host_public_ku_share`) and
 `ku_peer_demo`:
 
-- **Prepare** reads an explicitly selected, authorized saved `LOCAL_ONLY`
-  manual/resolved semantic kernel (one predicate + one text literal, with no
-  source references, spans or unsupported extensions) through the host's
-  authenticated `KuServices` and holds at most 16 single-use in-memory
-  previews (`MAX_PREPARED_PUBLIC_KU_SHARES`, max 15-minute TTL) for the new
-  `DisclosureClass::Public` object. Prepare does not write to the public store
-  or enqueue an outbound intent, and never logs the private `ObjectCID`.
-- **Confirm** requires a separate explicit call with `confirm_public: true`
-  before expiry, rechecks current authorized access to the exact saved private
-  view, consumes the single-use capability, and only then commits the public
-  record and durable `OutboundTransferIntent`.
+- **Prepare (`share_prepare`)** reads an explicitly selected, authorized saved
+  `LOCAL_ONLY` manual/resolved semantic kernel (one predicate + one text
+  literal, with no source references, spans or unsupported extensions) through
+  the host's authenticated `KuStore` / `KuServices` and holds at most 16
+  single-use in-memory previews (`MAX_PREPARED_PUBLIC_KU_SHARES`, max 15-minute
+  TTL) for the new `DisclosureClass::Public` object. Prepare does not write to
+  the public store or enqueue an outbound intent, and never returns or logs the
+  private `ObjectCID` or private source bytes.
+- **Confirm (`share_confirm`)** requires a separate explicit call with
+  `confirm_public: true` before expiry, rechecks current authorized access to
+  the exact saved private view, requires an active opt-in `VNextNetworkRuntime`
+  attached to the host's canonical store (failing closed with
+  `capability_disabled` / `ku_public_share_network_unavailable` without
+  consuming the prepared capability when local-only), consumes the single-use
+  capability, and only then commits the public record and durable
+  `OutboundTransferIntent` (`delivery: "pending; inspect intent for acknowledgement"`,
+  `authorizes_reward: false`).
+- **Sender intent & receiver inspect (`share_intent` / `share_inspect`)**
+  inspect durable outbox state (`claims_network_completion: false`) and
+  accepted Public KU content plus authenticated transport/selector provenance
+  (`fidelity: "unassessed"`, `authorizes_reward: false`) through the same
+  registered `POST /api/vnext/ku/editor` envelope.
 - **Boundary**: no unregistered HTTP share routes are added and networking
-  remains opt-in. Exposing share prepare/confirm in the registered HTTP/Web
-  surface remains separate contract and UI backlog work.
+  remains opt-in. Browser UI controls for Public KU sharing remain separate Web
+  backlog work.
 
 ## Limits and contribution boundaries
 

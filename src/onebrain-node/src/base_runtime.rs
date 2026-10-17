@@ -690,7 +690,11 @@ impl BaseServices {
         use crate::ku_manual::ManualEditorRequest as Editor;
         let recovery = matches!(
             &request,
-            Editor::ReviewGet { .. } | Editor::ReviewCancel { .. } | Editor::ReviewList { .. }
+            Editor::ReviewGet { .. }
+                | Editor::ReviewCancel { .. }
+                | Editor::ReviewList { .. }
+                | Editor::ShareInspect(_)
+                | Editor::ShareIntent(_)
         );
         let lease = self.lease(if recovery {
             Admission::Recovery

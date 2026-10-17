@@ -51,6 +51,32 @@ pub struct ManualDraft {
 fn selected_ccid<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     String::deserialize(d).map(Some)
 }
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicSharePrepare {
+    pub object_cid: String,
+    pub expected_node_id: String,
+    pub address: std::net::SocketAddr,
+    pub selector: String,
+    pub namespace: String,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicShareConfirm {
+    pub prepared_id: String,
+    pub confirm_public: bool,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicShareInspect {
+    pub object_cid: String,
+    pub selector: String,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicShareIntent {
+    pub intent_id: String,
+}
 #[derive(Deserialize)]
 #[serde(
     tag = "action",
@@ -69,6 +95,10 @@ pub enum ManualEditorRequest {
     ReviewCancel { operation_id: OperationId },
     Resolve { label: String },
     Draft(ManualDraft),
+    SharePrepare(PublicSharePrepare),
+    ShareConfirm(PublicShareConfirm),
+    ShareInspect(PublicShareInspect),
+    ShareIntent(PublicShareIntent),
 }
 #[derive(Serialize)]
 pub struct ManualSource {
@@ -102,6 +132,7 @@ pub enum ManualEditorResponse {
         limitations: Vec<String>,
     },
     Draft(KuPrepareV1),
+    PublicShare(serde_json::Value),
 }
 struct Source {
     label: String,
@@ -239,7 +270,11 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ReviewGet { .. }
             | ManualEditorRequest::ReviewList { .. }
             | ManualEditorRequest::ReviewResume { .. }
-            | ManualEditorRequest::ReviewCancel { .. } => Err(unavailable()),
+            | ManualEditorRequest::ReviewCancel { .. }
+            | ManualEditorRequest::SharePrepare(_)
+            | ManualEditorRequest::ShareConfirm(_)
+            | ManualEditorRequest::ShareInspect(_)
+            | ManualEditorRequest::ShareIntent(_) => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

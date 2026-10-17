@@ -220,8 +220,7 @@ pub fn attach_live_public_reader(
     data_dir: &Path,
     runtime: &Arc<onebrain_node::vnext_network_runtime::VNextNetworkRuntime>,
 ) {
-    let reader: Arc<dyn KuPublicReader> = runtime.clone();
-    CanonicalPublicReader::register_live_for_data_dir(data_dir, &reader);
+    CanonicalPublicReader::register_live_runtime_for_data_dir(data_dir, runtime);
 }
 
 /// Prepare a D-045 Public KU share directly from a normal host's authenticated
@@ -535,6 +534,23 @@ mod tests {
         };
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].object_cid, private_cid);
+
+        let local_only_share = services
+            .editor(
+                ManualEditorRequest::ShareInspect(onebrain_node::ku_manual::PublicShareInspect {
+                    object_cid: hex(&public_cid.0),
+                    selector: "02".repeat(32),
+                }),
+                budget(),
+            )
+            .await
+            .err()
+            .expect("local-only host without active network runtime must reject share_inspect");
+        assert_eq!(local_only_share.code, BaseErrorCodeV1::CapabilityDisabled);
+        assert_eq!(
+            local_only_share.reason,
+            "ku_public_share_network_unavailable"
+        );
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -751,5 +767,356 @@ mod tests {
             sender_private.disclosure_class,
             ArtifactDisclosure::LOCALONLY
         );
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    #[tokio::test]
+    async fn normal_host_http_editor_public_ku_share_enforces_consent_network_gate_and_serves_registered_reads(
+    ) {
+        use crate::ApiServer;
+        use axum::body::{to_bytes, Body};
+        use axum::http::{header, Method, Request as HttpRequest, StatusCode};
+        use onebrain_node::vnext_config::VNextNetworkPolicy;
+        use onebrain_node::vnext_network_runtime::VNextNetworkRuntime;
+        use serde_json::{json, Value};
+        use std::time::Duration;
+        use tower::ServiceExt;
+
+        async fn http_json(
+            router: axum::Router,
+            method: Method,
+            uri: &str,
+            token: &str,
+            body: Option<Value>,
+        ) -> (StatusCode, Value) {
+            let mut builder = HttpRequest::builder()
+                .method(method)
+                .uri(uri)
+                .header(header::AUTHORIZATION, format!("Bearer {token}"));
+            let req = if let Some(payload) = body {
+                builder = builder.header(header::CONTENT_TYPE, "application/json");
+                builder
+                    .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                    .unwrap()
+            } else {
+                builder.body(Body::empty()).unwrap()
+            };
+            let resp = router.oneshot(req).await.unwrap();
+            let status = resp.status();
+            let bytes = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+            (status, serde_json::from_slice(&bytes).unwrap())
+        }
+
+        fn editor_envelope(session: &Value, action: &str, payload: Value) -> Value {
+            json!({
+                "session": session,
+                "budget": {
+                    "max_items": 32,
+                    "max_bytes": 65536,
+                    "max_work_units": 4096
+                },
+                "request": {
+                    "action": action,
+                    "payload": payload
+                }
+            })
+        }
+
+        fn operation_envelope(session: &Value, operation: &str, payload: Value) -> Value {
+            json!({
+                "session": session,
+                "budget": {
+                    "max_items": 256,
+                    "max_bytes": 1048576,
+                    "max_work_units": 1000000
+                },
+                "request": {
+                    "operation": operation,
+                    "payload": payload
+                }
+            })
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let token = "synthetic-normal-host-token-1234567890";
+        let (sender_node, source_cid, sender_dir) =
+            setup_normal_host(temp.path(), "http-sender", token).await;
+        let (receiver_node, _, receiver_dir) =
+            setup_normal_host(temp.path(), "http-receiver", token).await;
+        let (private_cid, sem_cid, _) =
+            save_manual_private_ku(&sender_node, token, source_cid).await;
+        let private_cid_hex = hex(&private_cid.0);
+        let sem_cid_hex = hex(&sem_cid);
+
+        let sender_router = ApiServer::new(sender_node, token.into(), 0).build_router();
+        let receiver_router = ApiServer::new(receiver_node, token.into(), 0).build_router();
+
+        let (status, sender_status) = http_json(
+            sender_router.clone(),
+            Method::GET,
+            "/api/vnext/ku/status",
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let sender_session = sender_status["data"]["session"].clone();
+
+        let (status, receiver_status) = http_json(
+            receiver_router.clone(),
+            Method::GET,
+            "/api/vnext/ku/status",
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let receiver_session = receiver_status["data"]["session"].clone();
+
+        let sender_net = Arc::new(
+            VNextNetworkRuntime::start(
+                &sender_dir,
+                "127.0.0.1:0".parse().unwrap(),
+                VNextNetworkPolicy::default(),
+            )
+            .await
+            .unwrap(),
+        );
+        let receiver_net = Arc::new(
+            VNextNetworkRuntime::start(
+                &receiver_dir,
+                "127.0.0.1:0".parse().unwrap(),
+                VNextNetworkPolicy::default(),
+            )
+            .await
+            .unwrap(),
+        );
+        let sender_peer_hex = hex(&sender_net.status().principal);
+        let receiver_peer_hex = hex(&receiver_net.status().principal);
+        let receiver_addr = receiver_net.status().listen_addr.to_string();
+        let selector_hex = "02".repeat(32);
+        let namespace_hex = "03".repeat(32);
+
+        // Prepare works over registered POST /api/vnext/ku/editor without enabling network yet.
+        let (status, prepared_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_prepare",
+                json!({
+                    "object_cid": private_cid_hex,
+                    "expected_node_id": receiver_peer_hex,
+                    "address": receiver_addr,
+                    "selector": selector_hex,
+                    "namespace": namespace_hex
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{prepared_resp}");
+        let preview = &prepared_resp["data"]["payload"];
+        assert_eq!(preview["event"], "share_prepared");
+        assert_eq!(preview["enqueued"], false);
+        assert_eq!(preview["payload_sent"], false);
+        let prepared_id = preview["prepared_id"].as_str().unwrap().to_owned();
+        let public_cid_hex = preview["public_object_cid"].as_str().unwrap().to_owned();
+        assert_ne!(public_cid_hex, private_cid_hex);
+        assert_eq!(preview["semantic_content_cid"], sem_cid_hex);
+        assert!(!preview.to_string().contains(&private_cid_hex));
+        assert!(!preview
+            .to_string()
+            .contains("synthetic-private-source-canary"));
+
+        // Explicit confirmation is required before network or outbox checks.
+        let (status, unconfirmed_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": prepared_id,
+                    "confirm_public": false
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{unconfirmed_resp}");
+        assert_eq!(
+            unconfirmed_resp["error"]["message"],
+            "explicit_public_confirmation_required"
+        );
+
+        // Confirming before an opt-in network runtime is attached fails closed with capability_disabled
+        // and does not consume the prepared capability.
+        let (status, disabled_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": prepared_id,
+                    "confirm_public": true
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{disabled_resp}");
+        assert_eq!(disabled_resp["error"]["code"], "capability_disabled");
+        assert_eq!(
+            disabled_resp["error"]["message"],
+            "ku_public_share_network_unavailable"
+        );
+
+        // Attach the opt-in runtimes and confirm the prepared share.
+        attach_live_public_reader(&sender_dir, &sender_net);
+        attach_live_public_reader(&receiver_dir, &receiver_net);
+
+        let (status, confirmed_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": prepared_id,
+                    "confirm_public": true
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{confirmed_resp}");
+        let confirmed = &confirmed_resp["data"]["payload"];
+        assert_eq!(confirmed["event"], "share_confirmed");
+        assert_eq!(confirmed["public_object_cid"], public_cid_hex);
+        assert_eq!(confirmed["authorizes_reward"], false);
+        let intent_id = confirmed["intent_id"].as_str().unwrap().to_owned();
+
+        // Single-use prepared capability cannot be replayed.
+        let (status, replay_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_confirm",
+                json!({
+                    "prepared_id": prepared_id,
+                    "confirm_public": true
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{replay_resp}");
+        assert_eq!(replay_resp["error"]["message"], "prepared_share_missing");
+
+        // Sender inspects the durable outbound intent via POST /api/vnext/ku/editor.
+        let (status, intent_resp) = http_json(
+            sender_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &sender_session,
+                "share_intent",
+                json!({
+                    "intent_id": intent_id
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{intent_resp}");
+        let intent_payload = &intent_resp["data"]["payload"];
+        assert_eq!(intent_payload["event"], "intent");
+        assert_eq!(intent_payload["public_object_cid"], public_cid_hex);
+        assert_eq!(intent_payload["claims_network_completion"], false);
+
+        // Receiver inspects the accepted Public KU and transport provenance via POST /api/vnext/ku/editor.
+        let mut accepted = None;
+        for _ in 0..50 {
+            let (status, inspect_resp) = http_json(
+                receiver_router.clone(),
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(
+                    &receiver_session,
+                    "share_inspect",
+                    json!({
+                        "object_cid": public_cid_hex,
+                        "selector": selector_hex
+                    }),
+                )),
+            )
+            .await;
+            if status == StatusCode::OK {
+                accepted = Some(inspect_resp["data"]["payload"].clone());
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let accepted = accepted.expect("receiver should accept and inspect confirmed Public KU");
+        assert_eq!(accepted["event"], "public_object");
+        assert_eq!(accepted["semantic"]["semantic_content_cid"], sem_cid_hex);
+        assert_eq!(
+            accepted["authenticated_source_peers"],
+            json!([sender_peer_hex])
+        );
+        assert_eq!(
+            accepted["provenance"],
+            "transport/selector only; original source withheld and unverifiable"
+        );
+        assert_eq!(accepted["fidelity"], "unassessed");
+        assert_eq!(accepted["authorizes_reward"], false);
+
+        // Receiver also serves the accepted Public KU through registered POST /api/vnext/ku/operations.
+        let (status, get_resp) = http_json(
+            receiver_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/operations",
+            token,
+            Some(operation_envelope(
+                &receiver_session,
+                "get",
+                json!({ "object_cid": public_cid_hex }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{get_resp}");
+        let view = &get_resp["data"]["payload"];
+        assert_eq!(view["object_cid"], public_cid_hex);
+        assert_eq!(view["disclosure_class"], "PUBLIC");
+        assert_eq!(view["artifact_validity"], "accepted_known");
+        assert_eq!(view["semantic_content_cid"], sem_cid_hex);
+        assert_eq!(view["executable"], false);
+
+        let (status, export_resp) = http_json(
+            receiver_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/operations",
+            token,
+            Some(operation_envelope(
+                &receiver_session,
+                "export",
+                json!({
+                    "mode": "canonical_public_exchange",
+                    "object_cids": [public_cid_hex]
+                }),
+            )),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{export_resp}");
+        assert!(export_resp["data"]["payload"]["public_records"].is_string());
     }
 }
