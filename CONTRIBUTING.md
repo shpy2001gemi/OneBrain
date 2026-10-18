@@ -31,12 +31,13 @@ of the MVP contributor-entry work; do not invent production trust or use secrets
 from another contributor's machine.
 
 After cloning your fork, these commands build the Web UI and the current host
-example from the repository root (PowerShell):
+example from the repository root (PowerShell; add `--features vnext-network-runtime`
+when exercising opt-in loopback Public KU sharing directly from `ku_local_web`):
 
 ```powershell
 npm ci --prefix src/onebrain-web
 npm run build --prefix src/onebrain-web
-cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api --example ku_local_web
+cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api --example ku_local_web --features vnext-network-runtime
 ```
 
 Then follow the existing [manual local journey and host configuration](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md)
@@ -48,13 +49,20 @@ produce a draft requiring review. A draft is not automatically a saved KU.
 Try supported preview → explicit private save → search/read → restart/read, then
 the [manual local-to-peer concept](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
 review a new Public object, explicitly confirm sharing, inspect the same Public
-CID/bytes on the receiving node and retry/restart. This uses two isolated peer
-processes plus the existing local custody host; source material stays private.
-The helper currently supports one predicate and one text literal. Registry and
-local-secret provisioning remain operator prerequisites, described in the linked
-run instructions. A bounded first contribution is improving a missing-Registry
-or expired-preparation error so a newcomer knows the next required action.
-Report the exact step
+CID/bytes on the receiving node and retry/restart. You can run D-045 either
+(1) directly through `/ku` Web and `ku_local_web` with an opt-in loopback
+`"network"` config block (`POST /api/vnext/ku/editor` `share_prepare`,
+`share_confirm`, `share_intent`, `share_inspect`) or a `OneBrainNode` /
+`onebrain-desktop` host with opt-in `VNextProductRuntime` enabled (see the
+[normal-host share seam](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)),
+or (2) through the isolated `ku_peer_demo` helper processes alongside the local
+custody host. Networking remains opt-in (default off), source material and
+private IDs stay private, and D-045 currently supports one predicate and one text
+literal. Registry and local-secret provisioning remain operator prerequisites,
+described in the linked run instructions. A bounded first contribution is
+improving an expired-preparation (`prepared_share_missing` /
+`public_ku_consent_expired`) or setup error so a newcomer knows the next required
+action. Report the exact step
 that fails, expected/actual behavior and your platform; a small public reproduction
 is more useful than a large private trace. Never commit private inputs or keys.
 

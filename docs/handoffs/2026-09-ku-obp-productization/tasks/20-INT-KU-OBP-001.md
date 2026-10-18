@@ -520,12 +520,44 @@ reconciliation delivery, source provenance, public KU, NAT or production claim.
 
 ### Run the local-to-peer manual concept (D-045)
 
-This is an operator demo with **three processes**: the existing local Web/KU API
-custody host, plus the isolated left and right network runtimes above. The left
-runtime uses an authenticated read of the custody host, not a second Vault writer.
-The right runtime needs no source, Registry, model, API token or Vault key. Node
-identity, canonical bytes, outbox and reconciliation remain owned by existing
-node services. The normal Web/CLI/API do not yet expose KU share operations.
+You can run the D-045 manual concept in **two ways**, both sharing
+`onebrain_node::ku_public_share` (`PublicKuShareCoordinator`) and keeping
+networking opt-in (default off):
+
+- **Direct `/ku` Web or normal host (`POST /api/vnext/ku/editor`):** add
+  `"network": { "network_opt_in": true, "bind_addr": "127.0.0.1:0" }` to the
+  `ku_local_web` host JSON config and launch with
+  `cargo run --locked --manifest-path src/Cargo.toml -p onebrain-api --features vnext-network-runtime --example ku_local_web -- <host.json>`
+  (which prints `Opt-in loopback OBP-RP: node_id=<64 hex> listen_addr=127.0.0.1:<port>`),
+  or run a `OneBrainNode` / `onebrain-desktop` host with opt-in
+  `VNextProductRuntime` enabled (`VNextRuntimeLane::Network` active, which
+  automatically binds `CanonicalPublicReader` for both `paths.network.canonical`
+  and `paths.operational`). Pair the sender with a second loopback
+  `ku_local_web` / `VNextProductRuntime` host or an isolated `ku_peer_demo`
+  receiver. After saving a supported `LOCAL_ONLY` `accepted_known` manual KU
+  (one predicate + one text literal), inspect it in `/ku` Web (or call
+  authenticated `POST /api/vnext/ku/editor`) and step through:
+  (1) `share_prepare` for the receiver's full `node_id`, loopback `address`,
+  `selector` and `namespace` (holds up to 16 single-use previews in memory with
+  a 15-minute TTL; private `ObjectCID` and source references are omitted and
+  nothing is enqueued), (2) separate explicit `share_confirm`
+  (`confirm_public: true`; if networking is omitted or the `Network` lane is
+  disabled, fails closed with `503 capability_disabled` /
+  `ku_public_share_network_unavailable` while preserving `prepared_id`),
+  (3) sender `share_intent` (`claims_network_completion: false`), and
+  (4) receiver `share_inspect` (`fidelity: "unassessed"`,
+  `authorizes_reward: false`) plus normal `POST /api/vnext/ku/operations` `get`
+  and `CanonicalPublicExchange` `export` (which remain readable after a
+  local-only receiver restart). Note that `onebrain ku` CLI stays scoped to the
+  eleven Base KU operations (`POST /api/vnext/ku/operations`); see
+  [Normal-host Public KU reader and bounded share seam (D-045)](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045).
+- **Isolated `ku_peer_demo` helper processes (three-process walkthrough below):**
+  uses the existing local Web/KU API custody host (local-only, no `"network"`
+  block required) plus the isolated left and right `ku_peer_demo` network
+  runtimes above. The left runtime uses an authenticated read of the custody
+  host, not a second Vault writer. The right runtime needs no source, Registry,
+  model, API token or Vault key. Node identity, canonical bytes, outbox and
+  reconciliation remain owned by existing node services.
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API
