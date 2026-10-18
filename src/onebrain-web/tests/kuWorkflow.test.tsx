@@ -1220,6 +1220,134 @@ describe("local KU component journey", () => {
       expect(previewCard.textContent).toContain(preparedShareId);
     },
   );
+  it("clears a previous share preview and confirmation before a failed re-prepare", async () => {
+    const options: Parameters<typeof fixture>[0] = { emptyCatalog: true };
+    const f = fixture(options);
+    render(<KuWorkflowPage client={f.client} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: "12".repeat(32) } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Selector CID (64 lowercase hex)"),
+      { target: { value: "ab".repeat(32) } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: "cd".repeat(32) } },
+    );
+    const prepareBtn = screen.getByRole("button", {
+      name: "Prepare public share preview",
+    });
+    fireEvent.click(prepareBtn);
+    await screen.findByRole("article", { name: "Prepared public share preview" });
+    options.sharePrepareFailure = "prepared_limit";
+    fireEvent.click(prepareBtn);
+    await screen.findByRole("heading", {
+      name: "In-memory Public KU share preparation limit reached",
+    });
+    expect(
+      screen.queryByRole("article", { name: "Prepared public share preview" }),
+    ).toBeNull();
+    options.sharePrepareFailure = undefined;
+    fireEvent.click(prepareBtn);
+    await screen.findByRole("article", { name: "Prepared public share preview" });
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm public share" }));
+    await screen.findByRole("article", { name: "Confirmed public share intent" });
+    options.sharePrepareFailure = "consent_randomness_unavailable";
+    fireEvent.click(prepareBtn);
+    await screen.findByRole("heading", {
+      name: "Host randomness for share preparation is currently unavailable",
+    });
+    expect(
+      screen.queryByRole("article", { name: "Confirmed public share intent" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("article", { name: "Prepared public share preview" }),
+    ).toBeNull();
+    expect(
+      (
+        screen.queryByLabelText(
+          /Confirm public disclosure of this exact preview/,
+        ) as HTMLInputElement | null
+      )?.checked ?? false,
+    ).toBe(false);
+  });
+  it.each([
+    ["prepared_limit", "In-memory Public KU share preparation limit reached"],
+    [
+      "consent_randomness_unavailable",
+      "Host randomness for share preparation is currently unavailable",
+    ],
+  ] as const)(
+    "keeps D-045 %s share errors isolated from a Base pending private draft",
+    async (reason, heading) => {
+      const f = fixture({
+        ai: true,
+        emptyCatalog: true,
+        sharePrepareFailure: reason,
+      });
+      render(<KuWorkflowPage client={f.client} />);
+      await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+      fireEvent.change(screen.getByLabelText("Source text to encode"), {
+        target: { value: "Copper is conductive." },
+      });
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByRole("button", { name: "Encode and preview" }));
+      await screen.findByRole("heading", { name: "Exact prepared preview" });
+      const save = screen.getByRole("button", {
+        name: "Save exact preview privately",
+      }) as HTMLButtonElement;
+      await waitFor(() => expect(save.disabled).toBe(false));
+      fireEvent.click(
+        await screen.findByRole("button", { name: `Inspect ${object}` }),
+      );
+      await screen.findByRole("heading", { name: "Inspect saved artifact" });
+      fireEvent.change(
+        screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+        { target: { value: "12".repeat(32) } },
+      );
+      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+        target: { value: "127.0.0.1:41999" },
+      });
+      fireEvent.change(
+        screen.getByLabelText("Selector CID (64 lowercase hex)"),
+        { target: { value: "ab".repeat(32) } },
+      );
+      fireEvent.change(
+        screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+        { target: { value: "cd".repeat(32) } },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prepare public share preview" }),
+      );
+      await screen.findByRole("heading", { name: heading });
+      const alertText = screen.getByRole("alert").textContent ?? "";
+      expect(alertText).toContain(reason);
+      expect(alertText).not.toContain("Last observed step");
+      expect(alertText).not.toContain(
+        "Use Reconcile operation to read the host's recorded outcome",
+      );
+      expect(
+        screen.queryByRole("button", { name: "Check recorded outcome" }),
+      ).toBeNull();
+      await waitFor(() => expect(save.disabled).toBe(false));
+      expect(f.calls.filter((c) => c.body?.request?.operation === "reconcile"))
+        .toHaveLength(0);
+      expect(f.calls.filter((c) => c.body?.request?.operation === "save"))
+        .toHaveLength(0);
+    },
+  );
   it("explains saved_access_changed on share_confirm, intent_not_found on share_intent and public_object_not_found on share_inspect", async () => {
     const options: Parameters<typeof fixture>[0] = {
       emptyCatalog: true,

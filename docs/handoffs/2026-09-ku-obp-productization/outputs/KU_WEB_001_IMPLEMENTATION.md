@@ -539,7 +539,13 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   `invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
   `invalid_public_identity`, `invalid_intent_identity`,
   `consent_randomness_unavailable`, `invalid_clock`), and
-  distinguishes durable outbound intent creation from peer delivery. No
+  distinguishes durable outbound intent creation from peer delivery. Before
+  each `share_prepare` call it clears any previous `sharePrepared`,
+  `shareConfirmPublic` and `shareConfirmed` state so a failed re-prepare
+  cannot leave an old preview or confirmation card visible. D-045 share
+  errors (`isShareError` from `describeKuError`) never set the Base private
+  draft `uncertain`, show the Base encode step, offer Base reconcile guidance
+  or render `Check recorded outcome` while an unrelated draft is `pending`. No
   unregistered HTTP share routes are added and networking remains opt-in
   (`ku_local_web` does not start a network listener by default).
 - **Opt-in loopback `VNextNetworkRuntime` in `ku_local_web`**: `Config.network`

@@ -92,8 +92,12 @@ export function KuWorkflowPage({
   const editorRef = useRef<HTMLHeadingElement>(null);
   const inspectRef = useRef<HTMLHeadingElement>(null);
   const record = (e: unknown, mutation = false) => {
-    setError(describeError(e));
-    if (mutation || (pending && e instanceof KuError && e.uncertain))
+    const described = describeError(e);
+    setError(described);
+    if (
+      mutation ||
+      (pending && !described.isShareError && e instanceof KuError && e.uncertain)
+    )
       setUncertain(true);
   };
   async function run(action: () => Promise<void>, mutation = false) {
@@ -394,9 +398,9 @@ export function KuWorkflowPage({
                 <ul>{error.diagnostics.map((issue, index) => <li key={index} className="ku-id">{issue}</li>)}</ul>
               </section>
             )}
-            {encodeStep && <p>Last observed step: {encodeStep}. Browser elapsed time: {elapsedSeconds}s.</p>}
+            {encodeStep && !error.isShareError && <p>Last observed step: {encodeStep}. Browser elapsed time: {elapsedSeconds}s.</p>}
             <p>{error.recovery}</p>
-            {pending && (
+            {pending && !error.isShareError && (
               <button className="btn" disabled={busy} onClick={() => void run(reconcile)}>
                 Check recorded outcome
               </button>
@@ -971,6 +975,9 @@ export function KuWorkflowPage({
             }
             onClick={() =>
               void run(async () => {
+                setSharePrepared(undefined);
+                setShareConfirmPublic(false);
+                setShareConfirmed(undefined);
                 const current = await refresh();
                 const result = await client.sharePrepare(current, {
                   object_cid: view!.object_cid,

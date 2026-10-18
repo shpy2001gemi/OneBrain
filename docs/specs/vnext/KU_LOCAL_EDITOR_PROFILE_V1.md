@@ -139,7 +139,11 @@ validation/system checks, and storage/outbox errors (`unsupported_public_ku`,
 `invalid_public_ku`, `invalid_public_ku_intent`, `invalid_peer`,
 `invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
 `invalid_public_identity`, `invalid_intent_identity`,
-`consent_randomness_unavailable`, `invalid_clock`), keep private `ObjectCID` and
+`consent_randomness_unavailable`, `invalid_clock`), clear any previous
+preview, public-confirmation checkbox and confirmation card before each
+`share_prepare` call, keep D-045 share errors from marking an unrelated pending
+Base private draft `uncertain` or offering Base `Check recorded outcome`, keep
+private `ObjectCID` and
 source bytes out of the share preview/inspect UI, and distinguish durable outbox
 intent creation from peer delivery. In `ku_local_web`, `network` is omitted by
 default so normal launches start no network listener; when the operator

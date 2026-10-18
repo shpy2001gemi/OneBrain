@@ -303,11 +303,16 @@ export function describeKuError(error: unknown) {
           : "An interrupted response does not establish whether a write completed. Existing saved knowledge remains separate from this request.",
     recovery:
       shareFeedback?.recovery ??
-      (failure?.reconcile_before_retry ||
-      (error instanceof KuError && error.uncertain)
-        ? "Use Reconcile operation to read the host's recorded outcome. It does not rerun AI. After a failed or canceled outcome, start a new attempt. If work remains pending, cancel it before starting again."
-        : "Check the technical reason and refresh host status. Correct the reported problem before starting another request."),
+      (shareFeedback
+        ? "Check the technical reason and refresh host status. Correct the reported problem before retrying the Public KU share action."
+        : failure?.reconcile_before_retry ||
+            (error instanceof KuError && error.uncertain)
+          ? "Use Reconcile operation to read the host's recorded outcome. It does not rerun AI. After a failed or canceled outcome, start a new attempt. If work remains pending, cancel it before starting again."
+          : "Check the technical reason and refresh host status. Correct the reported problem before starting another request."),
     technical,
     diagnostics,
+    // D-045 share failures never describe the Base private draft operation, so
+    // callers must not mark Base work uncertain or offer Base reconciliation.
+    isShareError: shareFeedback !== undefined,
   };
 }
