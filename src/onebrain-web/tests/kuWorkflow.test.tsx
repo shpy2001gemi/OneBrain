@@ -48,14 +48,17 @@ function fixture(
     prepareFailure?: "deadline" | "resource" | "oneof" | "concept_label" | "duplicate_id";
     reservedAfterFailure?: boolean;
     shareNetworkDisabled?: boolean;
+    shareConfirmFailure?: "prepared_share_missing" | "public_ku_consent_expired";
   } = {},
 ) {
   let saved = false;
   let failed = false;
+  let sharePrepareCount = 0;
   let currentOp = op;
   let currentSession = { ...session };
   const publicObject = "d".repeat(64),
     preparedShareId = "e".repeat(64),
+    freshPreparedShareId = "a".repeat(64),
     shareIntent = "f".repeat(64);
   const calls: { path: string; body: any; init: RequestInit }[] = [];
   const prepared = () => ({
@@ -180,7 +183,10 @@ function fixture(
           case "share_prepare":
             payload = {
               event: "share_prepared",
-              prepared_id: preparedShareId,
+              prepared_id:
+                sharePrepareCount++ === 0
+                  ? preparedShareId
+                  : freshPreparedShareId,
               intent_id: shareIntent,
               public_object_cid: publicObject,
               semantic_content_cid: semantic,
@@ -223,6 +229,33 @@ function fixture(
                   },
                 }),
                 { status: 503 },
+              );
+            if (options.shareConfirmFailure)
+              return new Response(
+                JSON.stringify({
+                  ok: false,
+                  error: {
+                    code:
+                      options.shareConfirmFailure === "prepared_share_missing"
+                        ? "not_found"
+                        : "expired",
+                    failure: {
+                      code:
+                        options.shareConfirmFailure === "prepared_share_missing"
+                          ? "NotFound"
+                          : "Expired",
+                      retryable: false,
+                      reconcile_before_retry: false,
+                      limitations: [options.shareConfirmFailure],
+                    },
+                  },
+                }),
+                {
+                  status:
+                    options.shareConfirmFailure === "prepared_share_missing"
+                      ? 404
+                      : 410,
+                },
               );
             payload = {
               event: "share_confirmed",
@@ -916,4 +949,99 @@ describe("local KU component journey", () => {
     expect(inspectRegion.textContent).not.toContain(object);
     expect(inspectRegion.textContent).not.toContain(source);
   });
+  it.each([
+    "prepared_share_missing",
+    "public_ku_consent_expired",
+  ] as const)(
+    "explains %s on share_confirm, clears the stale prepared preview and allows re-preparing a fresh preview",
+    async (reason) => {
+      const options: Parameters<typeof fixture>[0] = {
+        emptyCatalog: true,
+        shareConfirmFailure: reason,
+      };
+      const f = fixture(options);
+      render(<KuWorkflowPage client={f.client} />);
+      fireEvent.click(
+        await screen.findByRole("button", { name: `Inspect ${object}` }),
+      );
+      await screen.findByRole("heading", { name: "Inspect saved artifact" });
+      const peer = "12".repeat(32),
+        selector = "ab".repeat(32),
+        namespace = "cd".repeat(32),
+        preparedShareId = "e".repeat(64),
+        freshPreparedShareId = "a".repeat(64);
+      fireEvent.change(
+        screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+        { target: { value: peer } },
+      );
+      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+        target: { value: "127.0.0.1:41999" },
+      });
+      fireEvent.change(
+        screen.getByLabelText("Selector CID (64 lowercase hex)"),
+        { target: { value: selector } },
+      );
+      fireEvent.change(
+        screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+        { target: { value: namespace } },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prepare public share preview" }),
+      );
+      const initialPreview = await screen.findByRole("article", {
+        name: "Prepared public share preview",
+      });
+      expect(initialPreview.textContent).toContain(preparedShareId);
+      fireEvent.click(
+        screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirm public share" }),
+      );
+      await screen.findByRole("heading", {
+        name: "Prepared Public KU share preview is no longer valid",
+      });
+      const alertText = screen.getByRole("alert").textContent ?? "";
+      expect(alertText).toContain("15-minute (900-second)");
+      expect(alertText).toContain("16-item in-memory preparation limit");
+      expect(alertText).toContain("already used once");
+      expect(alertText).toContain("host restarted");
+      expect(alertText).toContain(
+        "Click Prepare public share preview again to create and review a fresh preview before confirming public disclosure.",
+      );
+      expect(alertText).toContain(reason);
+      expect(
+        screen.queryByRole("article", { name: "Prepared public share preview" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("article", { name: "Confirmed public share intent" }),
+      ).toBeNull();
+      options.shareConfirmFailure = undefined;
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prepare public share preview" }),
+      );
+      const freshPreview = await screen.findByRole("article", {
+        name: "Prepared public share preview",
+      });
+      expect(freshPreview.textContent).toContain(freshPreparedShareId);
+      const confirmBtn = screen.getByRole("button", {
+        name: "Confirm public share",
+      }) as HTMLButtonElement;
+      expect(confirmBtn.disabled).toBe(true);
+      fireEvent.click(
+        screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+      );
+      fireEvent.click(confirmBtn);
+      await screen.findByRole("article", {
+        name: "Confirmed public share intent",
+      });
+      expect(
+        f.calls.filter((c) => c.body?.request?.action === "share_confirm").at(-1)!
+          .body.request.payload,
+      ).toEqual({
+        prepared_id: freshPreparedShareId,
+        confirm_public: true,
+      });
+    },
+  );
 });

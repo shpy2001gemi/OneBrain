@@ -515,7 +515,9 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   strictly separate (`confirm_public: true`), omits private `ObjectCID` and
   source references from the prepared preview and receiver inspection panels,
   preserves the in-memory `prepared_id` preview if `share_confirm` fails closed
-  with `503 capability_disabled` (`ku_public_share_network_unavailable`), and
+  with `503 capability_disabled` (`ku_public_share_network_unavailable`), clears
+  stale in-memory preview state with re-prepare guidance if `share_confirm`
+  returns `prepared_share_missing` or `public_ku_consent_expired`, and
   distinguishes durable outbound intent creation from peer delivery. No
   unregistered HTTP share routes are added and networking remains opt-in
   (`ku_local_web` does not start a network listener by default).

@@ -116,7 +116,9 @@ accepted Public KUs are also readable through registered `POST /api/vnext/ku/ope
 from the currently inspected `LOCAL_ONLY` `accepted_known` artifact with a
 separate preview-then-confirm gesture (`confirm_public: true`), preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`
-(`ku_public_share_network_unavailable`), keep private `ObjectCID` and source
+(`ku_public_share_network_unavailable`), clear stale in-memory preview state
+with re-prepare guidance when `share_confirm` returns `prepared_share_missing`
+or `public_ku_consent_expired`, keep private `ObjectCID` and source
 bytes out of the share preview/inspect UI, and distinguish durable outbox
 intent creation from peer delivery. In `ku_local_web`, `network` is omitted by
 default so normal launches start no network listener; when the operator

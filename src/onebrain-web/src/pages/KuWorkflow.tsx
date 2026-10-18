@@ -20,7 +20,10 @@ import type {
   PublicShareObjectView,
 } from "../api/ku";
 import "./kuWorkflow.css";
-import { describeKuError as describeError } from "./kuFeedback";
+import {
+  describeKuError as describeError,
+  isStaleSharePreparationError,
+} from "./kuFeedback";
 import { KuReviewDraft } from "./KuReviewDraft";
 import { DesktopLifecycle } from "../components/DesktopLifecycle";
 
@@ -1032,15 +1035,23 @@ export function KuWorkflowPage({
               onClick={() =>
                 void run(async () => {
                   const current = await refresh();
-                  const result = await client.shareConfirm(current, {
-                    prepared_id: sharePrepared.prepared_id,
-                    confirm_public: true,
-                  });
-                  setShareConfirmed(result.data.payload);
-                  setShareIntentId(result.data.payload.intent_id);
-                  setSharePrepared(undefined);
-                  setShareConfirmPublic(false);
-                  setMetadata(result.meta);
+                  try {
+                    const result = await client.shareConfirm(current, {
+                      prepared_id: sharePrepared.prepared_id,
+                      confirm_public: true,
+                    });
+                    setShareConfirmed(result.data.payload);
+                    setShareIntentId(result.data.payload.intent_id);
+                    setSharePrepared(undefined);
+                    setShareConfirmPublic(false);
+                    setMetadata(result.meta);
+                  } catch (e) {
+                    if (isStaleSharePreparationError(e)) {
+                      setSharePrepared(undefined);
+                      setShareConfirmPublic(false);
+                    }
+                    throw e;
+                  }
                 })
               }
             >
