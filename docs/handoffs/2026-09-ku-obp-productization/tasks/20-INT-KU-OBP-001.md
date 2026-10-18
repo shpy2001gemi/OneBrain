@@ -6,6 +6,58 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — D-045 share input edit cleanup and `share_confirm` inspection prefill in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `2a4da76`, based on main `19799b2`, is committed/pushed
+and directly verified under D-050. Previously when editing any of the four share
+preparation inputs (`sharePeer`, `shareAddress`, `shareSelector`,
+`shareNamespace`) in `1. Prepare a Public KU share preview` on `/ku` Web
+(`src/onebrain-web/src/pages/KuWorkflow.tsx`), the `shareConfirmed`
+(`Confirmed public share intent`) card from a prior confirmation remained
+rendered, and when `shareConfirm` succeeded, `4. Inspect accepted Public KU`
+did not prefill `shareInspectCid` (`Accepted Public ObjectCID`) with
+`result.data.payload.public_object_cid` or `shareInspectSelector`
+(`Accepted selector CID`) with `sharePrepared.selector` (or clear any stale
+`shareInspectView` card).
+
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` clears `shareConfirmed` whenever
+  `sharePeer`, `shareAddress`, `shareSelector`, or `shareNamespace` is edited,
+  and when `shareConfirm` succeeds, prefills `shareInspectCid` with
+  `result.data.payload.public_object_cid` and `shareInspectSelector` with
+  `sharePrepared.selector` while clearing any stale `shareInspectView`.
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds a focused test verifying
+  that `shareConfirm` prefills `Accepted Public ObjectCID` and
+  `Accepted selector CID` while clearing stale `Accepted Public KU inspection`
+  so `Inspect accepted Public KU` can run immediately, and that editing any of
+  the four share preparation inputs (`Recipient NodeID`, `Peer loopback address`,
+  `Selector CID`, `Namespace commitment`) clears stale
+  `Confirmed public share intent`.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the share preparation input edit cleanup and `share_confirm`
+  inspection prefill.
+
+Windows focused checks on 18/10, approximately 17:17–18 Asia/Saigon:
+`npm run test:ku` 111/111 PASS (`tests/kuWorkflow.test.tsx` 36/36 PASS including
+`axe-core` accessibility and D-045 share input edit / `share_confirm` prefill
+state transitions), `npm run build` (`tsc -b && vite build`) PASS,
+`npm run lint` PASS (0 errors), `python scripts/ci/validate_vnext_contracts.py`
+PASS (529 local links), and `git diff --check` PASS. Reuse the prior Rust
+(`onebrain-desktop`, `onebrain-node`, `onebrain-api`) checks from `fbcda30` /
+`5dfc6bd` / `bef0d28` because no Rust runtime code changed. Backup/hash metadata
+is under `%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15
+untracked files and exact 108 PROGRESS preparation additions remain outside
+commits. Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded
+`/ku` Web D-045 `sharePrepare` pre-call cleanup and Base `pending` isolation in
+`src/onebrain-web/src/pages/KuWorkflow.tsx`,
+`src/onebrain-web/src/pages/kuFeedback.ts`, and
+`src/onebrain-web/tests/kuWorkflow.test.tsx`: clear stale `sharePrepared`,
+`shareConfirmPublic`, and `shareConfirmed` before `client.sharePrepare` runs so
+a failed re-prepare does not leave a previous preview or confirmation card
+visible, and keep D-045 share errors (`isShareError`) from setting Base
+`uncertain` or rendering the Base `Check recorded outcome` (`reconcile`) button
+when an unrelated private draft `pending` operation is present.
+
 ## Latest follow-up — saved-artifact inspection D-045 state transitions and PUBLIC guidance/prefill in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `a27ffee`, based on main `f885f55`, is committed/pushed
