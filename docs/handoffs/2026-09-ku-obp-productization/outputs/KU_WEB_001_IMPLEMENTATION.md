@@ -518,9 +518,11 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   with `503 capability_disabled` (`ku_public_share_network_unavailable`), clears
   stale or invalidated in-memory preview state with re-prepare guidance if
   `share_confirm` returns `prepared_share_missing`,
-  `public_ku_consent_expired` or `saved_access_changed`, explains bounded D-045
-  share refusals (`unsupported_public_ku`, `prepared_limit`,
-  `public_object_not_found`, `intent_not_found`), and
+  `public_ku_consent_expired`, `saved_access_changed` or
+  `outbox_unavailable_reprepare_same_intent`, explains bounded D-045 share
+  refusals and storage/outbox errors (`unsupported_public_ku`, `prepared_limit`,
+  `saved_ku_not_accessible`, `outbox_unavailable`, `public_store_unavailable`,
+  `provenance_unavailable`, `public_object_not_found`, `intent_not_found`), and
   distinguishes durable outbound intent creation from peer delivery. No
   unregistered HTTP share routes are added and networking remains opt-in
   (`ku_local_web` does not start a network listener by default).

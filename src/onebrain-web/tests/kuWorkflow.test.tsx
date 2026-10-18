@@ -48,13 +48,20 @@ function fixture(
     prepareFailure?: "deadline" | "resource" | "oneof" | "concept_label" | "duplicate_id";
     reservedAfterFailure?: boolean;
     shareNetworkDisabled?: boolean;
-    sharePrepareFailure?: "unsupported_public_ku" | "prepared_limit";
+    sharePrepareFailure?:
+      | "unsupported_public_ku"
+      | "prepared_limit"
+      | "saved_ku_not_accessible";
     shareConfirmFailure?:
       | "prepared_share_missing"
       | "public_ku_consent_expired"
-      | "saved_access_changed";
-    shareIntentFailure?: "intent_not_found";
-    shareInspectFailure?: "public_object_not_found";
+      | "saved_access_changed"
+      | "outbox_unavailable_reprepare_same_intent";
+    shareIntentFailure?: "intent_not_found" | "outbox_unavailable";
+    shareInspectFailure?:
+      | "public_object_not_found"
+      | "public_store_unavailable"
+      | "provenance_unavailable";
   } = {},
 ) {
   let saved = false;
@@ -195,12 +202,18 @@ function fixture(
                     code:
                       options.sharePrepareFailure === "unsupported_public_ku"
                         ? "invalid_request"
-                        : "rate_limited",
+                        : options.sharePrepareFailure ===
+                            "saved_ku_not_accessible"
+                          ? "not_found"
+                          : "rate_limited",
                     failure: {
                       code:
                         options.sharePrepareFailure === "unsupported_public_ku"
                           ? "InvalidRequest"
-                          : "ResourceExhausted",
+                          : options.sharePrepareFailure ===
+                              "saved_ku_not_accessible"
+                            ? "NotFound"
+                            : "ResourceExhausted",
                       retryable:
                         options.sharePrepareFailure === "prepared_limit",
                       reconcile_before_retry:
@@ -213,7 +226,10 @@ function fixture(
                   status:
                     options.sharePrepareFailure === "unsupported_public_ku"
                       ? 400
-                      : 429,
+                      : options.sharePrepareFailure ===
+                          "saved_ku_not_accessible"
+                        ? 404
+                        : 429,
                 },
               );
             payload = {
@@ -275,7 +291,10 @@ function fixture(
                         ? "not_found"
                         : options.shareConfirmFailure === "saved_access_changed"
                           ? "conflict"
-                          : "expired",
+                          : options.shareConfirmFailure ===
+                              "outbox_unavailable_reprepare_same_intent"
+                            ? "dependency_unavailable"
+                            : "expired",
                     failure: {
                       code:
                         options.shareConfirmFailure === "prepared_share_missing"
@@ -283,9 +302,16 @@ function fixture(
                           : options.shareConfirmFailure ===
                               "saved_access_changed"
                             ? "Conflict"
-                            : "Expired",
-                      retryable: false,
-                      reconcile_before_retry: false,
+                            : options.shareConfirmFailure ===
+                                "outbox_unavailable_reprepare_same_intent"
+                              ? "DependencyUnavailable"
+                              : "Expired",
+                      retryable:
+                        options.shareConfirmFailure ===
+                        "outbox_unavailable_reprepare_same_intent",
+                      reconcile_before_retry:
+                        options.shareConfirmFailure ===
+                        "outbox_unavailable_reprepare_same_intent",
                       limitations: [options.shareConfirmFailure],
                     },
                   },
@@ -296,7 +322,10 @@ function fixture(
                       ? 404
                       : options.shareConfirmFailure === "saved_access_changed"
                         ? 409
-                        : 410,
+                        : options.shareConfirmFailure ===
+                            "outbox_unavailable_reprepare_same_intent"
+                          ? 503
+                          : 410,
                 },
               );
             payload = {
@@ -314,16 +343,29 @@ function fixture(
                 JSON.stringify({
                   ok: false,
                   error: {
-                    code: "not_found",
+                    code:
+                      options.shareIntentFailure === "intent_not_found"
+                        ? "not_found"
+                        : "dependency_unavailable",
                     failure: {
-                      code: "NotFound",
-                      retryable: false,
-                      reconcile_before_retry: false,
+                      code:
+                        options.shareIntentFailure === "intent_not_found"
+                          ? "NotFound"
+                          : "DependencyUnavailable",
+                      retryable:
+                        options.shareIntentFailure === "outbox_unavailable",
+                      reconcile_before_retry:
+                        options.shareIntentFailure === "outbox_unavailable",
                       limitations: [options.shareIntentFailure],
                     },
                   },
                 }),
-                { status: 404 },
+                {
+                  status:
+                    options.shareIntentFailure === "intent_not_found"
+                      ? 404
+                      : 503,
+                },
               );
             payload = {
               event: "intent",
@@ -340,16 +382,32 @@ function fixture(
                 JSON.stringify({
                   ok: false,
                   error: {
-                    code: "not_found",
+                    code:
+                      options.shareInspectFailure === "public_object_not_found"
+                        ? "not_found"
+                        : "dependency_unavailable",
                     failure: {
-                      code: "NotFound",
-                      retryable: false,
-                      reconcile_before_retry: false,
+                      code:
+                        options.shareInspectFailure ===
+                        "public_object_not_found"
+                          ? "NotFound"
+                          : "DependencyUnavailable",
+                      retryable:
+                        options.shareInspectFailure !==
+                        "public_object_not_found",
+                      reconcile_before_retry:
+                        options.shareInspectFailure !==
+                        "public_object_not_found",
                       limitations: [options.shareInspectFailure],
                     },
                   },
                 }),
-                { status: 404 },
+                {
+                  status:
+                    options.shareInspectFailure === "public_object_not_found"
+                      ? 404
+                      : 503,
+                },
               );
             payload = {
               event: "public_object",
@@ -1118,7 +1176,11 @@ describe("local KU component journey", () => {
       });
     },
   );
-  it.each(["unsupported_public_ku", "prepared_limit"] as const)(
+  it.each([
+    "unsupported_public_ku",
+    "prepared_limit",
+    "saved_ku_not_accessible",
+  ] as const)(
     "explains %s on share_prepare without creating a preview or implying an AI timeout",
     async (reason) => {
       const options: Parameters<typeof fixture>[0] = {
@@ -1157,7 +1219,9 @@ describe("local KU component journey", () => {
         name:
           reason === "unsupported_public_ku"
             ? "KU is not eligible for D-045 Public share"
-            : "In-memory Public KU share preparation limit reached",
+            : reason === "saved_ku_not_accessible"
+              ? "Saved private KU is no longer accessible for share preparation"
+              : "In-memory Public KU share preparation limit reached",
       });
       const alertText = screen.getByRole("alert").textContent ?? "";
       expect(alertText).toContain(reason);
@@ -1174,6 +1238,16 @@ describe("local KU component journey", () => {
         );
         expect(alertText).toContain(
           "No public preview, public object or outbound transfer intent was created",
+        );
+      } else if (reason === "saved_ku_not_accessible") {
+        expect(alertText).toContain(
+          "requested private ObjectCID could not be read from the current local Vault dataset",
+        );
+        expect(alertText).toContain(
+          "No public preview, public object or outbound transfer intent was created",
+        );
+        expect(alertText).toContain(
+          "Use Search / list and Inspect to load an accepted LOCAL_ONLY artifact under the current host session before clicking Prepare public share preview.",
         );
       } else {
         expect(alertText).toContain(
@@ -1303,5 +1377,159 @@ describe("local KU component journey", () => {
     expect(
       screen.queryByRole("article", { name: "Accepted Public KU inspection" }),
     ).toBeNull();
+  });
+  it("explains D-045 outbox and public store DependencyUnavailable errors without Base reconcile misattribution and clears consumed preview on outbox_unavailable_reprepare_same_intent", async () => {
+    const options: Parameters<typeof fixture>[0] = {
+      emptyCatalog: true,
+      shareConfirmFailure: "outbox_unavailable_reprepare_same_intent",
+      shareIntentFailure: "outbox_unavailable",
+      shareInspectFailure: "public_store_unavailable",
+    };
+    const f = fixture(options);
+    render(<KuWorkflowPage client={f.client} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    const peer = "12".repeat(32),
+      selector = "ab".repeat(32),
+      namespace = "cd".repeat(32),
+      publicObject = "d".repeat(64),
+      preparedShareId = "e".repeat(64),
+      freshPreparedShareId = "a".repeat(64),
+      shareIntent = "f".repeat(64);
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: peer } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Selector CID (64 lowercase hex)"),
+      { target: { value: selector } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: namespace } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    const initialPreview = await screen.findByRole("article", {
+      name: "Prepared public share preview",
+    });
+    expect(initialPreview.textContent).toContain(preparedShareId);
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm public share" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Durable outbound share outbox was unavailable during confirmation",
+    });
+    const confirmAlert = screen.getByRole("alert").textContent ?? "";
+    expect(confirmAlert).toContain(
+      "verified and consumed the single-use share preparation, but its active VNextNetworkRuntime could not confirm durable outbox persistence",
+    );
+    expect(confirmAlert).toContain(
+      "The single-use preview has been cleared from this page; re-preparing the same saved artifact with the same recipient, selector and namespace reproduces the exact deterministic Intent ID and Public ObjectCID.",
+    );
+    expect(confirmAlert).toContain(
+      "Click Inspect share intent first to check whether the deterministic Intent ID was recorded, or click Prepare public share preview again with the same recipient, selector and namespace",
+    );
+    expect(confirmAlert).toContain("outbox_unavailable_reprepare_same_intent");
+    expect(confirmAlert).not.toContain(
+      "Use Reconcile operation to read the host's recorded outcome",
+    );
+    expect(
+      screen.queryByRole("article", { name: "Prepared public share preview" }),
+    ).toBeNull();
+    expect(
+      (
+        screen.getByLabelText(
+          "Outbound intent ID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(shareIntent);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect share intent" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Durable outbound share outbox is currently unavailable",
+    });
+    const intentAlert = screen.getByRole("alert").textContent ?? "";
+    expect(intentAlert).toContain(
+      "could not read the local durable outbound intent store while checking this Intent ID",
+    );
+    expect(intentAlert).toContain(
+      "Verify that the host's network outbox storage is healthy and accessible",
+    );
+    expect(intentAlert).toContain("outbox_unavailable");
+    expect(intentAlert).not.toContain(
+      "Use Reconcile operation to read the host's recorded outcome",
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted Public ObjectCID (64 lowercase hex)"),
+      { target: { value: publicObject } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: selector } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Local canonical public store is currently unavailable",
+    });
+    const storeAlert = screen.getByRole("alert").textContent ?? "";
+    expect(storeAlert).toContain(
+      "could not read the canonical verified public store (vnext_verified.redb)",
+    );
+    expect(storeAlert).toContain("public_store_unavailable");
+    expect(storeAlert).not.toContain(
+      "Use Reconcile operation to read the host's recorded outcome",
+    );
+    options.shareInspectFailure = "provenance_unavailable";
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Accepted Public KU transport provenance is currently unavailable",
+    });
+    const provenanceAlert = screen.getByRole("alert").textContent ?? "";
+    expect(provenanceAlert).toContain(
+      "decoded the accepted Public KU from vnext_verified.redb, but its active VNextNetworkRuntime could not read the authenticated transport/selector provenance index",
+    );
+    expect(provenanceAlert).toContain("provenance_unavailable");
+    expect(provenanceAlert).not.toContain(
+      "Use Reconcile operation to read the host's recorded outcome",
+    );
+    options.shareConfirmFailure = undefined;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    const freshPreview = await screen.findByRole("article", {
+      name: "Prepared public share preview",
+    });
+    expect(freshPreview.textContent).toContain(freshPreparedShareId);
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm public share" }),
+    );
+    await screen.findByRole("article", {
+      name: "Confirmed public share intent",
+    });
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "share_confirm").at(-1)!
+        .body.request.payload,
+    ).toEqual({
+      prepared_id: freshPreparedShareId,
+      confirm_public: true,
+    });
   });
 });

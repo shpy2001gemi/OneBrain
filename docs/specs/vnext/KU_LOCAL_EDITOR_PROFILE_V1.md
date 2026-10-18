@@ -118,11 +118,13 @@ separate preview-then-confirm gesture (`confirm_public: true`), preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`
 (`ku_public_share_network_unavailable`), clear stale or invalidated in-memory
 preview state with re-prepare guidance when `share_confirm` returns
-`prepared_share_missing`, `public_ku_consent_expired` or
-`saved_access_changed`, explain bounded D-045 refusals
-(`unsupported_public_ku`, `prepared_limit`, `public_object_not_found`,
-`intent_not_found`), keep private `ObjectCID` and source
-bytes out of the share preview/inspect UI, and distinguish durable outbox
+`prepared_share_missing`, `public_ku_consent_expired`,
+`saved_access_changed` or `outbox_unavailable_reprepare_same_intent`, explain
+bounded D-045 refusals and storage/outbox errors (`unsupported_public_ku`,
+`prepared_limit`, `saved_ku_not_accessible`, `outbox_unavailable`,
+`public_store_unavailable`, `provenance_unavailable`,
+`public_object_not_found`, `intent_not_found`), keep private `ObjectCID` and
+source bytes out of the share preview/inspect UI, and distinguish durable outbox
 intent creation from peer delivery. In `ku_local_web`, `network` is omitted by
 default so normal launches start no network listener; when the operator
 explicitly configures `"network": { "network_opt_in": true, "bind_addr": "127.0.0.1:0" }`
