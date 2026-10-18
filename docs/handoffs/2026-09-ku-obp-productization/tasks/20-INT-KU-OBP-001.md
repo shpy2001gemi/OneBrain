@@ -6,6 +6,52 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — stale D-045 share preview feedback and cleanup in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `0f5d27d`, based on main `cef6e84`, is committed/pushed
+and directly verified under D-050. Previously when `POST /api/vnext/ku/editor`
+`share_confirm` returned `prepared_share_missing` (`404 NotFound`) or
+`public_ku_consent_expired` (`410 Expired`), `describeKuError` in
+`src/onebrain-web/src/pages/kuFeedback.ts` fell back to a generic error message
+and `KuWorkflow.tsx` left the stale `sharePrepared` preview card rendered in the
+workspace.
+
+- `src/onebrain-web/src/pages/kuFeedback.ts` adds
+  `isStaleSharePreparationError` and updates `describeKuError` to explain that
+  the single-use in-memory preparation expired after its 15-minute (900-second)
+  window, was evicted under the 16-item in-memory preparation limit, was already
+  used once, or was cleared when the host restarted, with explicit recovery
+  guidance to click **Prepare public share preview** again.
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` clears `sharePrepared` and resets
+  `shareConfirmPublic` when `shareConfirm` fails with `prepared_share_missing`
+  or `public_ku_consent_expired`, while still preserving `sharePrepared` in
+  memory when `shareConfirm` fails closed with `503 capability_disabled`
+  (`ku_public_share_network_unavailable`).
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds parameterized coverage for
+  both `prepared_share_missing` and `public_ku_consent_expired`, verifying the
+  alert explanation/recovery text, removal of the stale preview card, retention
+  of the peer/address/selector/namespace inputs, and immediate re-preparation and
+  confirmation of a fresh preview.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the stale-preview cleanup and re-prepare guidance.
+
+Windows focused checks on 18/10, approximately 09:00–02 Asia/Saigon:
+`npm run test:ku` 94/94 PASS (`tests/kuWorkflow.test.tsx` 19/19 PASS including
+`axe-core` accessibility, `prepared_share_missing`, and
+`public_ku_consent_expired`), `npm run build` (`tsc -b && vite build`) PASS,
+`npm run lint` PASS (0 errors), `python scripts/ci/validate_vnext_contracts.py`
+PASS (529 local links), and `git diff --check` PASS. Reuse the prior Rust
+(`onebrain-desktop`, `onebrain-node`, `onebrain-api`) checks from
+`fbcda30` / `5dfc6bd` / `bef0d28` because no Rust runtime code changed.
+Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+error feedback in `src/onebrain-web/src/pages/kuFeedback.ts` for the remaining
+D-045 editor error codes (`unsupported_public_ku`, `prepared_limit`,
+`saved_access_changed`, `public_object_not_found`, `intent_not_found`).
+
 ## Latest follow-up — contributor entry refresh for D-045 share paths (2026-10-18)
 
 Contributor-entry refresh `ef9b459`, based on main `b3d5fd7`, is committed/pushed
@@ -937,10 +983,20 @@ Broader provisioning/composition remains open.
   `ku_peer_demo` helper. Commit/push `ef9b459` under D-050; vNext validator,
   local links and whitespace PASS.
 
-Preserve Registry trust and private source/key custody. Expired-preparation UX
-(`prepared_share_missing` / `public_ku_consent_expired`), signed Registry
-distribution, richer roots and source/author/fidelity proof remain separate
-backlog entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
+- [x] Explain `prepared_share_missing` and `public_ku_consent_expired` on
+  `share_confirm` in `kuFeedback.ts` (15-minute TTL, 16-item in-memory limit,
+  single-use consumption or host restart, plus **Prepare public share preview**
+  recovery) and clear the stale `sharePrepared` preview in `KuWorkflow.tsx`
+  while preserving `sharePrepared` on `503 capability_disabled`
+  (`ku_public_share_network_unavailable`). Commit/push `0f5d27d` under D-050;
+  `npm run test:ku` 94/94 (`kuWorkflow.test.tsx` 19/19), `npm run build`,
+  `npm run lint`, vNext validator and whitespace PASS.
+
+Preserve Registry trust and private source/key custody. Remaining D-045 error
+feedback (`unsupported_public_ku`, `prepared_limit`, `saved_access_changed`,
+`public_object_not_found`, `intent_not_found`), signed Registry distribution,
+richer roots and source/author/fidelity proof remain separate backlog entries;
+do not reopen completed MVP acceptance or resume ENC-003 qualification.
 
 Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
 -p onebrain-api --example ku_local_web` 1/1 PASS; `cargo build --locked --manifest-path
