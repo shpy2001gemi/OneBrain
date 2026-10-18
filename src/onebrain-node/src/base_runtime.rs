@@ -1064,6 +1064,11 @@ impl BaseServices {
                         let failed = store
                             .fail(BaseOperationId(r.operation_id.0), BaseErrorCodeV1::Conflict)
                             .map_err(store_error)?;
+                        // ARCH-03 GC: Base `failed` is final, so the KU active
+                        // bundle/extraction row is compacted or dropped. The failed
+                        // receipt is already durable; a cleanup error only leaves
+                        // the row occupying one active slot and is not surfaced.
+                        let _ = ku.retire_unsaved(principal, r.operation_id);
                         KuResponseV1::Reconcile(map_receipt(&failed)?)
                     }
                 } else {

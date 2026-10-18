@@ -36,9 +36,18 @@ const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_
 const EXTRACTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_extraction_v1");
 const TEXT_INTAKE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("ku_private_text_intake_v1");
+/// ARCH-03: committed/canceled bundles leave the active journal in the same
+/// write transaction that finishes them and stay as encrypted finished records
+/// for idempotent receipts, reconciliation, cancel evidence and the catalog.
+const TERMINAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_terminal_v1");
+/// Bound for active (prepared, not yet committed/canceled) operations only.
 const MAX_OPERATIONS: usize = 1024;
 mod review_jobs;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
+/// Finite local bound for compact finished records; exceeding it is a
+/// non-retryable `ku_storage_full`, never a retryable rate limit.
+const MAX_TERMINAL_OPERATIONS: usize = 65_536;
+const MAX_TERMINAL_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 32;
 const MAX_CURSORS: usize = 1024;
 pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
@@ -435,6 +444,10 @@ struct PreparedBundle {
     registry_builder: String,
     committed: bool,
     canceled: bool,
+    /// Finished record held in TERMINAL (ARCH-03); committed ones omit source
+    /// bytes kept in the Vault. Absent in records written before compaction.
+    #[serde(default)]
+    compacted: bool,
 }
 
 struct Snapshot {
@@ -508,6 +521,8 @@ pub(crate) struct KuStore {
     mutation: Mutex<()>,
     paging: Mutex<Paging>,
     catalog: Mutex<Catalog>,
+    /// Sealed bytes held in TERMINAL; recomputed on open, updated after commit.
+    terminal_bytes: Mutex<usize>,
 }
 
 #[cfg(feature = "vnext-network-runtime")]
@@ -891,6 +906,7 @@ impl KuStore {
             tx.open_table(JOURNAL).map_err(|_| corrupt())?;
             tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
             tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
+            tx.open_table(TERMINAL).map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
         let canonical_verified_path = paths
@@ -922,6 +938,7 @@ impl KuStore {
             mutation: Mutex::new(()),
             paging: Mutex::new(Paging::default()),
             catalog: Mutex::new(Catalog::default()),
+            terminal_bytes: Mutex::new(0),
         };
         store.recover_review_jobs()?;
         {
@@ -943,12 +960,49 @@ impl KuStore {
         }
         // Authentication failure, a damaged record or a partial committed bundle
         // is a typed open failure, never an empty store with reconstructed success.
+        let mut legacy_finished = Vec::new();
+        let mut active = BTreeSet::new();
         for bundle in store.bundles()? {
             store.validate_bundle(&bundle)?;
+            if bundle.compacted {
+                return Err(corrupt());
+            }
             if bundle.committed {
                 store.verify_committed(&bundle)?;
             }
             store.index_bundle(&bundle)?;
+            active.insert(bundle.request.operation_id.0);
+            if bundle.committed || bundle.canceled {
+                legacy_finished.push(bundle);
+            }
+        }
+        {
+            let tx = store.journal.begin_read().map_err(|_| corrupt())?;
+            let table = tx.open_table(TERMINAL).map_err(|_| corrupt())?;
+            let mut total = 0usize;
+            for row in table.iter().map_err(|_| corrupt())? {
+                let (key, value) = row.map_err(|_| corrupt())?;
+                let operation = OperationId(key.value().try_into().map_err(|_| corrupt())?);
+                if active.contains(&operation.0) {
+                    return Err(corrupt());
+                }
+                total = total.checked_add(value.value().len()).ok_or_else(corrupt)?;
+                let bundle = store.decode_bundle(operation, value.value())?;
+                if !bundle.compacted {
+                    return Err(corrupt());
+                }
+                store.validate_bundle(&bundle)?;
+                if bundle.committed {
+                    store.verify_committed(&bundle)?;
+                }
+                store.index_bundle(&bundle)?;
+            }
+            *store.terminal_bytes.lock().map_err(|_| corrupt())? = total;
+        }
+        // Journals written before ARCH-03 kept finished bundles in the active
+        // table. Move them once; each move is one atomic redb transaction.
+        for bundle in legacy_finished {
+            store.finish_bundle(&bundle)?;
         }
         {
             let tx = store.journal.begin_read().map_err(|_| corrupt())?;
@@ -995,7 +1049,13 @@ impl KuStore {
     ) -> Result<Option<PreparedBundle>, BaseServiceError> {
         let tx = self.journal.begin_read().map_err(|_| corrupt())?;
         let table = tx.open_table(JOURNAL).map_err(|_| corrupt())?;
-        let value = table.get(operation.0.as_slice()).map_err(|_| corrupt())?;
+        if let Some(value) = table.get(operation.0.as_slice()).map_err(|_| corrupt())? {
+            return self.decode_bundle(operation, value.value()).map(Some);
+        }
+        let terminal = tx.open_table(TERMINAL).map_err(|_| corrupt())?;
+        let value = terminal
+            .get(operation.0.as_slice())
+            .map_err(|_| corrupt())?;
         value
             .map(|v| self.decode_bundle(operation, v.value()))
             .transpose()
@@ -1056,7 +1116,11 @@ impl KuStore {
         Ok(result)
     }
 
+    /// Writes an active (prepared) bundle. Finished bundles use `finish_bundle`.
     fn write_bundle(&self, bundle: &PreparedBundle) -> Result<(), BaseServiceError> {
+        if bundle.committed || bundle.canceled || bundle.compacted {
+            return Err(corrupt());
+        }
         let bytes = zeroize::Zeroizing::new(serde_json::to_vec(bundle).map_err(|_| corrupt())?);
         let sealed = self
             .vault
@@ -1064,6 +1128,14 @@ impl KuStore {
             .map_err(|_| resource())?;
         let tx = self.journal.begin_write().map_err(|_| unknown())?;
         {
+            let terminal = tx.open_table(TERMINAL).map_err(|_| unknown())?;
+            if terminal
+                .get(bundle.request.operation_id.0.as_slice())
+                .map_err(|_| unknown())?
+                .is_some()
+            {
+                return Err(conflict());
+            }
             let mut table = tx.open_table(JOURNAL).map_err(|_| unknown())?;
             let mut count = 0;
             let mut total = sealed.len();
@@ -1073,20 +1145,20 @@ impl KuStore {
                     count += 1;
                     total = total
                         .checked_add(value.value().len())
-                        .ok_or_else(resource)?;
+                        .ok_or_else(storage_full)?;
                 }
             }
             if count >= MAX_OPERATIONS || total > MAX_JOURNAL_BYTES {
-                return Err(resource());
+                return Err(storage_full());
             }
             let extraction = tx.open_table(EXTRACTION).map_err(|_| unknown())?;
             for row in extraction.iter().map_err(|_| unknown())? {
                 let (_, value) = row.map_err(|_| unknown())?;
                 total = total
                     .checked_add(value.value().len())
-                    .ok_or_else(resource)?;
+                    .ok_or_else(storage_full)?;
                 if total > MAX_JOURNAL_BYTES {
-                    return Err(resource());
+                    return Err(storage_full());
                 }
             }
             table
@@ -1095,6 +1167,137 @@ impl KuStore {
         }
         tx.commit().map_err(|_| unknown())?;
         self.index_bundle(bundle)
+    }
+
+    /// Finished record. Exact request, preview, private semantic inputs and
+    /// bindings stay (VALIDATED_STORAGE_PROFILE_V1: cancellation retains its
+    /// encrypted staging as evidence). A committed record drops only its source
+    /// bytes: exact copies are in the Vault and verified on every reopen.
+    fn compact(bundle: &PreparedBundle) -> PreparedBundle {
+        let mut b = bundle.clone();
+        if b.committed {
+            b.sources.clear();
+        }
+        b.compacted = true;
+        b
+    }
+
+    fn compact_sealed(&self, bundle: &PreparedBundle) -> Result<Vec<u8>, BaseServiceError> {
+        let compact = Self::compact(bundle);
+        let bytes = zeroize::Zeroizing::new(serde_json::to_vec(&compact).map_err(|_| corrupt())?);
+        self.vault
+            .seal_local_metadata(self.bundle_key(bundle.request.operation_id), &bytes)
+            .map_err(|_| resource())
+    }
+
+    /// Fails before any durable effect when a finished record cannot be kept.
+    fn require_terminal_room(&self, additional: usize) -> Result<(), BaseServiceError> {
+        let tx = self.journal.begin_read().map_err(|_| corrupt())?;
+        let count = {
+            use redb::ReadableTableMetadata;
+            tx.open_table(TERMINAL)
+                .map_err(|_| corrupt())?
+                .len()
+                .map_err(|_| corrupt())? as usize
+        };
+        let bytes = *self.terminal_bytes.lock().map_err(|_| corrupt())?;
+        if count >= MAX_TERMINAL_OPERATIONS || bytes.saturating_add(additional) > MAX_TERMINAL_BYTES
+        {
+            return Err(storage_full());
+        }
+        Ok(())
+    }
+
+    /// One redb transaction moves a committed/canceled bundle out of the active
+    /// journal: insert compact TERMINAL record, delete JOURNAL and EXTRACTION rows.
+    fn finish_bundle(&self, bundle: &PreparedBundle) -> Result<(), BaseServiceError> {
+        if !(bundle.committed ^ bundle.canceled) {
+            return Err(corrupt());
+        }
+        let operation = bundle.request.operation_id.0;
+        let sealed = self.compact_sealed(bundle)?;
+        let mut usage = self.terminal_bytes.lock().map_err(|_| corrupt())?;
+        let tx = self.journal.begin_write().map_err(|_| unknown())?;
+        let next;
+        {
+            use redb::ReadableTableMetadata;
+            let mut terminal = tx.open_table(TERMINAL).map_err(|_| unknown())?;
+            let previous = terminal
+                .get(operation.as_slice())
+                .map_err(|_| unknown())?
+                .map(|v| v.value().len());
+            let count = terminal.len().map_err(|_| unknown())? as usize;
+            next = usage
+                .saturating_sub(previous.unwrap_or(0))
+                .checked_add(sealed.len())
+                .ok_or_else(storage_full)?;
+            if (previous.is_none() && count >= MAX_TERMINAL_OPERATIONS) || next > MAX_TERMINAL_BYTES
+            {
+                return Err(storage_full());
+            }
+            terminal
+                .insert(operation.as_slice(), sealed.as_slice())
+                .map_err(|_| unknown())?;
+            tx.open_table(JOURNAL)
+                .map_err(|_| unknown())?
+                .remove(operation.as_slice())
+                .map_err(|_| unknown())?;
+            tx.open_table(EXTRACTION)
+                .map_err(|_| unknown())?
+                .remove(operation.as_slice())
+                .map_err(|_| unknown())?;
+        }
+        tx.commit().map_err(|_| unknown())?;
+        *usage = next;
+        drop(usage);
+        self.index_bundle(bundle)
+    }
+
+    /// Closes an operation that will never be saved (Base `failed`): an active
+    /// bundle becomes a compact non-saveable record and its extraction row goes.
+    pub(crate) fn retire_unsaved(
+        &self,
+        principal: [u8; 32],
+        operation: OperationId,
+    ) -> Result<(), BaseServiceError> {
+        let _guard = self.mutation.lock().map_err(|_| corrupt())?;
+        match self.read_bundle(operation)? {
+            Some(b) if b.principal != principal => Err(not_found()),
+            Some(b) if b.committed || b.canceled => Ok(()),
+            Some(mut b) => {
+                b.canceled = true;
+                self.finish_bundle(&b)
+            }
+            None => self.drop_extraction(principal, operation),
+        }
+    }
+
+    fn drop_extraction(
+        &self,
+        principal: [u8; 32],
+        operation: OperationId,
+    ) -> Result<(), BaseServiceError> {
+        let tx = self.journal.begin_write().map_err(|_| unknown())?;
+        {
+            let mut table = tx.open_table(EXTRACTION).map_err(|_| unknown())?;
+            let owner = match table.get(operation.0.as_slice()).map_err(|_| unknown())? {
+                Some(value) => Some(
+                    self.decode_extraction(operation.0, value.value())?
+                        .principal,
+                ),
+                None => None,
+            };
+            match owner {
+                None => return Ok(()),
+                Some(owner) if owner != principal => return Err(not_found()),
+                Some(_) => {
+                    table
+                        .remove(operation.0.as_slice())
+                        .map_err(|_| unknown())?;
+                }
+            }
+        }
+        tx.commit().map_err(|_| unknown())
     }
 
     fn index_bundle(&self, b: &PreparedBundle) -> Result<(), BaseServiceError> {
@@ -1438,6 +1641,7 @@ impl KuStore {
             registry_builder: release.status().builder_version.clone().unwrap_or_default(),
             committed: false,
             canceled: false,
+            compacted: false,
         };
         self.validate_bundle(&bundle)?;
         self.inputs.check_access(principal, &sources)?;
@@ -1464,8 +1668,11 @@ impl KuStore {
             || bundle.request.operation_id != bundle.preview.operation_id
             || bundle.preview.object_cids.len() != bundle.preview.artifacts.len()
             || bundle.private_semantic_inputs.len() != bundle.original_statement_ids.len()
-            || bundle.request.source_refs.len() != bundle.sources.len()
+            || (!(bundle.compacted && bundle.committed)
+                && bundle.request.source_refs.len() != bundle.sources.len())
             || bundle.committed && bundle.canceled
+            || bundle.compacted && !(bundle.committed || bundle.canceled)
+            || bundle.compacted && bundle.committed && !bundle.sources.is_empty()
         {
             return Err(corrupt());
         }
@@ -1564,6 +1771,9 @@ impl KuStore {
         if b.predecessor.is_some() && b.expected_frontier != Some(self.frontier(principal)?) {
             return Err(conflict());
         }
+        // Capacity is checked before Base confirmation and Vault writes so a
+        // full store is a clean non-retryable refusal, not an unknown outcome.
+        self.require_terminal_room(self.compact_sealed(&b)?.len())?;
         Ok(())
     }
 
@@ -1630,7 +1840,8 @@ impl KuStore {
                 .collect::<Vec<_>>(),
         )?;
         b.committed = true;
-        self.write_bundle(&b)?;
+        // The commit marker is the atomic move into TERMINAL (ARCH-03).
+        self.finish_bundle(&b)?;
         failpoint("after_commit_marker")?;
         Ok(receipt(&b, BaseState::Committed))
     }
@@ -1710,21 +1921,23 @@ impl KuStore {
         self.cancel_review_if_present(principal, operation.0)?;
         {
             let mut canceled = self.canceled.lock().map_err(|_| corrupt())?;
+            let extracting = self.extracting.lock().map_err(|_| corrupt())?;
             if !canceled.contains(&operation.0) && canceled.len() >= MAX_OPERATIONS {
-                return Err(resource());
+                // Only a running extraction needs this in-memory fence; later
+                // prepares are fenced by Base state and the durable record.
+                canceled.retain(|op| extracting.contains_key(op));
+                if canceled.len() >= MAX_OPERATIONS {
+                    return Err(storage_full());
+                }
             }
             canceled.insert(operation.0);
-            if let Some(signal) = self
-                .extracting
-                .lock()
-                .map_err(|_| corrupt())?
-                .get(&operation.0)
-            {
+            if let Some(signal) = extracting.get(&operation.0) {
                 signal.store(true, Ordering::Release);
             }
         }
         let Some(mut b) = self.read_bundle(operation)? else {
-            return Ok(());
+            // Interrupted before a bundle existed: drop its extraction row.
+            return self.drop_extraction(principal, operation);
         };
         if b.principal != principal {
             return Err(not_found());
@@ -1732,9 +1945,13 @@ impl KuStore {
         if b.committed {
             return Err(conflict());
         }
+        if b.canceled {
+            return Ok(());
+        }
         b.canceled = true;
-        // Retain encrypted exact intent for reconciliation; never undo accepted bytes.
-        self.write_bundle(&b)
+        // Retain the full encrypted exact intent for reconciliation (moved out
+        // of the active table); never undo accepted bytes.
+        self.finish_bundle(&b)
     }
 
     pub(crate) fn get(
@@ -2086,6 +2303,26 @@ impl ExtractionJournal for KuStore {
             .map_err(|_| error())?;
         let tx = self.journal.begin_write().map_err(|_| error())?;
         {
+            // Checked under the single redb writer: cancel inserts its fence
+            // before its own cleanup transaction, so a late checkpoint cannot
+            // resurrect a row for a canceled or finished operation.
+            if self
+                .canceled
+                .lock()
+                .map_err(|_| error())?
+                .contains(&job.operation)
+            {
+                return Err(ExtractionError("canceled"));
+            }
+            if tx
+                .open_table(TERMINAL)
+                .map_err(|_| error())?
+                .get(job.operation.as_slice())
+                .map_err(|_| error())?
+                .is_some()
+            {
+                return Err(ExtractionError("canceled"));
+            }
             let mut table = tx.open_table(EXTRACTION).map_err(|_| error())?;
             if let Some(old) = table.get(job.operation.as_slice()).map_err(|_| error())? {
                 let old = self
@@ -2274,6 +2511,15 @@ pub(crate) fn corrupt() -> BaseServiceError {
 pub(crate) fn resource() -> BaseServiceError {
     BaseServiceError::new(BaseErrorCodeV1::ResourceExhausted, "ku_resource_bound")
 }
+/// Local KU storage bound (ARCH-03). Same wire code as other resource bounds,
+/// but never retryable: retrying cannot succeed until records are freed.
+pub(crate) fn storage_full() -> BaseServiceError {
+    let mut error = BaseServiceError::new(BaseErrorCodeV1::ResourceExhausted, KU_STORAGE_FULL);
+    error.retryable = false;
+    error.reconcile_before_retry = false;
+    error
+}
+pub(crate) const KU_STORAGE_FULL: &str = "ku_storage_full";
 pub(crate) fn unavailable() -> BaseServiceError {
     BaseServiceError::new(
         BaseErrorCodeV1::DependencyUnavailable,

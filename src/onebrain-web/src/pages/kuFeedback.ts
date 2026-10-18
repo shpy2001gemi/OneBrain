@@ -271,6 +271,22 @@ export function describeKuError(error: unknown) {
   ]
     .filter(Boolean)
     .join(" · ");
+  // ARCH-03: the host's local KU store reached a finite bound; retrying the
+  // same request cannot succeed until pending work is saved or canceled.
+  if (reasons.includes("ku_storage_full")) {
+    return {
+      title: "Local KU storage limit reached",
+      explanation:
+        "The host refused this request because its local KU journal reached a finite bound: either 1,024 pending (prepared but not saved or canceled) drafts, or the limit for finished-operation records. Saved and canceled operations no longer count toward the pending limit.",
+      context:
+        "Here, storage_full (ResourceExhausted) is not a rate limit and is not retryable. No new draft or save was recorded by this request, and existing saved knowledge is unchanged.",
+      recovery:
+        "Save or cancel pending drafts to free pending slots, then start the request again. If saved records reached the finished-operation limit, the host needs operator maintenance before new saves.",
+      technical,
+      diagnostics,
+      isShareError: false,
+    };
+  }
   return {
     title: deadline
       ? "Encoding timed out"

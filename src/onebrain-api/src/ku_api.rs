@@ -176,6 +176,12 @@ fn failure(error: BaseServiceError) -> Response {
             "capability_disabled",
             BaseError::IncompatibleProfile,
         ),
+        // ARCH-03: a full local KU store cannot succeed on retry.
+        B::ResourceExhausted if error.reason == "ku_storage_full" => (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "storage_full",
+            BaseError::ResourceExhausted,
+        ),
         B::ResourceExhausted => (
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",

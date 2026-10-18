@@ -93,3 +93,39 @@ it("projects sharePrepare, shareConfirm, shareIntent and shareInspect through PO
   log.mockRestore();
   error.mockRestore();
 });
+it("treats 507 storage_full as non-retryable, not uncertain, with a storage explanation (ARCH-03)", async () => {
+  const { describeKuError } = await import("../src/pages/kuFeedback");
+  const failure = {
+    code: "ResourceExhausted",
+    retryable: false,
+    reconcile_before_retry: false,
+    limitations: ["ku_storage_full"],
+  };
+  const client = createKuClient(
+    async () => ({ baseUrl: "http://local", token: "secret" }),
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error: { code: "storage_full", retryable: false, failure },
+          }),
+          { status: 507 },
+        ),
+    ),
+  );
+  let caught: unknown;
+  try {
+    await client.status();
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeInstanceOf(KuError);
+  expect((caught as KuError).uncertain).toBe(false);
+  const feedback = describeKuError(caught);
+  expect(feedback.title).toBe("Local KU storage limit reached");
+  expect(feedback.context).toContain("not retryable");
+  expect(feedback.recovery).toContain("Save or cancel pending drafts");
+  expect(feedback.recovery).not.toContain("Reconcile operation");
+  expect(feedback.isShareError).toBe(false);
+});

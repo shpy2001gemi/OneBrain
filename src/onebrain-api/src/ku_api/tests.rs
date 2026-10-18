@@ -1029,3 +1029,33 @@ async fn manual_editor_unresolved_auth_and_closed_input() {
         StatusCode::SERVICE_UNAVAILABLE
     );
 }
+
+#[tokio::test]
+async fn ku_storage_full_is_non_retryable_storage_full_not_rate_limited() {
+    // ARCH-03: a full local KU journal/store must not tell clients to retry.
+    let mut full = BaseServiceError::new(BaseErrorCodeV1::ResourceExhausted, "ku_storage_full");
+    full.retryable = false;
+    full.reconcile_before_retry = false;
+    let response = failure(full);
+    assert_eq!(response.status(), StatusCode::INSUFFICIENT_STORAGE);
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(body["error"]["code"], "storage_full");
+    assert_eq!(body["error"]["retryable"], false);
+    assert_eq!(body["error"]["failure"]["retryable"], false);
+    assert_eq!(body["error"]["failure"]["reconcile_before_retry"], false);
+    assert_eq!(
+        body["error"]["failure"]["limitations"][0],
+        "ku_storage_full"
+    );
+    // Other resource bounds keep their existing category.
+    let bound = failure(BaseServiceError::new(
+        BaseErrorCodeV1::ResourceExhausted,
+        "ku_resource_bound",
+    ));
+    assert_eq!(bound.status(), StatusCode::TOO_MANY_REQUESTS);
+}

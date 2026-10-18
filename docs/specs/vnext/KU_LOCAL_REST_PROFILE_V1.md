@@ -83,6 +83,12 @@ from Base policy; the outer error retains the REST table's retry flag. In
 particular UnknownOutcome retains `failure.reconcile_before_retry = true`
 even though outer `conflict` is not automatically retryable. Request
 validation errors use InvalidRequest without reflecting private request text.
+ARCH-03 adds one REST code: a full local KU journal or finished-record store
+(`ku_storage_full`) projects as `storage_full`/507 with outer and inner
+`retryable: false` and `reconcile_before_retry: false`; it is never a rate limit.
+The active journal bounds only pending prepared operations (1,024 / 64 MiB);
+committed and canceled operations move atomically into a separate bounded
+encrypted finished-record table (65,536 records / 256 MiB).
 
 | Base code | REST code | HTTP |
 |---|---|---|
@@ -93,6 +99,7 @@ validation errors use InvalidRequest without reflecting private request text.
 | RateLimited | rate_limited | 429 |
 | CapabilityDisabled / IncompatibleProfile | capability_disabled | 503 |
 | ResourceExhausted | rate_limited | 429 |
+| ResourceExhausted with reason `ku_storage_full` (ARCH-03) | storage_full | 507 |
 | DependencyUnavailable | dependency_unavailable | 503 |
 | CorruptState / ReprovisionRequired / InternalError | internal_error | 500 |
 

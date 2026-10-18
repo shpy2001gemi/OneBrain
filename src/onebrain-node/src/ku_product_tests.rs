@@ -1576,3 +1576,211 @@ async fn concurrent_exact_confirmations_share_one_durable_result() {
     assert_eq!(list(&s).await.items.len(), 2);
     assert_eq!(input.calls.load(Ordering::SeqCst), 1);
 }
+
+// ---- ARCH-03: journal capacity, compaction and saved-data preservation ----
+
+fn open_direct(
+    generations: &DatasetGenerationStore,
+    input: Arc<Inputs>,
+    registry: Option<Arc<ConceptRegistryGenerationManager>>,
+) -> KuStore {
+    KuStore::open(
+        generations,
+        KuRuntimeConfig {
+            vault_key: VaultKey::from_bytes([11; 32]),
+            registry,
+            inputs: input,
+            public: None,
+        },
+        [1; 32],
+    )
+    .unwrap()
+}
+
+fn table_len(store: &KuStore, table: TableDefinition<&[u8], &[u8]>) -> u64 {
+    use redb::ReadableTableMetadata;
+    let tx = store.journal.begin_read().unwrap();
+    let table = tx.open_table(table).unwrap();
+    table.len().unwrap()
+}
+
+fn operation(i: usize, tag: u8) -> OperationId {
+    let mut id = [tag; 32];
+    id[..8].copy_from_slice(&(i as u64 + 1).to_le_bytes());
+    OperationId(id)
+}
+
+fn save_request(r: &KuPrepareV1, p: &KuPreparedV1) -> KuSaveV1 {
+    KuSaveV1 {
+        operation_id: r.operation_id,
+        idempotency_key: r.idempotency_key,
+        object_cids: p.object_cids.clone(),
+    }
+}
+
+#[tokio::test]
+async fn journal_compacts_finished_operations_past_active_cap_and_restart_keeps_saved_data() {
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let input = Arc::new(Inputs::new());
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), Some(reg.clone()));
+    // Before ARCH-03 the 1,025th finished operation was refused forever.
+    let total = MAX_OPERATIONS + 6;
+    let mut saved = Vec::new();
+    let mut canceled = Vec::new();
+    let mut saved_cids = BTreeSet::new();
+    for i in 0..total {
+        let r = request(operation(i, 0xA3), &input, &reg, (i % 251) as u8 + 1);
+        let p = store
+            .prepare(PRINCIPAL, r.clone(), None, &budget())
+            .await
+            .unwrap();
+        if i % 7 == 3 {
+            store.cancel(PRINCIPAL, r.operation_id).unwrap();
+            canceled.push(r);
+        } else {
+            let receipt = store.save(PRINCIPAL, &save_request(&r, &p)).unwrap();
+            assert_eq!(receipt.state, BaseState::Committed);
+            saved_cids.extend(p.object_cids.iter().map(|c| c.0));
+            saved.push((r, p, receipt));
+        }
+    }
+    // Finished operations no longer occupy active journal slots.
+    assert_eq!(table_len(&store, JOURNAL), 0);
+    assert_eq!(table_len(&store, TERMINAL), total as u64);
+
+    // The active cap now bounds only pending preparations and reports an
+    // honest non-retryable storage bound instead of a retryable rate limit.
+    for i in 0..MAX_OPERATIONS {
+        let r = request(operation(i, 0xB4), &input, &reg, (i % 251) as u8 + 1);
+        store.prepare(PRINCIPAL, r, None, &budget()).await.unwrap();
+    }
+    let r = request(operation(MAX_OPERATIONS, 0xB4), &input, &reg, 1);
+    let full = store
+        .prepare(PRINCIPAL, r, None, &budget())
+        .await
+        .unwrap_err();
+    assert_eq!(full.code, BaseErrorCodeV1::ResourceExhausted);
+    assert_eq!(full.reason, KU_STORAGE_FULL);
+    assert!(!full.retryable && !full.reconcile_before_retry);
+    // Saving a pending one frees an active slot and still succeeds.
+    let pending = request(operation(0, 0xB4), &input, &reg, 1);
+    let preview = store.preview(PRINCIPAL, pending.operation_id).unwrap();
+    store
+        .save(PRINCIPAL, &save_request(&pending, &preview))
+        .unwrap();
+    assert_eq!(table_len(&store, JOURNAL), MAX_OPERATIONS as u64 - 1);
+    drop(store);
+    drop(generations);
+
+    // Restart without registry or source access: saved data stays readable and
+    // finished operations keep idempotent receipts from the compact record.
+    input.allowed.store(false, Ordering::SeqCst);
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), None);
+    assert_eq!(
+        store
+            .catalog
+            .lock()
+            .unwrap()
+            .items
+            .get(&PRINCIPAL)
+            .map(|m| m.len())
+            .unwrap(),
+        saved_cids.len()
+    );
+    for (r, p, receipt) in [&saved[0], saved.last().unwrap()] {
+        assert_eq!(
+            store.saved_receipt(PRINCIPAL, r.operation_id).unwrap(),
+            Some(receipt.clone())
+        );
+        assert_eq!(
+            &store.save(PRINCIPAL, &save_request(r, p)).unwrap(),
+            receipt
+        );
+        let view = store.get(PRINCIPAL, p.object_cids[0]).unwrap();
+        assert_eq!(view.canonical_bytes, p.artifacts[0].canonical_preview);
+        assert!(store.owns_operation(PRINCIPAL, r.operation_id).unwrap());
+    }
+    let c = &canceled[0];
+    let finished = store.read_bundle(c.operation_id).unwrap().unwrap();
+    // Cancellation keeps its full encrypted staging as evidence (frozen
+    // VALIDATED_STORAGE_PROFILE_V1); only its slot in the active table is freed.
+    assert!(finished.compacted && finished.canceled && !finished.sources.is_empty());
+    let committed = store.read_bundle(saved[0].0.operation_id).unwrap().unwrap();
+    assert!(committed.compacted && committed.committed && committed.sources.is_empty());
+    assert!(!committed.private_semantic_inputs.is_empty());
+    assert!(store.owns_operation(PRINCIPAL, c.operation_id).unwrap());
+    assert!(!store.is_prepared(PRINCIPAL, c.operation_id).unwrap());
+    assert_eq!(
+        store.preview(PRINCIPAL, c.operation_id).unwrap_err().code,
+        BaseErrorCodeV1::Conflict
+    );
+    assert_eq!(table_len(&store, TERMINAL), total as u64 + 1);
+    assert_eq!(
+        input.calls.load(Ordering::SeqCst),
+        total + MAX_OPERATIONS + 1
+    );
+}
+
+#[tokio::test]
+async fn legacy_finished_bundle_in_active_journal_migrates_on_open() {
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let input = Arc::new(Inputs::new());
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), Some(reg.clone()));
+    let r = request(operation(0, 0xC5), &input, &reg, 1);
+    let p = store
+        .prepare(PRINCIPAL, r.clone(), None, &budget())
+        .await
+        .unwrap();
+    let mut legacy = store.read_bundle(r.operation_id).unwrap().unwrap();
+    assert!(!legacy.compacted && !legacy.sources.is_empty());
+    let receipt = store.save(PRINCIPAL, &save_request(&r, &p)).unwrap();
+    // Rewrite the record exactly as a pre-ARCH-03 journal held it: a full
+    // committed bundle in the active table, without the `compacted` field.
+    legacy.committed = true;
+    let mut json = serde_json::to_value(&legacy).unwrap();
+    json.as_object_mut().unwrap().remove("compacted");
+    let sealed = store
+        .vault
+        .seal_local_metadata(
+            store.bundle_key(r.operation_id),
+            &serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+    let tx = store.journal.begin_write().unwrap();
+    {
+        tx.open_table(TERMINAL)
+            .unwrap()
+            .remove(r.operation_id.0.as_slice())
+            .unwrap();
+        tx.open_table(JOURNAL)
+            .unwrap()
+            .insert(r.operation_id.0.as_slice(), sealed.as_slice())
+            .unwrap();
+    }
+    tx.commit().unwrap();
+    drop(store);
+    drop(generations);
+
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), None);
+    assert_eq!(table_len(&store, JOURNAL), 0);
+    assert_eq!(table_len(&store, TERMINAL), 1);
+    let migrated = store.read_bundle(r.operation_id).unwrap().unwrap();
+    assert!(migrated.compacted && migrated.committed && migrated.sources.is_empty());
+    assert_eq!(
+        store.saved_receipt(PRINCIPAL, r.operation_id).unwrap(),
+        Some(receipt)
+    );
+    assert_eq!(
+        store
+            .get(PRINCIPAL, p.object_cids[0])
+            .unwrap()
+            .canonical_bytes,
+        p.artifacts[0].canonical_preview
+    );
+}
