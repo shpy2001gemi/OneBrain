@@ -973,6 +973,7 @@ export function KuWorkflowPage({
                 setShareConfirmPublic(false);
                 setShareConfirmed(undefined);
                 setShareIntentId(result.data.payload.intent_id);
+                setShareIntentView(undefined);
                 setMetadata(result.meta);
               })
             }
@@ -1042,6 +1043,7 @@ export function KuWorkflowPage({
                     });
                     setShareConfirmed(result.data.payload);
                     setShareIntentId(result.data.payload.intent_id);
+                    setShareIntentView(undefined);
                     setSharePrepared(undefined);
                     setShareConfirmPublic(false);
                     setMetadata(result.meta);
@@ -1088,13 +1090,17 @@ export function KuWorkflowPage({
             className="input"
             value={shareIntentId}
             maxLength={64}
-            onChange={(e) => setShareIntentId(e.target.value)}
+            onChange={(e) => {
+              setShareIntentId(e.target.value);
+              setShareIntentView(undefined);
+            }}
           />
           <button
             className="btn"
             disabled={!/^[0-9a-f]{64}$/.test(shareIntentId)}
             onClick={() =>
               void run(async () => {
+                setShareIntentView(undefined);
                 const current = await refresh();
                 const result = await client.shareIntent(current, {
                   intent_id: shareIntentId,
@@ -1133,7 +1139,10 @@ export function KuWorkflowPage({
             className="input"
             value={shareInspectCid}
             maxLength={64}
-            onChange={(e) => setShareInspectCid(e.target.value)}
+            onChange={(e) => {
+              setShareInspectCid(e.target.value);
+              setShareInspectView(undefined);
+            }}
           />
           <label htmlFor="ku-share-inspect-selector">
             Accepted selector CID (64 lowercase hex)
@@ -1143,7 +1152,10 @@ export function KuWorkflowPage({
             className="input"
             value={shareInspectSelector}
             maxLength={64}
-            onChange={(e) => setShareInspectSelector(e.target.value)}
+            onChange={(e) => {
+              setShareInspectSelector(e.target.value);
+              setShareInspectView(undefined);
+            }}
           />
           <button
             className="btn"
@@ -1153,6 +1165,7 @@ export function KuWorkflowPage({
             }
             onClick={() =>
               void run(async () => {
+                setShareInspectView(undefined);
                 const current = await refresh();
                 const result = await client.shareInspect(current, {
                   object_cid: shareInspectCid,

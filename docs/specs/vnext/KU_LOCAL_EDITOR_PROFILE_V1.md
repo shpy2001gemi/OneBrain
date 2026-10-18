@@ -116,14 +116,22 @@ accepted Public KUs are also readable through registered `POST /api/vnext/ku/ope
 from the currently inspected `LOCAL_ONLY` `accepted_known` artifact with a
 separate preview-then-confirm gesture (`confirm_public: true`), preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`
-(`ku_public_share_network_unavailable`), clear stale or invalidated in-memory
+(`ku_public_share_network_unavailable`), `explicit_public_confirmation_required`
+or `invalid_clock`, clear stale or invalidated in-memory
 preview state with re-prepare guidance when `share_confirm` returns
 `prepared_share_missing`, `public_ku_consent_expired`,
-`saved_access_changed` or `outbox_unavailable_reprepare_same_intent`, explain
-bounded D-045 refusals and storage/outbox errors (`unsupported_public_ku`,
+`saved_access_changed` or `outbox_unavailable_reprepare_same_intent`, clear
+stale `shareIntentView` and `shareInspectView` cards when lookup inputs change
+or a subsequent inspect call fails, explain bounded D-045 refusals,
+validation/system checks, and storage/outbox errors (`unsupported_public_ku`,
 `prepared_limit`, `saved_ku_not_accessible`, `outbox_unavailable`,
 `public_store_unavailable`, `provenance_unavailable`,
-`public_object_not_found`, `intent_not_found`), keep private `ObjectCID` and
+`public_object_not_found`, `intent_not_found`,
+`explicit_public_confirmation_required`, `invalid_saved_ku`,
+`invalid_public_ku`, `invalid_public_ku_intent`, `invalid_peer`,
+`invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
+`invalid_public_identity`, `invalid_intent_identity`,
+`consent_randomness_unavailable`, `invalid_clock`), keep private `ObjectCID` and
 source bytes out of the share preview/inspect UI, and distinguish durable outbox
 intent creation from peer delivery. In `ku_local_web`, `network` is omitted by
 default so normal launches start no network listener; when the operator

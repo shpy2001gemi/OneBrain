@@ -515,14 +515,22 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   strictly separate (`confirm_public: true`), omits private `ObjectCID` and
   source references from the prepared preview and receiver inspection panels,
   preserves the in-memory `prepared_id` preview if `share_confirm` fails closed
-  with `503 capability_disabled` (`ku_public_share_network_unavailable`), clears
+  with `503 capability_disabled` (`ku_public_share_network_unavailable`),
+  `explicit_public_confirmation_required` or `invalid_clock`, clears
   stale or invalidated in-memory preview state with re-prepare guidance if
   `share_confirm` returns `prepared_share_missing`,
   `public_ku_consent_expired`, `saved_access_changed` or
-  `outbox_unavailable_reprepare_same_intent`, explains bounded D-045 share
-  refusals and storage/outbox errors (`unsupported_public_ku`, `prepared_limit`,
+  `outbox_unavailable_reprepare_same_intent`, clears stale `shareIntentView`
+  and `shareInspectView` cards when lookup inputs change or a subsequent
+  inspect call fails, explains bounded D-045 share refusals, validation/system
+  checks, and storage/outbox errors (`unsupported_public_ku`, `prepared_limit`,
   `saved_ku_not_accessible`, `outbox_unavailable`, `public_store_unavailable`,
-  `provenance_unavailable`, `public_object_not_found`, `intent_not_found`), and
+  `provenance_unavailable`, `public_object_not_found`, `intent_not_found`,
+  `explicit_public_confirmation_required`, `invalid_saved_ku`,
+  `invalid_public_ku`, `invalid_public_ku_intent`, `invalid_peer`,
+  `invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
+  `invalid_public_identity`, `invalid_intent_identity`,
+  `consent_randomness_unavailable`, `invalid_clock`), and
   distinguishes durable outbound intent creation from peer delivery. No
   unregistered HTTP share routes are added and networking remains opt-in
   (`ku_local_web` does not start a network listener by default).
