@@ -6,6 +6,59 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — saved-artifact inspection D-045 state transitions and PUBLIC guidance/prefill in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `a27ffee`, based on main `f885f55`, is committed/pushed
+and directly verified under D-050. Previously when clicking `Inspect {item.object_cid}`
+in `Saved local knowledge` on `/ku` Web (`src/onebrain-web/src/pages/KuWorkflow.tsx`),
+the `shareConfirmed` (`Confirmed public share intent`) card from any previously
+shared artifact remained rendered, and when the inspected artifact had
+`disclosure_class === "PUBLIC"`, the D-045 section still displayed the generic
+`Inspect an accepted saved LOCAL_ONLY artifact above before preparing a new Public share preview.`
+message without explaining that the artifact is already an accepted `PUBLIC`
+object or prefilling `Accepted Public ObjectCID` (`shareInspectCid`) with
+`view.object_cid` (and clearing any stale `shareInspectView`).
+
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` clears `shareConfirmed` whenever a
+  saved artifact is inspected in `Saved local knowledge`, and when
+  `inspected.disclosure_class === "PUBLIC"`, displays explicit D-045 guidance
+  that the artifact is already an accepted `PUBLIC` object (so only saved
+  `LOCAL_ONLY` artifacts can prepare a new Public share preview) while
+  prefilling `shareInspectCid` with `inspected.object_cid` and clearing stale
+  `shareInspectView`.
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds `includePublicSummary`
+  fixture support and a focused test verifying that inspecting an already-`PUBLIC`
+  or `LOCAL_ONLY` artifact clears stale `Confirmed public share intent`, shows
+  the explicit `PUBLIC` guidance while keeping `Prepare public share preview`
+  disabled, prefills `Accepted Public ObjectCID` with `publicObject`, clears any
+  stale `Accepted Public KU inspection` card, and allows immediate inspection of
+  the prefilled `PUBLIC` artifact once a selector CID is present.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the saved-artifact inspection D-045 state transitions and `PUBLIC`
+  guidance/prefill.
+
+Windows focused checks on 18/10, approximately 16:53–56 Asia/Saigon:
+`npm run test:ku` 110/110 PASS (`tests/kuWorkflow.test.tsx` 35/35 PASS including
+`axe-core` accessibility and saved-artifact inspection D-045 state transitions),
+`npm run build` (`tsc -b && vite build`) PASS, `npm run lint` PASS (0 errors),
+`python scripts/ci/validate_vnext_contracts.py` PASS (529 local links), and
+`git diff --check` PASS. Reuse the prior Rust (`onebrain-desktop`,
+`onebrain-node`, `onebrain-api`) checks from `fbcda30` / `5dfc6bd` / `bef0d28`
+because no Rust runtime code changed. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+D-045 share input and confirmation state transitions in
+`src/onebrain-web/src/pages/KuWorkflow.tsx` and
+`src/onebrain-web/tests/kuWorkflow.test.tsx`: clear stale `shareConfirmed`
+(`Confirmed public share intent`) when `sharePeer`, `shareAddress`,
+`shareSelector`, or `shareNamespace` inputs are edited, and when `shareConfirm`
+succeeds, prefill `shareInspectCid` with `result.data.payload.public_object_cid`
+and `shareInspectSelector` with `sharePrepared.selector` (clearing stale
+`shareInspectView`) so same-host or loopback operators can inspect the newly
+accepted Public KU without retyping its 64-character hex CIDs.
+
 ## Latest follow-up — remaining D-045 validation/system share error feedback and stale inspect view cleanup in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `04f74cd`, based on main `0cb653a`, is committed/pushed
