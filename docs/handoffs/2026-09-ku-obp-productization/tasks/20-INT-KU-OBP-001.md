@@ -6,6 +6,62 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — remaining D-045 share error feedback and invalidated preview cleanup in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `1855e8f`, based on main `795c053`, is committed/pushed
+and directly verified under D-050. Previously when `POST /api/vnext/ku/editor`
+returned `unsupported_public_ku` (`400 InvalidRequest`), `prepared_limit` (`429
+ResourceExhausted`, where `reconcile_before_retry: true` caused `describeKuError`
+to fall into the Base `Reconcile operation` recovery message),
+`saved_access_changed` (`409 Conflict`), `public_object_not_found` (`404
+NotFound`), or `intent_not_found` (`404 NotFound`), `kuFeedback.ts` returned a
+generic error message without explaining the D-045 boundary or recovery step.
+
+- `src/onebrain-web/src/pages/kuFeedback.ts` extends
+  `isStaleSharePreparationError` to include `saved_access_changed` (so
+  `KuWorkflow.tsx` clears the invalidated `sharePrepared` card and confirmation
+  checkbox when `share_confirm` rejects modified/inaccessible saved private access)
+  and updates `describeKuError` to explain `unsupported_public_ku` (single
+  resolved predicate + single text literal, fail-closed on references/spans/extensions
+  and non-loopback/zero peer inputs), `prepared_limit` (16-item in-memory preview
+  cap, overriding the generic Base `Reconcile operation` recovery text),
+  `saved_access_changed` (re-verify saved `LOCAL_ONLY` artifact and re-prepare),
+  `public_object_not_found` (canonical `vnext_verified.redb` public store vs
+  private `ObjectCID` or pending delivery), and `intent_not_found` (deterministic
+  `intent_id` computed at `share_prepare` with `enqueued: false` requires
+  completing **Confirm public share** before durable outbox inspection).
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds coverage for
+  `unsupported_public_ku` and `prepared_limit` on `share_prepare` (including
+  subsequent successful preview creation and verifying no AI timeout / Base
+  reconcile misattribution) and for `intent_not_found` on `share_intent`,
+  `saved_access_changed` on `share_confirm` (including clearing the invalidated
+  preview card), and `public_object_not_found` on `share_inspect`.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the `saved_access_changed` preview cleanup and bounded D-045 error
+  explanations.
+
+Windows focused checks on 18/10, approximately 09:51–52 Asia/Saigon:
+`npm run test:ku` 97/97 PASS (`tests/kuWorkflow.test.tsx` 22/22 PASS including
+`axe-core` accessibility, `unsupported_public_ku`, `prepared_limit`,
+`saved_access_changed`, `intent_not_found`, and `public_object_not_found`),
+`npm run build` (`tsc -b && vite build`) PASS, `npm run lint` PASS (0 errors),
+`python scripts/ci/validate_vnext_contracts.py` PASS (529 local links), and
+`git diff --check` PASS. Reuse the prior Rust (`onebrain-desktop`,
+`onebrain-node`, `onebrain-api`) checks from `fbcda30` / `5dfc6bd` / `bef0d28`
+because no Rust runtime code changed. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+error feedback in `src/onebrain-web/src/pages/kuFeedback.ts` (and `KuWorkflow.tsx`
+if needed) for the remaining D-045 storage/outbox/input failure codes
+(`saved_ku_not_accessible` on `share_prepare`,
+`outbox_unavailable_reprepare_same_intent` on `share_confirm`, `outbox_unavailable`
+on `share_intent`, and `public_store_unavailable` / `provenance_unavailable` on
+`share_inspect`, where `DependencyUnavailable` currently sets
+`reconcile_before_retry: true` and falls into the AI/Base schema or
+`Reconcile operation` message).
+
 ## Latest follow-up — stale D-045 share preview feedback and cleanup in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `0f5d27d`, based on main `cef6e84`, is committed/pushed
@@ -992,11 +1048,21 @@ Broader provisioning/composition remains open.
   `npm run test:ku` 94/94 (`kuWorkflow.test.tsx` 19/19), `npm run build`,
   `npm run lint`, vNext validator and whitespace PASS.
 
-Preserve Registry trust and private source/key custody. Remaining D-045 error
-feedback (`unsupported_public_ku`, `prepared_limit`, `saved_access_changed`,
-`public_object_not_found`, `intent_not_found`), signed Registry distribution,
-richer roots and source/author/fidelity proof remain separate backlog entries;
-do not reopen completed MVP acceptance or resume ENC-003 qualification.
+- [x] Explain `unsupported_public_ku`, `prepared_limit`, `saved_access_changed`,
+  `public_object_not_found` and `intent_not_found` in `kuFeedback.ts` (and clear
+  invalidated `sharePrepared` preview state on `saved_access_changed` while
+  preventing `prepared_limit` `ResourceExhausted` from falling into Base
+  `Reconcile operation` recovery). Commit/push `1855e8f` under D-050;
+  `npm run test:ku` 97/97 (`kuWorkflow.test.tsx` 22/22), `npm run build`,
+  `npm run lint`, vNext validator and whitespace PASS.
+
+Preserve Registry trust and private source/key custody. Remaining D-045
+storage/outbox error feedback (`saved_ku_not_accessible`,
+`outbox_unavailable_reprepare_same_intent`, `outbox_unavailable`,
+`public_store_unavailable`, `provenance_unavailable`), signed Registry
+distribution, richer roots and source/author/fidelity proof remain separate
+backlog entries; do not reopen completed MVP acceptance or resume ENC-003
+qualification.
 
 Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
 -p onebrain-api --example ku_local_web` 1/1 PASS; `cargo build --locked --manifest-path
