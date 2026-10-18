@@ -89,6 +89,31 @@ must be apparent to the tester. Do not call manual corrections automatic encodin
 Public contracts still govern changed behavior. Read the relevant contract when
 changing that interface, not every research/evidence document for every substep.
 
+## Architecture remediation backlog (D-051)
+
+Source: [architecture review 2026-10-18](outputs/ARCHITECTURE_REVIEW_2026-10-18.md)
+and owner direction [D-051](DECISIONS.md#d-051--architecture-review-priorities-shared-mobile-runtime-and-kql-direction).
+Work top-down. **ARCH-01 and ARCH-02 precede further task 20 D-045 Web follow-ups**;
+the paused Web step in PROGRESS resumes after them. Each item is one bounded change
+with a focused regression; use existing parent tasks/ledger, not a new plan per item.
+
+| ID | Pri. | Item | Evidence / scope | Done when |
+|---|---|---|---|---|
+| ARCH-01 | P0 — next | Relay outer-auth lifecycle: remove `pending` challenge on every failure/drop path, prune `pending`/`consumed` by expiry, GC durable `ConsumedNonce` | `src/onebrain-relay/src/reservation_store.rs` L87-L162 (64 abandoned handshakes or 4,096 auths lock the shared authenticator from `production_service.rs` L130) | Tests: 65 abandoned handshakes then a valid client authenticates; >4,096 sequential auths keep working; replay of a consumed nonce inside its window still rejected |
+| ARCH-02 | P0 | Fence the legacy TCP/JSON listener: no bind unless explicit legacy-compat opt-in, loopback by default, connection cap, smaller pre-auth allocation, gate `VerifyRequest`/`KuPush`; label `/api/peers/connect` legacy | `src/onebrain-node/src/node.rs` L454-L510 binds `0.0.0.0` on every `start_network()`; listener loop/`KuPush`/`VerifyRequest` near L3839-L3978 | Default CLI/Desktop/vNext start opens no unauthenticated port; legacy path still works when opted in; task 20 two-node happy path rechecked |
+| ARCH-03 | P1 | KU journal capacity: compaction/GC after commit and cancel; journal-full becomes non-retryable `storage_full`, not `429 rate_limited` | `ku_product.rs` L39-L41, L1064-L1095; `ku_api.rs` L179-L183 | Capacity test past 1,024 operations; saved data preserved across restart |
+| ARCH-04 | P1 | Freeze legacy textual KQL honestly: reject CREATE/UPDATE/DEPRECATE/WATCH (never persisted), AND/OR precedence + parentheses, depth/work bounds, EXPLAIN reports `local_scan`, fix CLI help and Web autocomplete | `node.rs` L1753-L1778; `ku-kql/src/parser.rs` L851-L878, L705-L716; `executor.rs` L885-L920; `cli/help.rs`; `KqlEditor.tsx` | Parser precedence/fuzz tests; documented examples parse and run |
+| ARCH-05 | P1 | Spec status honesty: add default-build / feature-gated / library-only / spec-only column to `docs/specs/vnext/README.md`; refresh drifted PILLAR_REVIEW, STUB_TRACKING, KQL_SPEC, Cargo.toml comments | Review §6 | vNext validator passes; no “Complete” row implies user reachability without saying so |
+| ARCH-06 | P2 | One user-facing KU model: route chat mediator encode and legacy Encode/Explorer pages to `/api/vnext/ku` or label them legacy; move Core DNA/AiEncoder/`obt_*`/DHT-SWIM/`seed_client` behind a `legacy` feature | `ku-mediator/src/mediator.rs`; `ku-core/src/lib.rs`; `ku-encoder/src/lib.rs`; `ku-net/src/lib.rs` | Default build/UI creates only vNext KUs or visibly labels legacy |
+| ARCH-07 | P2 | Lower simple AI review drafts (concept–predicate–concept, quantity) to canonical drafts through `compiler.rs` with CCID resolution | Links KU-SEM-001; `semantic_selection_v2.rs`, `compiler.rs` | One VI and one EN example saved as canonical KU after explicit review; unresolved stays unsaveable |
+| ARCH-08 | P2 | KU structured search on `vnext_semantic_index` (D-051 KQL choice): add a KU source, persist/rebuild with the store, query by concept/predicate/unit/dimension plus folded labels | Replaces `text.contains` at `ku_product.rs` L1846-L1850 | Concept-only KU findable; index rebuild deterministic after restart |
+| ARCH-09 | P2 | Split `onebrain-node` into desktop-agnostic core (KU/Base/archive/OBP services), host (HTTP/Ollama/listeners), legacy and harness (m5/m6/scale/canary); split `ku_product.rs` and move KU dispatch out of `base_runtime.rs`; enforce API/CLI depend only on the node façade | Review §2, §6.3 | `cargo tree` layering check in CI; prerequisite for ARCH-10 |
+| ARCH-10 | P3 | Mobile shared runtime (D-051): `onebrain-mobile-core` consumes the ARCH-09 node core instead of its own draft/archive implementations | Mobile lane only; requires mobile AGENTS/build-contract process and MOB/spec updates first | Mobile validator green; no mobile-only fork of canonical behavior |
+| ARCH-11 | P3 | KQL surface reduction: unconsumed vNext modules and `graph_storage` behind `experimental` feature; label `/api/vnext/kql/needs` hash-derived until a bounded FIND→NeedIR compiler exists; move `storage`/`blob_storage` out of `ku-kql` with ARCH-09 | `vnext_api.rs` L1089-L1158; review §5 | Default build excludes experimental modules; their tests still run under the feature |
+| ARCH-12 | P3 | Storage recovery units: document or consolidate the ~30 redb stores; stop committing `src/onebrain_data/*.redb` | Review §2, §6.4 | Written recovery-unit map; sample DBs removed from Git |
+| ARCH-13 | P3 | Governance trim: split `validate_vnext_contracts.py` per profile; replace source-snippet needle checks with Rust tests | Review §6.5 | Validator still green; refactors no longer blocked by string matches |
+| ARCH-14 | P3 | OBP field hardening: consumer-NAT smoke (two home/hotspot networks + VPS relay), DPAPI/keystore signer via `SessionIdentitySigner`, IPv6 /64 admission buckets, bound authenticated relay connections | Review §4.3 | Results recorded with scope; no qualification claim beyond evidence |
+
 ## After-MVP and contributor backlog
 
 This is the central queue. Detailed existing specs/defect records stay at their

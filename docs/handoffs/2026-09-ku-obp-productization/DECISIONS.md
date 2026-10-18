@@ -1,5 +1,39 @@
 # Decisions and claim boundary
 
+## D-051 — Architecture review priorities, shared mobile runtime and KQL direction
+
+On 2026-10-18 the owner reviewed the
+[architecture review](outputs/ARCHITECTURE_REVIEW_2026-10-18.md) and answered its
+three open questions: “ưu tiên 1 và 2”, mobile “dùng chung”, and for KQL “bạn hãy
+lựa chọn tốt nhất”, asking that the result be recorded in the MASTER_PLAN backlog.
+
+1. **Priority.** ARCH-01 (relay outer-auth challenge/nonce lifecycle) and ARCH-02
+   (fence the unauthenticated legacy TCP/JSON listener) come before further task 20
+   D-045 Web follow-ups. The paused Web step stays recorded and resumes afterwards.
+2. **Shared runtime for mobile.** Mobile reuses the same Rust service
+   implementations as CLI/Web/Desktop (KU product service, Base runtime, archive,
+   OBP runtime modules) through a desktop-agnostic node core instead of
+   reimplementing them in `onebrain-mobile-core`. The node core must not pull in the
+   desktop HTTP/WS server, Tauri state, desktop paths/budgets, the Ollama provider or
+   a permanently listening listener, consistent with the mobile architecture reuse
+   boundary (no mobile-only fork of canonical behavior). This requires splitting
+   `onebrain-node` first (ARCH-09). Mobile implementation is not authorized by this
+   entry; it still follows `src/onebrain-mobile/AGENTS.md`, the mobile build contract
+   validator and MOB work-package/spec updates.
+3. **KQL direction (delegated; agent choice).** The legacy textual KQL is frozen as
+   a local, read-only, honestly labelled query surface: it is corrected but not
+   extended. The single vNext investment path is to give `vnext_semantic_index`
+   (with the existing exact matcher) a real consumer as the persistent structured
+   index behind KU product search. The other unconsumed vNext KQL modules and
+   `graph_storage` move behind an `experimental` cargo feature (kept, not deleted),
+   and their spec status becomes “library-only, not wired”. `/api/vnext/kql/needs`
+   is labelled hash-derived until a bounded FIND→NeedIR compiler exists.
+   Distributed/multipath KQL stays with M6.
+
+This changes ordering and direction only. No qualification, networking default,
+consent, private/save/share or mobile build claim changes. Items are recorded as
+ARCH-01..14 in [MASTER_PLAN](MASTER_PLAN.md#architecture-remediation-backlog-d-051).
+
 ## D-050 — Publish Registry diagnostics; standing merge/push authorization
 
 On 2026-10-04 the owner authorized merge/push of the reviewed Registry package
