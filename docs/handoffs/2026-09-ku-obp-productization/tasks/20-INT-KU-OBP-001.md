@@ -6,6 +6,66 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — D-045 storage/outbox/input share error feedback and consumed preview cleanup in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `c31b3a2`, based on main `83be284`, is committed/pushed
+and directly verified under D-050. Previously when `POST /api/vnext/ku/editor`
+returned `saved_ku_not_accessible` (`404 NotFound`) on `share_prepare`,
+`outbox_unavailable_reprepare_same_intent` (`503 DependencyUnavailable`) on
+`share_confirm`, `outbox_unavailable` (`503 DependencyUnavailable`) on
+`share_intent`, or `public_store_unavailable` / `provenance_unavailable` (`503
+DependencyUnavailable`) on `share_inspect`, `describeKuError` in
+`src/onebrain-web/src/pages/kuFeedback.ts` fell back to a generic error message
+(with `DependencyUnavailable` setting `reconcile_before_retry: true` and
+falling into the Base `Reconcile operation` recovery text), and
+`outbox_unavailable_reprepare_same_intent` left the already-consumed
+`sharePrepared` preview card rendered in `KuWorkflow.tsx`.
+
+- `src/onebrain-web/src/pages/kuFeedback.ts` extends
+  `isStaleSharePreparationError` to include
+  `outbox_unavailable_reprepare_same_intent` (so `KuWorkflow.tsx` clears the
+  consumed `sharePrepared` preview card and confirmation checkbox while keeping
+  the deterministic `intent_id` in the outbound intent input) and updates
+  `describeKuError` to explain `saved_ku_not_accessible`,
+  `outbox_unavailable_reprepare_same_intent`, `outbox_unavailable`,
+  `public_store_unavailable`, and `provenance_unavailable`, prioritizing the
+  D-045 `DependencyUnavailable` recovery guidance ahead of
+  `failure?.reconcile_before_retry`.
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` extends `share_prepare` error
+  coverage with `saved_ku_not_accessible` and adds coverage for
+  `outbox_unavailable_reprepare_same_intent` on `share_confirm` (including
+  consumed-preview cleanup, deterministic `intent_id` retention, and subsequent
+  re-preparation/confirmation), `outbox_unavailable` on `share_intent`, and
+  `public_store_unavailable` / `provenance_unavailable` on `share_inspect`
+  without Base `Reconcile operation` misattribution.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the `outbox_unavailable_reprepare_same_intent` preview cleanup and
+  bounded D-045 storage/outbox/input error explanations.
+
+Windows focused checks on 18/10, approximately 11:17–18 Asia/Saigon:
+`npm run test:ku` 99/99 PASS (`tests/kuWorkflow.test.tsx` 24/24 PASS including
+`axe-core` accessibility, `saved_ku_not_accessible`,
+`outbox_unavailable_reprepare_same_intent`, `outbox_unavailable`,
+`public_store_unavailable`, and `provenance_unavailable`), `npm run build`
+(`tsc -b && vite build`) PASS, `npm run lint` PASS (0 errors),
+`python scripts/ci/validate_vnext_contracts.py` PASS (529 local links), and
+`git diff --check` PASS. Reuse the prior Rust (`onebrain-desktop`,
+`onebrain-node`, `onebrain-api`) checks from `fbcda30` / `5dfc6bd` / `bef0d28`
+because no Rust runtime code changed. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+error feedback in `src/onebrain-web/src/pages/kuFeedback.ts` and stale view
+cleanup in `src/onebrain-web/src/pages/KuWorkflow.tsx` for the remaining D-045
+validation/system error codes (`explicit_public_confirmation_required`,
+`invalid_saved_ku`, `invalid_public_ku`, `invalid_public_ku_intent`,
+`invalid_peer`, `invalid_peer_address`, `invalid_selector`,
+`invalid_namespace`, `invalid_public_identity`, `invalid_intent_identity`,
+`consent_randomness_unavailable`, `invalid_clock`) and clearing stale
+`shareIntentView` / `shareInspectView` cards when inputs change or a subsequent
+inspect call fails.
+
 ## Latest follow-up — remaining D-045 share error feedback and invalidated preview cleanup in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `1855e8f`, based on main `795c053`, is committed/pushed
