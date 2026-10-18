@@ -6,6 +6,41 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — D-045 `sharePrepare` pre-call cleanup and Base `pending` isolation in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `d1a762c`, based on main `ca39ead`, is committed/pushed
+and directly verified under D-050. Previously a failed re-prepare in
+`1. Prepare a Public KU share preview` left the older `Prepared public share
+preview` or `Confirmed public share intent` card visible, and a retryable D-045
+share error (for example `429 prepared_limit` or `503
+consent_randomness_unavailable`, both `reconcile_before_retry: true`) marked an
+unrelated pending Base private draft `uncertain` and rendered the Base `Check
+recorded outcome` button.
+
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` clears `sharePrepared`,
+  `shareConfirmPublic` and `shareConfirmed` before `refresh()` and
+  `client.sharePrepare` run. `record()` does not set Base `uncertain` for share
+  errors, and the error panel hides `Last observed step` and `Check recorded
+  outcome` for them.
+- `src/onebrain-web/src/pages/kuFeedback.ts` returns `isShareError` from
+  `describeKuError`; a share error without a specific recovery text gets
+  share-scoped guidance instead of the Base `Reconcile operation` sentence.
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds a re-prepare cleanup test and
+  two Base-pending isolation tests (`prepared_limit`, `consent_randomness_unavailable`);
+  all three fail when the old page/feedback code is restored temporarily.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document both behaviors.
+
+Windows focused checks on 18/10, approximately 23:40–23:50 Asia/Saigon:
+`npm run test:ku` 114/114 PASS (`tests/kuWorkflow.test.tsx` 39/39), `npm run build`
+PASS, `npm run lint` PASS (0 errors, 8 warnings), `python
+scripts/ci/validate_vnext_contracts.py` PASS (529 local links), and `git diff
+--check` PASS. No Rust code changed. Task23, 15 untracked files, exact 108
+PROGRESS preparation additions and the local SSH lookup note remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next work follows the D-051
+backlog (ARCH-03 KU journal capacity), not another Web follow-up by default.
+
 ## Latest follow-up — D-045 share input edit cleanup and `share_confirm` inspection prefill in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `2a4da76`, based on main `19799b2`, is committed/pushed
