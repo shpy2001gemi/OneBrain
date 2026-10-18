@@ -6,6 +6,45 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — contributor entry refresh for D-045 share paths (2026-10-18)
+
+Contributor-entry refresh `ef9b459`, based on main `b3d5fd7`, is committed/pushed
+and directly verified under D-050. Previously `CONTRIBUTING.md` and
+`### Run the local-to-peer manual concept (D-045)` below stated that the normal
+Web/API did not expose KU share operations and only described the isolated
+`ku_peer_demo` helper path.
+
+- [CONTRIBUTING.md](../../../../CONTRIBUTING.md) updates the `ku_local_web`
+  build command (`--features vnext-network-runtime`) and explains both ways to
+  run D-045: (1) directly through `/ku` Web and `ku_local_web` with an opt-in
+  loopback `"network"` config block (`POST /api/vnext/ku/editor`
+  `share_prepare`, `share_confirm`, `share_intent`, `share_inspect`) or a
+  `OneBrainNode` / `onebrain-desktop` host with opt-in `VNextProductRuntime`
+  enabled, or (2) through the isolated `ku_peer_demo` helper processes alongside
+  the local custody host.
+- [Run the local-to-peer manual concept (D-045)](#run-the-local-to-peer-manual-concept-d-045)
+  documents the direct normal-host / `/ku` Web four-step journey alongside the
+  three-process `ku_peer_demo` walkthrough while keeping networking opt-in
+  (default off), `onebrain ku` CLI scoped to the eleven Base KU operations
+  (`POST /api/vnext/ku/operations`), and private `ObjectCID`/source material
+  local.
+
+Windows focused checks on 18/10, approximately 07:53–55 Asia/Saigon:
+`python scripts/ci/validate_vnext_contracts.py` PASS (including 529 local links),
+local Markdown file-link check on `CONTRIBUTING.md` and `20-INT-KU-OBP-001.md`
+PASS, and `git diff --check` PASS. Reuse the prior Rust (`onebrain-desktop`,
+`onebrain-node`, `onebrain-api`) and Web (`npm run test:ku`) checks from
+`fbcda30` / `5dfc6bd` / `25b89c5` because no code or runtime changed.
+Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+error feedback and stale-preview cleanup when `share_confirm` returns
+`prepared_share_missing` (`404 NotFound`) or `public_ku_consent_expired`
+(`src/onebrain-web/src/pages/kuFeedback.ts`,
+`src/onebrain-web/src/pages/KuWorkflow.tsx`,
+`src/onebrain-web/src/pages/kuWorkflow.test.tsx`).
+
 ## Latest follow-up — `VNextProductRuntime` `CanonicalPublicReader` binding and network lane fence (2026-10-18)
 
 Implementation/guide `fbcda30`, based on main `f011134`, is committed/pushed and
@@ -891,9 +930,16 @@ Broader provisioning/composition remains open.
   `vnext-network-runtime` + 11/11 `vnext-outbound-first`, `ku_product` 19/19,
   `ku_host::tests` 3/3, scoped rustfmt and Base/vNext validators PASS.
 
-Preserve Registry trust and private source/key custody. Refreshing the contributor
-entry instructions (`CONTRIBUTING.md` and `### Run the local-to-peer manual concept
-(D-045)`) plus richer roots and source/author/fidelity proof remain separate
+- [x] Refresh `CONTRIBUTING.md` and `### Run the local-to-peer manual concept
+  (D-045)` above so newcomers see both D-045 paths: direct `/ku` Web +
+  `ku_local_web` (`--features vnext-network-runtime`, opt-in loopback `"network"`)
+  or `OneBrainNode`/`onebrain-desktop` (`VNextProductRuntime`), and the isolated
+  `ku_peer_demo` helper. Commit/push `ef9b459` under D-050; vNext validator,
+  local links and whitespace PASS.
+
+Preserve Registry trust and private source/key custody. Expired-preparation UX
+(`prepared_share_missing` / `public_ku_consent_expired`), signed Registry
+distribution, richer roots and source/author/fidelity proof remain separate
 backlog entries; do not reopen completed MVP acceptance or resume ENC-003 qualification.
 
 Validation on Windows, 2026-10-02: `cargo test --locked --manifest-path src/Cargo.toml
