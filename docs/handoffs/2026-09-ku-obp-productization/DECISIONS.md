@@ -1,5 +1,40 @@
 # Decisions and claim boundary
 
+## D-052 — Mixed-version legacy/vNext concurrency applies to legacy-compat opt-in nodes
+
+On 2026-10-18 the owner delegated the open ARCH-02 question: “bạn hãy quyết định
+thay tôi”. The frozen
+[MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1](../../specs/vnext/MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md)
+§1 says the legacy TCP/JSON listener and the vNext QUIC listener MUST run
+concurrently and that vNext failure/rollback MUST NOT disable legacy TCP, local KQL
+or offline knowledge access. The agent decision is:
+
+1. **Scope.** §1 governs a node operating in mixed-version mode, i.e. one whose
+   operator explicitly enabled legacy compatibility (`legacy_tcp_listener` =
+   `loopback`/`all_interfaces`, CLI `--legacy-seed-compat --legacy-tcp-listener`).
+   A node without that opt-in has no N-1 peer to stay compatible with, so it keeps
+   the unauthenticated legacy listener closed (ARCH-02 default `disabled`, D-051).
+   Reason: an always-on unauthenticated listener contradicts the D-051 security
+   priority, while the profile's purpose is safe coexistence/rollback for nodes
+   that actually serve legacy peers.
+2. **Invariants kept for opted-in nodes.** Both listeners run concurrently on real
+   sockets; vNext failure, kill or `rollback_vnext_runtime` never changes the
+   legacy setting or closes the legacy listener; the N-1 wire corpus stays
+   byte-exact; legacy records gain no vNext authority. Existing evidence:
+   `legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback` (legacy
+   exchange still works after vNext rollback) and
+   `frozen_n_minus_one_tcp_json_corpus_is_byte_exact`.
+3. **Invariants kept for every node.** Local KQL and offline knowledge access never
+   depend on any network listener or vNext lane state.
+4. **Not changed.** The frozen file and its hash stay unchanged; this entry is the
+   interpretation record. A future revision belongs in a new profile version.
+   Making the legacy listener default-on again, or letting vNext state toggle it,
+   requires a new owner decision. Deployments/harnesses that still need N-1 peers
+   must set the opt-in explicitly; no live host was rechecked for this entry.
+
+This resolves the open owner question recorded with ARCH-02. No code, wire format,
+qualification, consent or mobile change.
+
 ## D-051 — Architecture review priorities, shared mobile runtime and KQL direction
 
 On 2026-10-18 the owner reviewed the

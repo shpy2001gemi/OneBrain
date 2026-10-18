@@ -6,17 +6,17 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 18/10/2026 23:55 (Asia/Saigon). Task 20 follow-up D-045 Web — dọn thẻ share trước `share_prepare` và cô lập lỗi share khỏi Base `pending`, committed/published theo D-050. Tiếp theo: ARCH-03 (D-051).**
+**Cập nhật: 18/10/2026 23:55 (Asia/Saigon). Task 20 follow-up D-045 Web — dọn thẻ share trước `share_prepare` và cô lập lỗi share khỏi Base `pending`, committed/published theo D-050. Owner ủy quyền, agent quyết định [D-052](DECISIONS.md#d-052--mixed-version-legacyvnext-concurrency-applies-to-legacy-compat-opt-in-nodes) (phạm vi spec mixed-version cho ARCH-02). Tiếp theo: ARCH-03 (D-051).**
 
 - **Mục tiêu hiện tại:** ARCH-03 — journal KU không còn trần cứng 1.024 operation vĩnh viễn: compaction/GC operation đã `committed`/`canceled`/`failed` sau khi kết thúc, và journal đầy trả lỗi không retry kiểu `storage_full` thay vì `429 rate_limited`. MVP giữ 22 Merged / 2 Deferred.
 - **Vừa xong:** `d1a762c` (Web): handler `Prepare public share preview` trong `KuWorkflow.tsx` xóa `sharePrepared`/`shareConfirmPublic`/`shareConfirmed` trước `refresh()` + `client.sharePrepare`; `describeKuError` trả `isShareError`, recovery của lỗi share không còn câu Base reconcile; `record()` không bật `uncertain` cho lỗi share, panel lỗi ẩn `Last observed step` và `Check recorded outcome` khi `isShareError`. 3 test mới (fail trên code cũ, pass sau sửa). Spec `KU_LOCAL_EDITOR_PROFILE_V1` và `KU_WEB_001_IMPLEMENTATION` cập nhật.
-- **Còn lại / blocker:** ARCH-03 rồi ARCH-04..14 theo MASTER_PLAN; follow-up Web D-045 khác chỉ khi phát hiện lỗi thật. Owner vẫn cần xác nhận cách đọc spec frozen `MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1` §1 cho ARCH-02 (chỉ áp dụng node đã opt-in). Registry package/public key vẫn do operator cung cấp.
+- **Còn lại / blocker:** ARCH-03 rồi ARCH-04..14 theo MASTER_PLAN; follow-up Web D-045 khác chỉ khi phát hiện lỗi thật. Câu hỏi spec frozen `MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1` §1 đã đóng bằng [D-052](DECISIONS.md#d-052--mixed-version-legacyvnext-concurrency-applies-to-legacy-compat-opt-in-nodes): yêu cầu chạy đồng thời legacy TCP + vNext QUIC áp dụng cho node đã opt-in legacy-compat; node mặc định giữ listener legacy đóng; không sửa file frozen. Registry package/public key vẫn do operator cung cấp.
 - **Bước tiếp theo:** đọc `src/onebrain-node/src/ku_product.rs` quanh `MAX_OPERATIONS`/`MAX_JOURNAL_BYTES` (L39–L41) và các kiểm tra `count >= MAX_OPERATIONS` (khoảng L962, L1050, L1079, L2119) để xác định operation nào đã kết thúc có thể compaction mà vẫn giữ idempotency/reconcile và dữ liệu đã lưu; viết regression trước (tạo >1.024 operation commit/cancel rồi tạo tiếp, restart giữ saved data); sau đó map journal-full sang lỗi không retry (`ku_api.rs` L179–L183 hiện map `ResourceExhausted` → `rate_limited`) và chạy test `onebrain-node`/`onebrain-api` KU liên quan.
 - **Đọc tiếp:** [MASTER_PLAN — ARCH-03](MASTER_PLAN.md#architecture-remediation-backlog-d-051), [ARCHITECTURE_REVIEW](outputs/ARCHITECTURE_REVIEW_2026-10-18.md) phần journal KU, `src/onebrain-node/src/ku_product.rs`, `src/onebrain-api/src/ku_api.rs`; kết quả task 20 mới nhất: [task20](tasks/20-INT-KU-OBP-001.md#latest-follow-up--d-045-shareprepare-pre-call-cleanup-and-base-pending-isolation-in-ku-web-2026-10-18).
 - **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, main; base `ca39ead` (fresh fetch đầu lượt = origin/main); implementation `d1a762c`; docs closure là HEAD cuối (`git log -1`), push và kiểm tra trực tiếp `git ls-remote` cùng lượt. PROGRESS exact 108 prep additions + ghi chú tra cứu SSH (local) + task23 dirty, 15 untracked giữ ngoài commit. Detached `798eabf` giữ nguyên.
 - **Cần giữ:** 16 retained hashes và exact prep; backup tại `%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Qualification `4a8f29d` giữ 3 unmerged commits; Registry `6bc146c`, secrets `f3780c7`, source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`, detached `798eabf` và mọi fixture/demo/backup cũ giữ nguyên.
 - **Kiểm tra:** 18/10 khoảng 23:40–23:50 (Windows, base `ca39ead`): `npm run test:ku` 114/114 (`kuWorkflow.test.tsx` 39/39, gồm 3 test mới; 3 test này fail khi tạm khôi phục code cũ); `npm run build` PASS; `npm run lint` 0 errors (8 warnings); `python scripts/ci/validate_vnext_contracts.py` PASS (529 local links); `git diff --check` PASS. Không đổi Rust nên không chạy lại cargo; không chạy live host.
-- **Quyết định/giới hạn:** D-051 (thứ tự ARCH backlog), D-050 standing merge/push, D-044/D-045 giữ nguyên. Không đổi API/wire, consent, qualification hay mobile; chưa claim gì về ARCH-03.
+- **Quyết định/giới hạn:** D-052 (phạm vi mixed-version cho ARCH-02), D-051 (thứ tự ARCH backlog), D-050 standing merge/push, D-044/D-045 giữ nguyên. Không đổi API/wire, consent, qualification hay mobile; chưa claim gì về ARCH-03.
 <!-- CURRENT_CHECKPOINT_END -->
 
 Quy trình cập nhật và prompt cố định: [NEXT_CONVERSATION](NEXT_CONVERSATION.md).
@@ -75,6 +75,14 @@ was stale: `semantic_selection_v2.rs` entered through `437dba0`, included by mai
 `3216f1d` baseline merge. Remaining fidelity and activation work is still deferred.
 
 ## Historical checkpoints — not current execution instructions
+
+### 2026-10-18 — D-052 records the mixed-version profile scope for ARCH-02
+
+Owner delegated the decision; [D-052](DECISIONS.md#d-052--mixed-version-legacyvnext-concurrency-applies-to-legacy-compat-opt-in-nodes) scopes frozen
+`MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1` §1 to legacy-compat opt-in nodes, keeps
+concurrency/rollback/N-1 invariants for them and local KQL/offline access for all.
+Docs only (DECISIONS, MASTER_PLAN ARCH-02 row, checkpoint); frozen file unchanged.
+N-1 corpus test rerun; vNext validator and whitespace PASS.
 
 ### 2026-10-18 — D-045 `share_prepare` pre-call cleanup and Base `pending` isolation in `/ku` Web published
 
