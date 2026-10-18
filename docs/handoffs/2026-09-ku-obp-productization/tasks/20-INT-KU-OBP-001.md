@@ -6,6 +6,77 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
+## Latest follow-up — remaining D-045 validation/system share error feedback and stale inspect view cleanup in `/ku` Web (2026-10-18)
+
+Implementation/spec/guide `04f74cd`, based on main `0cb653a`, is committed/pushed
+and directly verified under D-050. Previously when `POST /api/vnext/ku/editor`
+returned the remaining D-045 validation/system error codes
+(`explicit_public_confirmation_required`, `invalid_saved_ku`,
+`invalid_public_ku`, `invalid_public_ku_intent`, `invalid_peer`,
+`invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
+`invalid_public_identity`, `invalid_intent_identity`,
+`consent_randomness_unavailable`, or `invalid_clock`), `describeKuError` in
+`src/onebrain-web/src/pages/kuFeedback.ts` fell back to generic
+`InvalidRequest`/`FailedPrecondition`/`DependencyUnavailable`/`InternalError`
+messages (with `consent_randomness_unavailable` and `invalid_clock` mapped to
+`503 DependencyUnavailable` and `reconcile_before_retry: true`, falling into the
+Base `Reconcile operation` recovery message), and `KuWorkflow.tsx` left stale
+`shareIntentView` (`Outbound public share intent`) and `shareInspectView`
+(`Verified public KU view`) cards rendered when lookup inputs changed or a
+subsequent `share_intent` / `share_inspect` call failed.
+
+- `src/onebrain-web/src/pages/kuFeedback.ts` defines `SHARE_ERROR_FEEDBACK`
+  covering all 25 D-045 share error codes, adding explicit user-facing messages
+  and recovery guidance for `explicit_public_confirmation_required`,
+  `invalid_saved_ku`, `invalid_public_ku`, `invalid_public_ku_intent`,
+  `invalid_peer`, `invalid_peer_address`, `invalid_selector`,
+  `invalid_namespace`, `invalid_public_identity`, `invalid_intent_identity`,
+  `consent_randomness_unavailable`, and `invalid_clock`, prioritizing
+  `shareFeedback?.recovery` ahead of `failure?.reconcile_before_retry` while
+  keeping `isStaleSharePreparationError` false for
+  `explicit_public_confirmation_required` and `invalid_clock` on `share_confirm`
+  so unexpired `sharePrepared` previews remain intact.
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` clears `shareIntentView` when the
+  `shareIntentId` input changes, when `sharePrepare` or `shareConfirm` updates
+  `shareIntentId`, or right before `client.shareIntent` executes (so failed
+  lookups do not leave the previous intent card visible), and clears
+  `shareInspectView` when `shareInspectCid` or `shareInspectSelector` changes or
+  right before `client.shareInspect` executes.
+- `src/onebrain-web/tests/kuWorkflow.test.tsx` adds 10 focused test cases
+  covering all 12 validation/system error codes across `share_prepare`,
+  `share_confirm`, `share_intent`, and `share_inspect` (including preserving
+  `sharePrepared` on `explicit_public_confirmation_required` and `invalid_clock`
+  and verifying no Base `Reconcile operation` misattribution) plus clearing
+  stale `shareIntentView` and `shareInspectView` cards on input edits or failed
+  subsequent lookups.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the validation/system D-045 error explanations and stale
+  `shareIntentView` / `shareInspectView` cleanup.
+
+Windows focused checks on 18/10, approximately 15:14–15 Asia/Saigon:
+`npm run test:ku` 109/109 PASS (`tests/kuWorkflow.test.tsx` 34/34 PASS including
+`axe-core` accessibility, all 12 validation/system D-045 error codes, and stale
+`shareIntentView` / `shareInspectView` cleanup), `npm run build`
+(`tsc -b && vite build`) PASS, `npm run lint` PASS (0 errors),
+`python scripts/ci/validate_vnext_contracts.py` PASS (529 local links), and
+`git diff --check` PASS. Reuse the prior Rust (`onebrain-desktop`,
+`onebrain-node`, `onebrain-api`) checks from `fbcda30` / `5dfc6bd` / `bef0d28`
+because no Rust runtime code changed. Backup/hash metadata is under
+`%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Task23, 15 untracked
+files and exact 108 PROGRESS preparation additions remain outside commits.
+Parent task stays Merged, 22 Merged / 2 Deferred. Next inspect bounded `/ku` Web
+saved-artifact inspection state transitions in
+`src/onebrain-web/src/pages/KuWorkflow.tsx` and
+`src/onebrain-web/tests/kuWorkflow.test.tsx` when clicking `Inspect {item.object_cid}`
+in `Saved local knowledge`: clear stale `shareConfirmed` (`Confirmed public share intent`)
+from any previously shared artifact, and when the inspected artifact is already
+`PUBLIC` (`view.disclosure_class === "PUBLIC"`), surface explicit guidance in
+the D-045 section that it is already an accepted `PUBLIC` object and prefill
+`shareInspectCid` (`Accepted Public ObjectCID`) with `view.object_cid` (clearing
+stale `shareInspectView`) so the operator only needs the selector CID to inspect
+its semantic statements and transport provenance.
+
 ## Latest follow-up — D-045 storage/outbox/input share error feedback and consumed preview cleanup in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `c31b3a2`, based on main `83be284`, is committed/pushed
@@ -1116,10 +1187,29 @@ Broader provisioning/composition remains open.
   `npm run test:ku` 97/97 (`kuWorkflow.test.tsx` 22/22), `npm run build`,
   `npm run lint`, vNext validator and whitespace PASS.
 
-Preserve Registry trust and private source/key custody. Remaining D-045
-storage/outbox error feedback (`saved_ku_not_accessible`,
-`outbox_unavailable_reprepare_same_intent`, `outbox_unavailable`,
-`public_store_unavailable`, `provenance_unavailable`), signed Registry
+- [x] Explain `saved_ku_not_accessible`,
+  `outbox_unavailable_reprepare_same_intent`, `outbox_unavailable`,
+  `public_store_unavailable` and `provenance_unavailable` in `kuFeedback.ts`
+  (prioritizing the four `DependencyUnavailable` codes ahead of
+  `failure?.reconcile_before_retry`) and clear consumed `sharePrepared` preview
+  state on `outbox_unavailable_reprepare_same_intent`. Commit/push `c31b3a2`
+  under D-050; `npm run test:ku` 99/99 (`kuWorkflow.test.tsx` 24/24),
+  `npm run build`, `npm run lint`, vNext validator and whitespace PASS.
+
+- [x] Explain the remaining 12 validation/system D-045 share error codes
+  (`explicit_public_confirmation_required`, `invalid_saved_ku`,
+  `invalid_public_ku`, `invalid_public_ku_intent`, `invalid_peer`,
+  `invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
+  `invalid_public_identity`, `invalid_intent_identity`,
+  `consent_randomness_unavailable`, `invalid_clock`) in `kuFeedback.ts` and
+  clear stale `shareIntentView` / `shareInspectView` cards in `KuWorkflow.tsx`
+  when lookup inputs change or a subsequent lookup fails. Commit/push `04f74cd`
+  under D-050; `npm run test:ku` 109/109 (`kuWorkflow.test.tsx` 34/34),
+  `npm run build`, `npm run lint`, vNext validator and whitespace PASS.
+
+Preserve Registry trust and private source/key custody. Saved-artifact inspect
+state synchronization with the D-045 section (`shareConfirmed` cleanup and
+`PUBLIC` artifact guidance/prefill for `shareInspectCid`), signed Registry
 distribution, richer roots and source/author/fidelity proof remain separate
 backlog entries; do not reopen completed MVP acceptance or resume ENC-003
 qualification.
