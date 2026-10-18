@@ -914,6 +914,7 @@ export function KuWorkflowPage({
               setSharePeer(e.target.value);
               setSharePrepared(undefined);
               setShareConfirmPublic(false);
+              setShareConfirmed(undefined);
             }}
           />
           <label htmlFor="ku-share-address">Peer loopback address</label>
@@ -926,6 +927,7 @@ export function KuWorkflowPage({
               setShareAddress(e.target.value);
               setSharePrepared(undefined);
               setShareConfirmPublic(false);
+              setShareConfirmed(undefined);
             }}
           />
           <label htmlFor="ku-share-selector">
@@ -940,6 +942,7 @@ export function KuWorkflowPage({
               setShareSelector(e.target.value);
               setSharePrepared(undefined);
               setShareConfirmPublic(false);
+              setShareConfirmed(undefined);
             }}
           />
           <label htmlFor="ku-share-namespace">
@@ -954,6 +957,7 @@ export function KuWorkflowPage({
               setShareNamespace(e.target.value);
               setSharePrepared(undefined);
               setShareConfirmPublic(false);
+              setShareConfirmed(undefined);
             }}
           />
           <button
@@ -1050,6 +1054,9 @@ export function KuWorkflowPage({
                     setShareConfirmed(result.data.payload);
                     setShareIntentId(result.data.payload.intent_id);
                     setShareIntentView(undefined);
+                    setShareInspectCid(result.data.payload.public_object_cid);
+                    setShareInspectSelector(sharePrepared.selector);
+                    setShareInspectView(undefined);
                     setSharePrepared(undefined);
                     setShareConfirmPublic(false);
                     setMetadata(result.meta);

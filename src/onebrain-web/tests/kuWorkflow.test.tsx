@@ -1921,4 +1921,134 @@ describe("local KU component journey", () => {
       ).toBeNull(),
     );
   });
+  it("clears stale Confirmed public share intent when share preparation inputs change and prefills Accepted Public ObjectCID and selector (clearing stale inspect view) when shareConfirm succeeds", async () => {
+    const f = fixture({ emptyCatalog: true });
+    render(<KuWorkflowPage client={f.client} />);
+    const peer = "12".repeat(32),
+      altPeer = "34".repeat(32),
+      selector = "ab".repeat(32),
+      altSelector = "bc".repeat(32),
+      namespace = "cd".repeat(32),
+      altNamespace = "ef".repeat(32),
+      publicObject = "d".repeat(64),
+      altPublicObject = "b".repeat(64);
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    fireEvent.change(
+      screen.getByLabelText("Accepted Public ObjectCID (64 lowercase hex)"),
+      { target: { value: altPublicObject } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: altSelector } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    const staleInspectView = await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+    expect(staleInspectView.textContent).toContain(altPublicObject);
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: peer } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+      target: { value: selector },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: namespace } },
+    );
+    const prepareAndConfirm = async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prepare public share preview" }),
+      );
+      await screen.findByRole("article", {
+        name: "Prepared public share preview",
+      });
+      fireEvent.click(
+        screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirm public share" }),
+      );
+      await screen.findByRole("article", {
+        name: "Confirmed public share intent",
+      });
+    };
+    await prepareAndConfirm();
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted Public ObjectCID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(publicObject);
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted selector CID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(selector);
+    expect(
+      screen.queryByRole("article", { name: "Accepted Public KU inspection" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    const freshInspectView = await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+    expect(freshInspectView.textContent).toContain(publicObject);
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "share_inspect").at(-1)!
+        .body.request.payload,
+    ).toEqual({
+      object_cid: publicObject,
+      selector,
+    });
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: altPeer } },
+    );
+    expect(
+      screen.queryByRole("article", { name: "Confirmed public share intent" }),
+    ).toBeNull();
+    await prepareAndConfirm();
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:42000" },
+    });
+    expect(
+      screen.queryByRole("article", { name: "Confirmed public share intent" }),
+    ).toBeNull();
+    await prepareAndConfirm();
+    fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+      target: { value: altSelector },
+    });
+    expect(
+      screen.queryByRole("article", { name: "Confirmed public share intent" }),
+    ).toBeNull();
+    await prepareAndConfirm();
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted selector CID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(altSelector);
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: altNamespace } },
+    );
+    expect(
+      screen.queryByRole("article", { name: "Confirmed public share intent" }),
+    ).toBeNull();
+  });
 });

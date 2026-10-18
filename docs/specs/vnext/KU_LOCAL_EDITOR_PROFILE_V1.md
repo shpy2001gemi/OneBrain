@@ -116,7 +116,11 @@ accepted Public KUs are also readable through registered `POST /api/vnext/ku/ope
 from the currently inspected `LOCAL_ONLY` `accepted_known` artifact with a
 separate preview-then-confirm gesture (`confirm_public: true`), clear stale
 `shareConfirmed` (`Confirmed public share intent`) when inspecting an artifact
-in `Saved local knowledge`, explain and prefill `Accepted Public ObjectCID`
+in `Saved local knowledge` or when editing any share preparation input
+(`sharePeer`, `shareAddress`, `shareSelector`, `shareNamespace`), prefill
+`Accepted Public ObjectCID` (`shareInspectCid`) and `Accepted selector CID`
+(`shareInspectSelector`) while clearing stale `shareInspectView` when
+`share_confirm` succeeds, explain and prefill `Accepted Public ObjectCID`
 (`shareInspectCid`) while clearing stale `shareInspectView` when the inspected
 artifact is already `PUBLIC`, preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`

@@ -515,7 +515,11 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   strictly separate (`confirm_public: true`), omits private `ObjectCID` and
   source references from the prepared preview and receiver inspection panels,
   clears stale `shareConfirmed` (`Confirmed public share intent`) when
-  inspecting an artifact in `Saved local knowledge`, explains and prefills
+  inspecting an artifact in `Saved local knowledge` or when editing any share
+  preparation input (`sharePeer`, `shareAddress`, `shareSelector`,
+  `shareNamespace`), prefills `Accepted Public ObjectCID` (`shareInspectCid`)
+  and `Accepted selector CID` (`shareInspectSelector`) while clearing stale
+  `shareInspectView` when `share_confirm` succeeds, explains and prefills
   `Accepted Public ObjectCID` (`shareInspectCid`) while clearing stale
   `shareInspectView` when the inspected artifact is already `PUBLIC`,
   preserves the in-memory `prepared_id` preview if `share_confirm` fails closed
