@@ -79,6 +79,7 @@ function fixture(
       | "invalid_public_identity"
       | "invalid_selector"
       | "invalid_public_ku";
+    includePublicSummary?: boolean;
   } = {},
 ) {
   let saved = false;
@@ -90,6 +91,15 @@ function fixture(
     preparedShareId = "e".repeat(64),
     freshPreparedShareId = "a".repeat(64),
     shareIntent = "f".repeat(64);
+  const publicSummary = {
+    object_cid: publicObject,
+    semantic_content_cid: semantic,
+    disclosure_class: "PUBLIC",
+    artifact_validity: "accepted_known",
+    coverage: "local_only",
+    limitations: [],
+    executable: false,
+  };
   const calls: { path: string; body: any; init: RequestInit }[] = [];
   const prepared = () => ({
     operation_id: currentOp,
@@ -404,14 +414,22 @@ function fixture(
           case "list":
           case "search":
             payload = {
-              items: saved || options.noEditor || options.emptyCatalog ? [summary] : [],
+              items:
+                saved || options.noEditor || options.emptyCatalog
+                  ? options.includePublicSummary
+                    ? [summary, publicSummary]
+                    : [summary]
+                  : [],
               coverage: "local_only",
               snapshot_frontier: "a".repeat(64),
               limitations: ["authorized_snapshot_only"],
             };
             break;
           case "get":
-            payload = { ...summary, canonical_bytes: "AQ==" };
+            payload =
+              body.request.payload.object_cid === publicObject
+                ? { ...publicSummary, canonical_bytes: "Ag==" }
+                : { ...summary, canonical_bytes: "AQ==" };
             break;
           case "cancel":
             payload = { ...receipt(), state: "canceled" };
@@ -1765,6 +1783,142 @@ describe("local KU component journey", () => {
     });
     expect(screen.getByRole("alert").textContent ?? "").toContain(
       "invalid_public_ku",
+    );
+  });
+  it("clears stale Confirmed public share intent when inspecting saved artifacts and guides/prefills D-045 inspection when inspecting an already-PUBLIC artifact", async () => {
+    const f = fixture({ emptyCatalog: true, includePublicSummary: true });
+    render(<KuWorkflowPage client={f.client} />);
+    const peer = "12".repeat(32),
+      selector = "ab".repeat(32),
+      namespace = "cd".repeat(32),
+      publicObject = "d".repeat(64),
+      altPublicObject = "b".repeat(64);
+    expect(await screen.findByText(/Published public artifact/)).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    expect(
+      screen.getByText(
+        `Ready to prepare a new Public object from the currently inspected private artifact (SemanticContentCID: ${semantic}).`,
+      ),
+    ).toBeTruthy();
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: peer } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+      target: { value: selector },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: namespace } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    await screen.findByRole("article", {
+      name: "Prepared public share preview",
+    });
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm public share" }),
+    );
+    await screen.findByRole("article", {
+      name: "Confirmed public share intent",
+    });
+    fireEvent.change(
+      screen.getByLabelText("Accepted Public ObjectCID (64 lowercase hex)"),
+      { target: { value: altPublicObject } },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: selector } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    const stalePublicView = await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+    expect(stalePublicView.textContent).toContain(altPublicObject);
+    fireEvent.click(
+      screen.getByRole("button", { name: `Inspect ${publicObject}` }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("article", {
+          name: "Confirmed public share intent",
+        }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByText(
+        `The currently inspected artifact (${publicObject}) is already an accepted PUBLIC object (SemanticContentCID: ${semantic}). Only saved LOCAL_ONLY artifacts can prepare a new Public share preview; Accepted Public ObjectCID below is prefilled with this object so you can enter the accepted selector CID to inspect its semantic statements and transport provenance.`,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByLabelText("Recipient NodeID (64 lowercase hex)")
+        .matches(":disabled"),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Prepare public share preview" })
+        .matches(":disabled"),
+    ).toBe(true);
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted Public ObjectCID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(publicObject);
+    expect(
+      screen.queryByRole("article", { name: "Accepted Public KU inspection" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    const prefilledPublicView = await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+    expect(prefilledPublicView.textContent).toContain(publicObject);
+    fireEvent.click(screen.getByRole("button", { name: `Inspect ${object}` }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          `Ready to prepare a new Public object from the currently inspected private artifact (SemanticContentCID: ${semantic}).`,
+        ),
+      ).toBeTruthy(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    await screen.findByRole("article", {
+      name: "Prepared public share preview",
+    });
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm public share" }),
+    );
+    await screen.findByRole("article", {
+      name: "Confirmed public share intent",
+    });
+    fireEvent.click(screen.getByRole("button", { name: `Inspect ${object}` }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("article", {
+          name: "Confirmed public share intent",
+        }),
+      ).toBeNull(),
     );
   });
 });

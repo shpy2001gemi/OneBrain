@@ -114,7 +114,11 @@ accepted Public KUs are also readable through registered `POST /api/vnext/ku/ope
 `get` and `export` (`mode: "canonical_public_exchange"`). The `/ku` Web client
 (`createKuClient`) and workspace (`KuWorkflowPage`) project these four actions
 from the currently inspected `LOCAL_ONLY` `accepted_known` artifact with a
-separate preview-then-confirm gesture (`confirm_public: true`), preserve the
+separate preview-then-confirm gesture (`confirm_public: true`), clear stale
+`shareConfirmed` (`Confirmed public share intent`) when inspecting an artifact
+in `Saved local knowledge`, explain and prefill `Accepted Public ObjectCID`
+(`shareInspectCid`) while clearing stale `shareInspectView` when the inspected
+artifact is already `PUBLIC`, preserve the
 in-memory preview when `share_confirm` returns `503 capability_disabled`
 (`ku_public_share_network_unavailable`), `explicit_public_confirmation_required`
 or `invalid_clock`, clear stale or invalidated in-memory

@@ -790,15 +790,19 @@ export function KuWorkflowPage({
                     onClick={() =>
                       void run(async () => {
                         const current = await refresh();
-                        setView(
-                          (
-                            await client.invoke(current, "get", {
-                              object_cid: item.object_cid,
-                            })
-                          ).data.payload,
-                        );
+                        const inspected = (
+                          await client.invoke(current, "get", {
+                            object_cid: item.object_cid,
+                          })
+                        ).data.payload;
+                        setView(inspected);
                         setSharePrepared(undefined);
                         setShareConfirmPublic(false);
+                        setShareConfirmed(undefined);
+                        if (inspected.disclosure_class === "PUBLIC") {
+                          setShareInspectCid(inspected.object_cid);
+                          setShareInspectView(undefined);
+                        }
                         requestAnimationFrame(() =>
                           inspectRef.current?.focus(),
                         );
@@ -885,7 +889,9 @@ export function KuWorkflowPage({
           {view?.disclosure_class === "LOCAL_ONLY" &&
           view.artifact_validity === "accepted_known"
             ? `Ready to prepare a new Public object from the currently inspected private artifact (SemanticContentCID: ${view.semantic_content_cid ?? "unavailable"}).`
-            : "Inspect an accepted saved LOCAL_ONLY artifact above before preparing a new Public share preview."}
+            : view?.disclosure_class === "PUBLIC"
+              ? `The currently inspected artifact (${view.object_cid}) is already an accepted PUBLIC object (SemanticContentCID: ${view.semantic_content_cid ?? "unavailable"}). Only saved LOCAL_ONLY artifacts can prepare a new Public share preview; Accepted Public ObjectCID below is prefilled with this object so you can enter the accepted selector CID to inspect its semantic statements and transport provenance.`
+              : "Inspect an accepted saved LOCAL_ONLY artifact above before preparing a new Public share preview."}
         </p>
         <fieldset
           disabled={
