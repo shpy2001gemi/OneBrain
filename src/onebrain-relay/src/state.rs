@@ -197,6 +197,62 @@ impl DurableRelayState {
         }
         write.commit().map_err(|_| DurableStateError::Corrupt)
     }
+
+    /// Delete consumed outer-auth nonces whose retention ended before `now`.
+    ///
+    /// Only values written by [`consumed_nonce_value`] (outer binding followed by
+    /// a big-endian retain-until second) are eligible. Any other value shape is
+    /// retained unchanged, so unrelated or historical entries are never guessed
+    /// at. Pending challenges live only in process memory and authentication
+    /// requires one, so an expired consumed nonce can no longer be replayed.
+    pub(crate) fn prune_expired_consumed_nonces(
+        &self,
+        now: u64,
+    ) -> Result<usize, DurableStateError> {
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let removed;
+        {
+            let mut table = write
+                .open_table(NONCES)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            let mut expired = Vec::new();
+            for entry in table.iter().map_err(|_| DurableStateError::Corrupt)? {
+                let (key, value) = entry.map_err(|_| DurableStateError::Corrupt)?;
+                if consumed_nonce_retain_until(value.value()).is_some_and(|until| until < now) {
+                    expired.push(key.value().to_vec());
+                }
+            }
+            for key in &expired {
+                table
+                    .remove(key.as_slice())
+                    .map_err(|_| DurableStateError::Corrupt)?;
+            }
+            removed = expired.len();
+        }
+        write.commit().map_err(|_| DurableStateError::Corrupt)?;
+        Ok(removed)
+    }
+}
+
+const CONSUMED_NONCE_VALUE_BYTES: usize = 40;
+
+/// Durable value for one consumed outer-auth nonce: the outer connection
+/// binding followed by the big-endian second until which it must be retained.
+pub(crate) fn consumed_nonce_value(binding: &[u8; 32], retain_until: u64) -> [u8; 40] {
+    let mut value = [0u8; CONSUMED_NONCE_VALUE_BYTES];
+    value[..32].copy_from_slice(binding);
+    value[32..].copy_from_slice(&retain_until.to_be_bytes());
+    value
+}
+
+fn consumed_nonce_retain_until(value: &[u8]) -> Option<u64> {
+    if value.len() != CONSUMED_NONCE_VALUE_BYTES {
+        return None;
+    }
+    Some(u64::from_be_bytes(value[32..].try_into().ok()?))
 }
 
 fn initialize_tables(database: &Database) -> Result<(), DurableStateError> {

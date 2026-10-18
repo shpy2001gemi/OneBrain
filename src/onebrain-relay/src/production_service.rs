@@ -103,6 +103,42 @@ impl RelayConnectReplayGuard {
     }
 }
 
+/// Releases one outstanding outer-auth challenge when its handshake ends.
+///
+/// Dropped on every exit path of an authentication attempt, including I/O
+/// errors, timeouts and future cancellation when the connection task is torn
+/// down. After a successful authentication the challenge is already consumed,
+/// so the cancel is a no-op.
+struct PendingChallengeGuard<'a> {
+    authenticator: &'a Mutex<OuterClientAuthenticator>,
+    nonce: [u8; 32],
+    binding: [u8; 32],
+}
+
+impl<'a> PendingChallengeGuard<'a> {
+    fn new(
+        authenticator: &'a Mutex<OuterClientAuthenticator>,
+        nonce: [u8; 32],
+        binding: [u8; 32],
+    ) -> Self {
+        Self {
+            authenticator,
+            nonce,
+            binding,
+        }
+    }
+}
+
+impl Drop for PendingChallengeGuard<'_> {
+    fn drop(&mut self) {
+        let mut authenticator = match self.authenticator.lock() {
+            Ok(value) => value,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        authenticator.cancel_challenge(&self.nonce, &self.binding);
+    }
+}
+
 pub struct RelayProductionService {
     relay_signer: SigningKey,
     authenticator: Mutex<OuterClientAuthenticator>,
@@ -221,6 +257,8 @@ impl RelayProductionService {
         R: AsyncRead + Unpin,
     {
         let (request_id, challenge) = self.issue_challenge(binding)?;
+        let _challenge_guard =
+            PendingChallengeGuard::new(&self.authenticator, challenge.challenge_nonce, binding);
         write_wire(
             send,
             &RelayWireFrameV1::new(
@@ -253,6 +291,8 @@ impl RelayProductionService {
         S: AsyncRead + AsyncWrite + Unpin,
     {
         let (request_id, challenge) = self.issue_challenge(binding)?;
+        let _challenge_guard =
+            PendingChallengeGuard::new(&self.authenticator, challenge.challenge_nonce, binding);
         write_wire(
             stream,
             &RelayWireFrameV1::new(
@@ -1097,5 +1137,34 @@ mod tests {
         assert_eq!(received.kind(), RelayWireKindV1::Control);
         assert_eq!(received.request_id(), [7; 16]);
         assert_eq!(received.payload(), frame.payload());
+    }
+
+    #[tokio::test]
+    async fn abandoned_outer_handshakes_do_not_exhaust_pending_challenges() {
+        let relay_key = SigningKey::from_bytes(&[61; 32]);
+        let directory = tempfile::tempdir().unwrap();
+        let durable =
+            Arc::new(DurableRelayState::initialize(&directory.path().join("relay.redb")).unwrap());
+        let service = RelayProductionService::new(relay_key, 4, 4, durable).unwrap();
+        let source = std::net::IpAddr::from([127, 0, 0, 1]);
+        for index in 0..70u8 {
+            let (mut client, mut server) = tokio::io::duplex(4096);
+            // The client reads the signed challenge and then disappears
+            // without ever sending its hello.
+            let abandon = tokio::spawn(async move {
+                let mut prefix = [0u8; 4];
+                client.read_exact(&mut prefix).await.unwrap();
+                let mut frame = vec![0u8; u32::from_be_bytes(prefix) as usize];
+                client.read_exact(&mut frame).await.unwrap();
+            });
+            let admission = service.limiter.begin(source, 1).unwrap();
+            let result = service
+                .authenticate_single(&mut server, [index; 32], admission)
+                .await;
+            abandon.await.unwrap();
+            assert!(result.is_err(), "abandoned handshake {index} must fail");
+            assert_eq!(service.authenticator.lock().unwrap().pending_len(), 0);
+        }
+        assert!(service.issue_challenge([200; 32]).is_ok());
     }
 }

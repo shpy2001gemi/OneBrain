@@ -1,6 +1,6 @@
 //! Authenticated outer-client admission and bounded reservation state.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -14,6 +14,7 @@ use onebrain_protocol::{
     RelayRevokeV1, MAX_RELAY_CONTROL_VALIDITY_SECONDS,
 };
 
+use crate::state::consumed_nonce_value;
 use crate::{DurableRelayState, DurableStateKind};
 
 const CLOCK_SKEW_SECONDS: u64 = 30;
@@ -62,8 +63,12 @@ pub struct OuterClientAuthenticator {
     relay_node_id: NodeId,
     relay_signer: SigningKey,
     pending: BTreeMap<[u8; 32], RelayOuterClientChallengeV1>,
-    consumed: BTreeSet<[u8; 32]>,
+    /// Consumed nonce -> last second at which its challenge could still pass
+    /// the freshness check. Entries are pruned after that, because
+    /// authentication always requires a live `pending` challenge.
+    consumed: BTreeMap<[u8; 32], u64>,
     durable: Option<Arc<DurableRelayState>>,
+    next_durable_prune_at: u64,
 }
 
 impl OuterClientAuthenticator {
@@ -73,8 +78,9 @@ impl OuterClientAuthenticator {
             relay_node_id,
             relay_signer,
             pending: BTreeMap::new(),
-            consumed: BTreeSet::new(),
+            consumed: BTreeMap::new(),
             durable: None,
+            next_durable_prune_at: 0,
         }
     }
 
@@ -84,16 +90,55 @@ impl OuterClientAuthenticator {
         value
     }
 
+    /// Number of challenges currently awaiting a client hello.
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Number of consumed nonces still inside their replay window.
+    pub fn consumed_len(&self) -> usize {
+        self.consumed.len()
+    }
+
+    /// Drop one outstanding challenge whose handshake failed or was abandoned.
+    /// Only the connection the challenge was issued to can cancel it.
+    pub fn cancel_challenge(&mut self, nonce: &[u8; 32], outer_connection_binding: &[u8; 32]) {
+        if self.pending.get(nonce).is_some_and(|challenge| {
+            challenge.outer_connection_binding == *outer_connection_binding
+        }) {
+            self.pending.remove(nonce);
+        }
+    }
+
+    /// Remove challenges and consumed nonces that can no longer pass the
+    /// freshness check, and periodically garbage-collect the durable nonce
+    /// table. Durable pruning is best effort: a failure is retried on the next
+    /// interval and never blocks admission (writes still fail closed).
+    fn prune(&mut self, now: u64) {
+        self.pending
+            .retain(|_, challenge| challenge_retain_until(challenge.expires_at) >= now);
+        self.consumed.retain(|_, retain_until| *retain_until >= now);
+        if now >= self.next_durable_prune_at {
+            if let Some(durable) = &self.durable {
+                if durable.prune_expired_consumed_nonces(now).is_ok() {
+                    self.next_durable_prune_at =
+                        now.saturating_add(OUTER_CHALLENGE_VALIDITY_SECONDS);
+                }
+            }
+        }
+    }
+
     pub fn issue_challenge(
         &mut self,
         nonce: [u8; 32],
         outer_connection_binding: [u8; 32],
         now: u64,
     ) -> Result<RelayOuterClientChallengeV1, ReservationError> {
+        self.prune(now);
         if nonce == [0; 32]
             || self.pending.len() >= MAX_PENDING_CHALLENGES
             || self.pending.contains_key(&nonce)
-            || self.consumed.contains(&nonce)
+            || self.consumed.contains_key(&nonce)
         {
             return Err(ReservationError::Replay);
         }
@@ -131,21 +176,17 @@ impl OuterClientAuthenticator {
             .get(&hello.challenge_nonce)
             .ok_or(ReservationError::ChallengeMissing)?
             .clone();
-        fresh(hello.issued_at, hello.expires_at, now)?;
-        fresh(challenge.issued_at, challenge.expires_at, now)?;
-        if hello.relay_node_id != self.relay_node_id
-            || hello.outer_connection_binding != outer_connection_binding
-            || challenge.outer_connection_binding != outer_connection_binding
-            || principal_node_id(&hello.client_public_key) != hello.client_node_id
-        {
+        if challenge.outer_connection_binding != outer_connection_binding {
+            // Never let another connection consume or cancel this challenge.
             return Err(ReservationError::IdentityMismatch);
         }
-        verify_control(
-            &RelayControlV1::OuterClientHello(hello.clone()),
-            RelayControlSignatureRoleV1::OuterHelloClient,
-            hello.client_public_key,
-            hello.client_signature,
-        )?;
+        // The challenge is single use: whatever the outcome below, this
+        // connection's attempt ends here and the entry must not linger.
+        self.pending.remove(&hello.challenge_nonce);
+        let result = self.verify_hello(&hello, &challenge, outer_connection_binding, now);
+        self.prune(now);
+        result?;
+        let retain_until = challenge_retain_until(challenge.expires_at);
         if self.consumed.len() >= MAX_CONSUMED_NONCES {
             return Err(ReservationError::Capacity);
         }
@@ -154,12 +195,11 @@ impl OuterClientAuthenticator {
                 .create_new(
                     DurableStateKind::ConsumedNonce,
                     &hello.challenge_nonce,
-                    &hello.outer_connection_binding,
+                    &consumed_nonce_value(&hello.outer_connection_binding, retain_until),
                 )
                 .map_err(|_| ReservationError::State)?;
         }
-        self.pending.remove(&hello.challenge_nonce);
-        self.consumed.insert(hello.challenge_nonce);
+        self.consumed.insert(hello.challenge_nonce, retain_until);
         // The challenge is a short-lived, single-use proof against handshake
         // replay.  It must not also become the lifetime of the authenticated
         // outer carrier: reservations and relay associations intentionally
@@ -178,6 +218,34 @@ impl OuterClientAuthenticator {
             observed_socket: None,
         })
     }
+
+    fn verify_hello(
+        &self,
+        hello: &RelayOuterClientHelloV1,
+        challenge: &RelayOuterClientChallengeV1,
+        outer_connection_binding: [u8; 32],
+        now: u64,
+    ) -> Result<(), ReservationError> {
+        fresh(hello.issued_at, hello.expires_at, now)?;
+        fresh(challenge.issued_at, challenge.expires_at, now)?;
+        if hello.relay_node_id != self.relay_node_id
+            || hello.outer_connection_binding != outer_connection_binding
+            || principal_node_id(&hello.client_public_key) != hello.client_node_id
+        {
+            return Err(ReservationError::IdentityMismatch);
+        }
+        verify_control(
+            &RelayControlV1::OuterClientHello(hello.clone()),
+            RelayControlSignatureRoleV1::OuterHelloClient,
+            hello.client_public_key,
+            hello.client_signature,
+        )
+    }
+}
+
+/// Last second at which a challenge with `expires_at` can pass [`fresh`].
+fn challenge_retain_until(expires_at: u64) -> u64 {
+    expires_at.saturating_add(CLOCK_SKEW_SECONDS)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -989,5 +1057,208 @@ mod tests {
             authenticated.expires_at(),
             now + MAX_RELAY_CONTROL_VALIDITY_SECONDS
         );
+    }
+
+    fn signed_hello(
+        relay_key: &SigningKey,
+        client_key: &SigningKey,
+        nonce: [u8; 32],
+        binding: [u8; 32],
+        issued_at: u64,
+    ) -> RelayOuterClientHelloV1 {
+        let mut hello = RelayOuterClientHelloV1 {
+            format: 1,
+            relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
+            client_node_id: principal_node_id(client_key.verifying_key().as_bytes()),
+            client_public_key: *client_key.verifying_key().as_bytes(),
+            challenge_nonce: nonce,
+            outer_connection_binding: binding,
+            issued_at,
+            expires_at: issued_at + OUTER_CHALLENGE_VALIDITY_SECONDS,
+            client_signature: [0; 64],
+        };
+        hello.client_signature = client_key
+            .sign(
+                &relay_control_signing_bytes(
+                    &RelayControlV1::OuterClientHello(hello.clone()),
+                    RelayControlSignatureRoleV1::OuterHelloClient,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+        hello
+    }
+
+    fn indexed(tag: u8, index: usize) -> [u8; 32] {
+        let mut value = [tag; 32];
+        value[..8].copy_from_slice(&(index as u64).to_be_bytes());
+        value
+    }
+
+    #[test]
+    fn abandoned_challenges_expire_instead_of_locking_admission() {
+        let relay_key = SigningKey::from_bytes(&[81; 32]);
+        let client_key = SigningKey::from_bytes(&[82; 32]);
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        for index in 0..MAX_PENDING_CHALLENGES {
+            authenticator
+                .issue_challenge(indexed(1, index), indexed(2, index), 100)
+                .unwrap();
+        }
+        // The in-flight bound itself is unchanged.
+        assert_eq!(
+            authenticator
+                .issue_challenge(indexed(1, 999), indexed(2, 999), 100)
+                .unwrap_err(),
+            ReservationError::Replay
+        );
+        // Once no abandoned challenge can still pass `fresh`, a new client is
+        // admitted and completes authentication.
+        let later = 100 + OUTER_CHALLENGE_VALIDITY_SECONDS + CLOCK_SKEW_SECONDS + 1;
+        let (nonce, binding) = ([83; 32], [84; 32]);
+        authenticator
+            .issue_challenge(nonce, binding, later)
+            .unwrap();
+        assert_eq!(authenticator.pending_len(), 1);
+        authenticator
+            .authenticate(
+                signed_hello(&relay_key, &client_key, nonce, binding, later),
+                binding,
+                later,
+            )
+            .unwrap();
+        assert_eq!(authenticator.pending_len(), 0);
+    }
+
+    #[test]
+    fn failed_or_cancelled_handshakes_release_only_their_own_challenge() {
+        let relay_key = SigningKey::from_bytes(&[85; 32]);
+        let client_key = SigningKey::from_bytes(&[86; 32]);
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        let (nonce, binding) = ([87; 32], [88; 32]);
+        authenticator.issue_challenge(nonce, binding, 100).unwrap();
+
+        // Another connection can neither cancel nor consume this challenge.
+        authenticator.cancel_challenge(&nonce, &[89; 32]);
+        assert_eq!(
+            authenticator
+                .authenticate(
+                    signed_hello(&relay_key, &client_key, nonce, [89; 32], 100),
+                    [89; 32],
+                    100,
+                )
+                .unwrap_err(),
+            ReservationError::IdentityMismatch
+        );
+        assert_eq!(authenticator.pending_len(), 1);
+
+        // A forged hello on the right connection ends the single-use attempt.
+        let mut forged = signed_hello(&relay_key, &client_key, nonce, binding, 100);
+        forged.client_signature = [7; 64];
+        assert_eq!(
+            authenticator
+                .authenticate(forged, binding, 100)
+                .unwrap_err(),
+            ReservationError::Signature
+        );
+        assert_eq!(authenticator.pending_len(), 0);
+        assert_eq!(
+            authenticator
+                .authenticate(
+                    signed_hello(&relay_key, &client_key, nonce, binding, 100),
+                    binding,
+                    100,
+                )
+                .unwrap_err(),
+            ReservationError::ChallengeMissing
+        );
+
+        // An abandoned handshake is released by its own connection.
+        let (other_nonce, other_binding) = ([90; 32], [91; 32]);
+        authenticator
+            .issue_challenge(other_nonce, other_binding, 100)
+            .unwrap();
+        authenticator.cancel_challenge(&other_nonce, &other_binding);
+        assert_eq!(authenticator.pending_len(), 0);
+    }
+
+    #[test]
+    fn consumed_nonces_stay_bounded_beyond_the_former_lifetime_cap() {
+        let relay_key = SigningKey::from_bytes(&[92; 32]);
+        let client_key = SigningKey::from_bytes(&[93; 32]);
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        let per_second = 40;
+        let total = MAX_CONSUMED_NONCES + 200;
+        for index in 0..total {
+            let now = 100 + (index / per_second) as u64;
+            let (nonce, binding) = (indexed(3, index), indexed(4, index));
+            authenticator.issue_challenge(nonce, binding, now).unwrap();
+            authenticator
+                .authenticate(
+                    signed_hello(&relay_key, &client_key, nonce, binding, now),
+                    binding,
+                    now,
+                )
+                .unwrap_or_else(|error| panic!("auth {index} failed: {error:?}"));
+        }
+        let window = (OUTER_CHALLENGE_VALIDITY_SECONDS + CLOCK_SKEW_SECONDS + 1) as usize;
+        assert!(authenticator.consumed_len() <= window * per_second);
+        assert_eq!(authenticator.pending_len(), 0);
+    }
+
+    #[test]
+    fn durable_consumed_nonces_are_collected_after_their_window_only() {
+        let directory = tempfile::tempdir().unwrap();
+        let durable =
+            Arc::new(DurableRelayState::initialize(&directory.path().join("relay.redb")).unwrap());
+        // A historical row in the old value shape is never guessed at.
+        durable
+            .create_new(DurableStateKind::ConsumedNonce, &[94; 32], &[95; 32])
+            .unwrap();
+        let relay_key = SigningKey::from_bytes(&[96; 32]);
+        let client_key = SigningKey::from_bytes(&[97; 32]);
+        let mut authenticator =
+            OuterClientAuthenticator::new_durable(relay_key.clone(), durable.clone());
+        let (nonce, binding) = ([98; 32], [99; 32]);
+        authenticator.issue_challenge(nonce, binding, 100).unwrap();
+        authenticator
+            .authenticate(
+                signed_hello(&relay_key, &client_key, nonce, binding, 100),
+                binding,
+                100,
+            )
+            .unwrap();
+        let stored = durable
+            .get(DurableStateKind::ConsumedNonce, &nonce)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored, consumed_nonce_value(&binding, 160).to_vec());
+
+        // Still inside the replay window: the row is retained.
+        authenticator
+            .issue_challenge([100; 32], [101; 32], 160)
+            .unwrap();
+        assert!(durable
+            .get(DurableStateKind::ConsumedNonce, &nonce)
+            .unwrap()
+            .is_some());
+
+        // After the window the row is collected; the historical row remains.
+        authenticator
+            .issue_challenge([102; 32], [103; 32], 200)
+            .unwrap();
+        assert_eq!(
+            durable
+                .get(DurableStateKind::ConsumedNonce, &nonce)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            durable
+                .get(DurableStateKind::ConsumedNonce, &[94; 32])
+                .unwrap(),
+            Some(vec![95; 32])
+        );
+        assert_eq!(authenticator.consumed_len(), 0);
     }
 }
