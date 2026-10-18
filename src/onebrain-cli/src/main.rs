@@ -15,7 +15,7 @@ use cli::vnext::{NeedArgs, PomvArgs, VNextArgs, VNextStartArgs};
 use onebrain_api::ApiServer;
 use onebrain_node::{
     mdns_discovery, peer_memory::PeerMemory, seed_client::SeedClient, upnp, ConceptRegistryMode,
-    NodeConfig, OneBrainNode,
+    LegacyTcpListener, NodeConfig, OneBrainNode,
 };
 
 #[cfg(all(feature = "legacy-read-compat", not(feature = "base-v1")))]
@@ -82,6 +82,11 @@ enum Commands {
         /// Legacy peer addresses; only valid in legacy seed compatibility mode.
         #[arg(long, value_delimiter = ',', requires = "legacy_seed_compat")]
         seeds: Vec<SocketAddr>,
+        /// Unauthenticated legacy TCP/JSON listener in legacy seed compatibility
+        /// mode: loopback (default), all-interfaces, or disabled. Without
+        /// --legacy-seed-compat the listener is never bound.
+        #[arg(long, requires = "legacy_seed_compat")]
+        legacy_tcp_listener: Option<LegacyTcpListener>,
 
         /// Enable the REST/WebSocket API server for Web Dashboard
         #[arg(long, default_value_t = false)]
@@ -177,6 +182,7 @@ async fn main() {
             concept_registry_release_public_key,
             legacy_seed_compat,
             seeds,
+            legacy_tcp_listener,
             api,
             api_port,
             api_token,
@@ -230,6 +236,11 @@ async fn main() {
                 concept_registry_release_root,
                 concept_registry_release_public_key,
                 vnext: vnext_config,
+                legacy_tcp_listener: if legacy_seed_compat {
+                    legacy_tcp_listener.unwrap_or(LegacyTcpListener::Loopback)
+                } else {
+                    LegacyTcpListener::Disabled
+                },
             };
             std::fs::create_dir_all(&config.data_dir).expect("Failed to create data directory");
 
@@ -259,6 +270,7 @@ async fn main() {
             if legacy_seed_compat {
                 println!("  Legacy seeds: {:?}", config.seeds);
             }
+            println!("  Legacy TCP listener: {}", config.legacy_tcp_listener);
             if api {
                 println!("  API:      http://127.0.0.1:{}", api_port);
             }
@@ -303,19 +315,35 @@ async fn main() {
             }
             println!("  \u{2713} Node initialized successfully");
 
-            #[cfg(feature = "vnext-network-runtime")]
-            let network_start = if vnext.requested() && !legacy_seed_compat {
-                node.start_vnext_network_only()
-                    .await
-                    .map(|addr| ("vNext", addr))
+            let started_kind = if config.legacy_tcp_listener == LegacyTcpListener::Disabled {
+                "vNext"
             } else {
-                node.start_network().await.map(|addr| ("Legacy TCP", addr))
+                "Legacy TCP"
+            };
+            #[cfg(feature = "vnext-network-runtime")]
+            let network_start = if !node.network_listener_requested() {
+                None
+            } else if vnext.requested() && !legacy_seed_compat {
+                Some(
+                    node.start_vnext_network_only()
+                        .await
+                        .map(|addr| ("vNext", addr)),
+                )
+            } else {
+                Some(node.start_network().await.map(|addr| (started_kind, addr)))
             };
             #[cfg(not(feature = "vnext-network-runtime"))]
-            let network_start = node.start_network().await.map(|addr| ("Legacy TCP", addr));
+            let network_start = if node.network_listener_requested() {
+                Some(node.start_network().await.map(|addr| (started_kind, addr)))
+            } else {
+                None
+            };
             match network_start {
-                Ok((kind, addr)) => println!("  \u{2713} {kind} listener started on {addr}"),
-                Err(e) => eprintln!(
+                None => println!(
+                    "  Networking: off (no vNext lane requested; legacy TCP listener disabled)"
+                ),
+                Some(Ok((kind, addr))) => println!("  \u{2713} {kind} listener started on {addr}"),
+                Some(Err(e)) => eprintln!(
                     "  \u{26a0} Network start failed: {} (continuing without networking)",
                     e
                 ),

@@ -1,6 +1,6 @@
 //! Desktop configuration — persisted as TOML in the user's config directory.
 
-use onebrain_node::{ConceptRegistryMode, NodeConfig};
+use onebrain_node::{ConceptRegistryMode, LegacyTcpListener, NodeConfig};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -42,6 +42,10 @@ pub struct DesktopConfig {
     /// Optional operator-owned KU custody inputs; secrets remain in local files.
     #[serde(default)]
     pub ku_host: Option<onebrain_api::ku_host::KuHostInputsConfig>,
+    /// Unauthenticated legacy TCP/JSON listener exposure; disabled unless the
+    /// operator opts in explicitly.
+    #[serde(default)]
+    pub legacy_tcp_listener: LegacyTcpListener,
     /// Whether to start the P2P network automatically on launch.
     pub auto_start: bool,
     /// Set to `true` after the first-run wizard completes.
@@ -113,6 +117,7 @@ impl DesktopConfig {
             concept_registry_release_root: self.concept_registry_release_root.clone(),
             concept_registry_release_public_key: self.concept_registry_release_public_key.clone(),
             vnext: Default::default(),
+            legacy_tcp_listener: self.legacy_tcp_listener,
         }
     }
 }
@@ -138,6 +143,7 @@ impl Default for DesktopConfig {
             concept_registry_release_root: None,
             concept_registry_release_public_key: None,
             ku_host: None,
+            legacy_tcp_listener: LegacyTcpListener::Disabled,
             auto_start: false,
             first_run_done: false,
         }

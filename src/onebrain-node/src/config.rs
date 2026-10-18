@@ -49,6 +49,60 @@ impl FromStr for ConceptRegistryMode {
     }
 }
 
+/// Exposure of the legacy TCP/JSON peer listener.
+///
+/// That listener is unauthenticated: any connecting process can push legacy
+/// KUs into local storage and request Ollama re-encoding. It therefore stays
+/// closed unless a caller opts in explicitly. The authenticated vNext runtime
+/// is configured separately through [`NodeConfig::vnext`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LegacyTcpListener {
+    /// Do not bind the legacy listener.
+    #[default]
+    Disabled,
+    /// Bind the legacy listener on 127.0.0.1 only.
+    Loopback,
+    /// Bind the legacy listener on every interface (0.0.0.0).
+    AllInterfaces,
+}
+
+impl LegacyTcpListener {
+    /// Bind address for `port`, or `None` when the listener is disabled.
+    pub fn bind_addr(self, port: u16) -> Option<SocketAddr> {
+        match self {
+            Self::Disabled => None,
+            Self::Loopback => Some(([127, 0, 0, 1], port).into()),
+            Self::AllInterfaces => Some(([0, 0, 0, 0], port).into()),
+        }
+    }
+}
+
+impl std::fmt::Display for LegacyTcpListener {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Disabled => "disabled",
+            Self::Loopback => "loopback",
+            Self::AllInterfaces => "all-interfaces",
+        })
+    }
+}
+
+impl FromStr for LegacyTcpListener {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "disabled" => Ok(Self::Disabled),
+            "loopback" => Ok(Self::Loopback),
+            "all-interfaces" | "all_interfaces" => Ok(Self::AllInterfaces),
+            _ => Err(format!(
+                "invalid legacy TCP listener '{value}'; expected disabled, loopback, or all-interfaces"
+            )),
+        }
+    }
+}
+
 /// Configuration for an OneBrain node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
@@ -83,6 +137,10 @@ pub struct NodeConfig {
     /// vNext features and independent emergency kill switches.
     #[serde(default)]
     pub vnext: VNextFeatureConfig,
+    /// Unauthenticated legacy TCP/JSON listener exposure; disabled unless
+    /// explicitly requested.
+    #[serde(default)]
+    pub legacy_tcp_listener: LegacyTcpListener,
 }
 
 impl NodeConfig {
@@ -156,6 +214,7 @@ impl Default for NodeConfig {
             concept_registry_release_root: None,
             concept_registry_release_public_key: None,
             vnext: VNextFeatureConfig::default(),
+            legacy_tcp_listener: LegacyTcpListener::Disabled,
         }
     }
 }

@@ -448,9 +448,36 @@ impl OneBrainNode {
         Ok(())
     }
 
-    /// Start the TCP listener and spawn the background accept loop.
+    /// Whether [`Self::start_network`] has anything to start: the explicitly
+    /// opted-in legacy TCP listener or the configured vNext OBP-RP runtime.
+    pub fn network_listener_requested(&self) -> bool {
+        if self
+            .config
+            .legacy_tcp_listener
+            .bind_addr(self.config.port)
+            .is_some()
+        {
+            return true;
+        }
+        #[cfg(feature = "vnext-network-runtime")]
+        if self
+            .config
+            .vnext
+            .is_active(crate::vnext_config::VNextFeature::ObpRp)
+        {
+            return true;
+        }
+        false
+    }
+
+    /// Start the configured network listeners.
     ///
-    /// Returns the local address the listener is bound to.
+    /// The authenticated vNext runtime starts when OBP-RP is active. The
+    /// unauthenticated legacy TCP/JSON listener binds only when
+    /// [`NodeConfig::legacy_tcp_listener`] opts in, on loopback or on every
+    /// interface. Returns the legacy listener address when it is bound,
+    /// otherwise the vNext listener address. Fails without side effects when
+    /// neither listener is requested.
     pub async fn start_network(&mut self) -> Result<SocketAddr, NodeError> {
         if self.listener_task.is_some() {
             return Err(NodeError::Network(
@@ -463,15 +490,27 @@ impl OneBrainNode {
                 "network listener is already running".into(),
             ));
         }
-        let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
+        if !self.network_listener_requested() {
+            return Err(NodeError::Config(NO_NETWORK_LISTENER_REQUESTED.into()));
+        }
+        let legacy_bind = self.config.legacy_tcp_listener.bind_addr(self.config.port);
         #[cfg(feature = "vnext-outbound-first")]
         if let Some(dependencies) = self.vnext_product_dependencies.as_ref() {
             dependencies
                 .validate_outbound_first(&self.config.vnext)
                 .map_err(|error| NodeError::Config(error.to_string()))?;
         }
+        // The authenticated vNext carrier keeps its all-interface bind.
         #[cfg(feature = "vnext-network-runtime")]
-        let mut pending_vnext = self.start_vnext_product_runtime(bind_addr).await?;
+        let mut pending_vnext = self
+            .start_vnext_product_runtime(([0, 0, 0, 0], self.config.port).into())
+            .await?;
+        let Some(bind_addr) = legacy_bind else {
+            #[cfg(feature = "vnext-network-runtime")]
+            return self.adopt_vnext_only_runtime(pending_vnext.take());
+            #[cfg(not(feature = "vnext-network-runtime"))]
+            return Err(NodeError::Config(NO_NETWORK_LISTENER_REQUESTED.into()));
+        };
         let listener = match TcpListener::bind(bind_addr).await {
             Ok(listener) => listener,
             Err(error) => {
@@ -507,6 +546,18 @@ impl OneBrainNode {
         }));
 
         Ok(local_addr)
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    fn adopt_vnext_only_runtime(
+        &mut self,
+        runtime: Option<VNextProductRuntime>,
+    ) -> Result<SocketAddr, NodeError> {
+        let runtime =
+            runtime.ok_or_else(|| NodeError::Config(NO_NETWORK_LISTENER_REQUESTED.into()))?;
+        let addr = runtime.services().local_addr();
+        self.vnext_product_runtime = Some(runtime);
+        Ok(addr)
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -3825,24 +3876,51 @@ fn rand_u32() -> u32 {
 // Background Listener
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// Returned by [`OneBrainNode::start_network`] when nothing is configured.
+const NO_NETWORK_LISTENER_REQUESTED: &str = "no network listener requested: the unauthenticated legacy TCP listener is disabled (set legacy_tcp_listener to loopback or all_interfaces to opt in) and the vNext OBP-RP runtime is not active";
+
+/// Concurrent connections served by the opt-in legacy listener; excess
+/// connections are closed immediately instead of spawning more tasks.
+const LEGACY_MAX_CONNECTIONS: usize = 64;
+
+/// Deadline for a legacy peer to deliver its single request message.
+const LEGACY_FIRST_MESSAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Concurrent remote `VerifyRequest`s allowed to drive local Ollama calls.
+const LEGACY_MAX_CONCURRENT_VERIFICATIONS: usize = 2;
+
 /// Background TCP listener loop.
 ///
 /// Accepts incoming connections and processes messages:
 /// - PeerHello → register peer, send our hello back
 /// - KuPush → store KU locally, index in retriever
 /// - VerifyRequest → re-encode and send VerifyResponse
+///
+/// The protocol is unauthenticated, so the loop only runs after an explicit
+/// [`NodeConfig::legacy_tcp_listener`] opt-in and bounds its own work.
 async fn listener_loop(
     listener: TcpListener,
     shared: Arc<Mutex<SharedState>>,
     event_tx: mpsc::Sender<NodeEvent>,
 ) {
+    let connections = Arc::new(tokio::sync::Semaphore::new(LEGACY_MAX_CONNECTIONS));
+    let verifications = Arc::new(tokio::sync::Semaphore::new(
+        LEGACY_MAX_CONCURRENT_VERIFICATIONS,
+    ));
     loop {
         match listener.accept().await {
             Ok((stream, peer_addr)) => {
+                let Ok(permit) = Arc::clone(&connections).try_acquire_owned() else {
+                    // Over capacity: close without reading or spawning.
+                    drop(stream);
+                    continue;
+                };
                 let shared = Arc::clone(&shared);
                 let event_tx = event_tx.clone();
+                let verifications = Arc::clone(&verifications);
                 tokio::spawn(async move {
-                    handle_connection(stream, peer_addr, shared, event_tx).await;
+                    let _permit = permit;
+                    handle_connection(stream, peer_addr, shared, event_tx, verifications).await;
                 });
             }
             Err(e) => {
@@ -3859,18 +3937,21 @@ async fn handle_connection(
     peer_addr: SocketAddr,
     shared: Arc<Mutex<SharedState>>,
     event_tx: mpsc::Sender<NodeEvent>,
+    verifications: Arc<tokio::sync::Semaphore>,
 ) {
     // Read the incoming message
-    let msg = match recv_message(&mut stream).await {
-        Ok(m) => m,
-        Err(e) => {
-            // Connection closed or error — silently ignore
-            if e.kind() != std::io::ErrorKind::UnexpectedEof {
-                eprintln!("  ⚠ Read error from {}: {}", peer_addr, e);
+    let msg =
+        match tokio::time::timeout(LEGACY_FIRST_MESSAGE_TIMEOUT, recv_message(&mut stream)).await {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => {
+                // Connection closed or error — silently ignore
+                if e.kind() != std::io::ErrorKind::UnexpectedEof {
+                    eprintln!("  ⚠ Read error from {}: {}", peer_addr, e);
+                }
+                return;
             }
-            return;
-        }
-    };
+            Err(_) => return,
+        };
 
     match msg {
         NetMessage::PeerHello {
@@ -3952,6 +4033,11 @@ async fn handle_connection(
             cid_hex,
             source_text,
         } => {
+            // Remote peers must not be able to queue unbounded model work.
+            // Over capacity, close without a response; the requester sees EOF.
+            let Ok(_verification) = verifications.try_acquire() else {
+                return;
+            };
             // Get config for Ollama
             let (ollama_url, model, _original_wire) = {
                 let state = shared.lock().await;

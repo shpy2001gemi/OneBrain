@@ -6,9 +6,9 @@ use ed25519_dalek::SigningKey;
 use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
 use ku_kql::vnext_private_need::LocalNeedVaultKey;
 use onebrain_node::{
-    ConceptRegistryMode, LocalPolicyRegistry, LocalPolicyVersion, NetworkRuntimeLifecycle,
-    NodeConfig, OneBrainNode, VNextFeature, VNextProductRuntimeDependencies,
-    VNextProductRuntimeState, VNextRuntimeLane, VNextStartupPhase,
+    ConceptRegistryMode, LegacyTcpListener, LocalPolicyRegistry, LocalPolicyVersion,
+    NetworkRuntimeLifecycle, NodeConfig, OneBrainNode, VNextFeature,
+    VNextProductRuntimeDependencies, VNextProductRuntimeState, VNextRuntimeLane, VNextStartupPhase,
 };
 use tokio::net::TcpListener;
 
@@ -98,6 +98,8 @@ async fn vnext_only_startup_avoids_legacy_tcp_and_preserves_explicit_rollback() 
         port: 0,
         data_dir: directory.path().to_path_buf(),
         concept_registry_mode: ConceptRegistryMode::Disabled,
+        // Opted in only for the explicit compatibility startup below.
+        legacy_tcp_listener: LegacyTcpListener::Loopback,
         ..NodeConfig::default()
     };
     config.vnext.enabled.object_event_v1 = true;
@@ -179,7 +181,10 @@ async fn inactive_vnext_creates_no_product_runtime_resources() {
     config.concept_registry_mode = ConceptRegistryMode::Disabled;
 
     let mut node = OneBrainNode::new(config).await.unwrap();
-    node.start_network().await.unwrap();
+    // Nothing is requested: no vNext lane and no legacy listener opt-in.
+    let error = node.start_network().await.unwrap_err().to_string();
+    assert!(error.contains("no network listener requested"));
+    assert!(node.listener_addr().is_none());
     assert!(node.vnext_listener_addr().is_none());
     assert!(node.vnext_product_runtime_status().unwrap().is_none());
     for file in [
@@ -203,6 +208,7 @@ async fn legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback() {
         port: 0,
         data_dir: left_dir.path().to_path_buf(),
         concept_registry_mode: ConceptRegistryMode::Disabled,
+        legacy_tcp_listener: LegacyTcpListener::Loopback,
         ..NodeConfig::default()
     };
     left_config.vnext.enabled.object_event_v1 = true;
@@ -265,6 +271,7 @@ async fn legacy_tcp_bind_failure_rolls_back_successful_vnext_startup() {
     let directory = tempfile::tempdir().unwrap();
     let mut config = NodeConfig::default();
     config.port = occupied_port;
+    config.legacy_tcp_listener = LegacyTcpListener::AllInterfaces;
     config.data_dir = directory.path().to_path_buf();
     config.concept_registry_mode = ConceptRegistryMode::Disabled;
     config.vnext.enabled.object_event_v1 = true;

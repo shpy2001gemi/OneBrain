@@ -157,7 +157,7 @@ pub use concept_registry_runtime::{
     ConceptRegistryBackendKind, ConceptRegistryFailureKind, ConceptRegistryRuntimeState,
     ConceptRegistryStatus,
 };
-pub use config::{ConceptRegistryMode, NodeConfig};
+pub use config::{ConceptRegistryMode, LegacyTcpListener, NodeConfig};
 pub use dataset_generation::{
     ActivationReadyGeneration, DatasetGenerationStore, RestoreError, RestoreOperationBinding,
     StagedDatasetGeneration,

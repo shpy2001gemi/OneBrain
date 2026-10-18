@@ -30,7 +30,9 @@ pub async fn provision_local(
     };
     node.install_base_runtime(base)
         .map_err(|_| "desktop_base_init_failed")?;
-    if config.auto_start && !supervisor.stopped() {
+    // Auto-start only what is configured: the legacy TCP listener is opt-in
+    // and stock Desktop does not request vNext networking.
+    if config.auto_start && !supervisor.stopped() && node.network_listener_requested() {
         node.start_network()
             .await
             .map_err(|_| "desktop_network_start_failed")?;

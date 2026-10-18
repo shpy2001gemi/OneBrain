@@ -68,11 +68,24 @@ pub async fn recv_message(stream: &mut TcpStream) -> Result<NetMessage, std::io:
             format!("Message too large: {} bytes", len),
         ));
     }
-    let mut data = vec![0u8; len];
-    stream.read_exact(&mut data).await?;
+    let mut data = Vec::with_capacity(len.min(INITIAL_RECEIVE_CAPACITY));
+    (&mut *stream)
+        .take(len as u64)
+        .read_to_end(&mut data)
+        .await?;
+    if data.len() != len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "connection closed before the declared message length",
+        ));
+    }
     serde_json::from_slice(&data)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
+
+/// Initial receive buffer; larger declared messages grow only as bytes arrive,
+/// so an unauthenticated peer cannot reserve memory with a length prefix alone.
+const INITIAL_RECEIVE_CAPACITY: usize = 64 * 1024;
 
 // ─── Peer Info ─────────────────────────────────────────────────────────────
 

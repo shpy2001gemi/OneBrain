@@ -985,6 +985,8 @@ pub async fn get_peers(State(state): State<AppState>) -> ApiResult<serde_json::V
     Ok(ok(json!({ "peers": list, "count": count })))
 }
 
+/// Legacy TCP/JSON peer handshake. This is not the authenticated vNext/OBP
+/// path; the response says so explicitly.
 pub async fn connect_peer(
     State(state): State<AppState>,
     Json(body): Json<ConnectRequest>,
@@ -997,7 +999,12 @@ pub async fn connect_peer(
     })?;
     let node = state.node.lock().await;
     node.connect_to_seed(addr).await.map_err(ApiError::from)?;
-    Ok(ok(json!({ "connected": true, "address": body.address })))
+    Ok(ok(json!({
+        "connected": true,
+        "address": body.address,
+        "transport": "legacy_tcp_json",
+        "authenticated": false,
+    })))
 }
 
 // â”€â”€â”€ Graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
