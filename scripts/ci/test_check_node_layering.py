@@ -55,6 +55,13 @@ class LayeringRatchetTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("ku-core", failures[0])
 
+    def test_api_regaining_ku_encoder_fails(self) -> None:
+        edges = current_edges()
+        edges["onebrain-api"].add("ku-encoder")
+        failures = evaluate({"onebrain-node"}, edges)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("ku-encoder", failures[0])
+
     def test_harness_modules_must_be_feature_gated(self) -> None:
         lib = (
             '#[cfg(feature = "vnext-sim-harness")]\r\n'

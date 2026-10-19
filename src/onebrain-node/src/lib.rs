@@ -149,6 +149,13 @@ pub mod foundation {
     };
 }
 
+/// ARCH-09 facade: extraction-provider items that interface crates need,
+/// re-exported so hosts reach `ku-encoder` through the node instead of
+/// depending on it directly.
+pub mod extraction {
+    pub use ku_encoder::extraction::{ExtractionProvider, ManagedOllamaProvider};
+}
+
 pub use activation_journal::{
     ActivationOperationContext, ActivationPhase, DatasetGenerationReceipt,
 };

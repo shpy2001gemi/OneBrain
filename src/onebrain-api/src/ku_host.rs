@@ -1,13 +1,13 @@
 //! Trusted local KU custody inputs shared by the opt-in Web host and Desktop.
 //! No path, key, Registry authority or model grant is accepted from a WebView.
 use ku_core::foundation::VaultKey;
-use ku_encoder::extraction::{ExtractionProvider, ManagedOllamaProvider};
 use onebrain_base_contract::{
     ku::{InputMode, KuPrepareV1},
     BaseErrorCodeV1, ResourceBudgetV1,
 };
 use onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager;
 use onebrain_node::concept_registry_runtime::ConceptRegistryReaderLease;
+use onebrain_node::extraction::{ExtractionProvider, ManagedOllamaProvider};
 use onebrain_node::ku_manual::ManualKuInputs;
 use onebrain_node::ku_ollama::OllamaKuInputs;
 use onebrain_node::ku_product::{
