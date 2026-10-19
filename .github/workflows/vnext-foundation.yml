@@ -234,6 +234,8 @@ jobs:
         working-directory: .
         run: |
           python scripts/ci/validate_vnext_contracts.py
+          python scripts/ci/check_node_layering.py
+          python -m unittest scripts.ci.test_check_node_layering
           python -m scripts.encoder.generate_bundle --check
           python -m unittest scripts.encoder.test_contract
           python -m unittest scripts.ci.test_validate_vnext_product_profile

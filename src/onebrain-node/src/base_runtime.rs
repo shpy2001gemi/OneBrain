@@ -682,450 +682,6 @@ pub struct BaseServices {
 }
 
 impl BaseServices {
-    pub(crate) async fn ku_editor(
-        &self,
-        request: crate::ku_manual::ManualEditorRequest,
-        budget: ResourceBudgetV1,
-    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
-        use crate::ku_manual::ManualEditorRequest as Editor;
-        let recovery = matches!(
-            &request,
-            Editor::ReviewGet { .. }
-                | Editor::ReviewCancel { .. }
-                | Editor::ReviewList { .. }
-                | Editor::ShareInspect(_)
-                | Editor::ShareIntent(_)
-        );
-        let lease = self.lease(if recovery {
-            Admission::Recovery
-        } else {
-            Admission::NewWork
-        })?;
-        validate_budget(&budget)?;
-        if budget.max_bytes < 16384 || budget.max_items == 0 || budget.max_work_units < 1024 {
-            return Err(crate::ku_product::resource());
-        }
-        let ku = lease
-            .core
-            .ku
-            .as_ref()
-            .ok_or_else(crate::ku_product::unavailable)?;
-        ku.check_dataset(self.dataset_generation)?;
-        let operation = match &request {
-            crate::ku_manual::ManualEditorRequest::Draft(input) => Some(input.operation_id.0),
-            crate::ku_manual::ManualEditorRequest::EncodeText(input) => Some(input.operation_id.0),
-            Editor::ReviewStart(input) => Some(input.operation_id.0),
-            Editor::ReviewResume { operation_id } => Some(operation_id.0),
-            Editor::ReviewLower(input) => Some(input.operation_id.0),
-            _ => None,
-        };
-        if let Some(operation) = operation {
-            let receipt = lease
-                .core
-                .current_store()?
-                .reconcile(BaseOperationId(operation), self.principal)
-                .map_err(store_error)?
-                .receipt;
-            let draft_recovery = matches!(&request, Editor::ReviewResume { .. })
-                && receipt.state
-                    == crate::base_operation_store::BaseOperationStateV1::UnknownOutcome;
-            if receipt.state != crate::base_operation_store::BaseOperationStateV1::Reserved
-                && !draft_recovery
-            {
-                return Err(crate::ku_product::conflict());
-            }
-        }
-        let start = match request {
-            Editor::ReviewList {} => return ku.review_list(self.principal, &budget),
-            Editor::ReviewGet { operation_id } => {
-                return ku.review_get(self.principal, operation_id.0)
-            }
-            Editor::ReviewCancel { operation_id } => {
-                ku.review_cancel(self.principal, operation_id.0)?;
-                return ku.review_get(self.principal, operation_id.0);
-            }
-            Editor::ReviewStart(input) => {
-                let id = input.operation_id.0;
-                if !ku.review_start(self.principal, input, &budget)? {
-                    return ku.review_get(self.principal, id);
-                }
-                id
-            }
-            Editor::ReviewResume { operation_id } => {
-                ku.review_resume(self.principal, operation_id.0)?;
-                operation_id.0
-            }
-            other => return ku.editor(self.principal, other, &budget),
-        };
-        let worker_lease = self.lease(Admission::NewWork)?;
-        let principal = self.principal;
-        let response = ku.review_get(principal, start)?;
-        let cancel = {
-            // Admission and drain share this fence, so no worker can join
-            // after drain has signaled the existing review jobs.
-            let lifecycle = worker_lease
-                .core
-                .lifecycle
-                .lock()
-                .map_err(|_| internal_error())?;
-            if lifecycle.state != BaseRuntimeLifecycle::Open {
-                return Err(crate::ku_product::conflict());
-            }
-            ku.review_admit(start)?
-        };
-        tokio::spawn(async move {
-            if let Some(ku) = worker_lease.core.ku.as_ref() {
-                ku.run_review(principal, start, cancel).await;
-            }
-        });
-        Ok(response)
-    }
-    pub(crate) fn ku_experimental_ai_allowed(
-        &self,
-        commitment: [u8; 32],
-    ) -> Result<bool, BaseServiceError> {
-        let lease = self.lease(Admission::NewWork)?;
-        let ku = lease
-            .core
-            .ku
-            .as_ref()
-            .ok_or_else(crate::ku_product::unavailable)?;
-        ku.check_dataset(self.dataset_generation)?;
-        Ok(ku.inputs.experimental_ai_allowed(commitment))
-    }
-    pub(crate) async fn ku_reserve(
-        &self,
-    ) -> Result<onebrain_base_contract::ku::OperationId, BaseServiceError> {
-        let lease = self.lease(Admission::NewWork)?;
-        let ku = lease
-            .core
-            .ku
-            .as_ref()
-            .ok_or_else(crate::ku_product::unavailable)?;
-        ku.check_dataset(self.dataset_generation)?;
-        let op = lease
-            .core
-            .current_store()?
-            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, self.principal)
-            .map_err(store_error)?;
-        Ok(onebrain_base_contract::ku::OperationId(op.0))
-    }
-
-    pub(crate) async fn ku_invoke(
-        &self,
-        request: onebrain_base_contract::ku::KuRequestV1,
-        budget: ResourceBudgetV1,
-    ) -> Result<onebrain_base_contract::ku::KuResponseV1, BaseServiceError> {
-        use crate::base_operation_store::BaseOperationStateV1 as State;
-        use onebrain_base_contract::ku::*;
-        use onebrain_base_contract::ku_payload::KuPayload;
-        let admission = match request {
-            KuRequestV1::Cancel(_)
-            | KuRequestV1::Reconcile(_)
-            | KuRequestV1::Status(_)
-            | KuRequestV1::Preview(_) => Admission::Recovery,
-            _ => Admission::NewWork,
-        };
-        let lease = self.lease(admission)?;
-        validate_budget(&budget)?;
-        if budget.max_bytes == 0 || budget.max_items == 0 || budget.max_work_units == 0 {
-            return Err(crate::ku_product::resource());
-        }
-        if request
-            .payload_bytes()
-            .map_err(|_| crate::ku_product::resource())?
-            .len() as u64
-            > budget.max_bytes
-        {
-            return Err(crate::ku_product::resource());
-        }
-        let ku = lease
-            .core
-            .ku
-            .as_ref()
-            .ok_or_else(crate::ku_product::unavailable)?;
-        ku.check_dataset(self.dataset_generation)?;
-        let store = lease.core.current_store()?;
-        let principal = self.principal;
-        let admit_receipt = |receipt: &KuReceiptV1| -> Result<(), BaseServiceError> {
-            if receipt
-                .encode()
-                .map_err(|_| crate::ku_product::resource())?
-                .len() as u64
-                > budget.max_bytes
-            {
-                return Err(crate::ku_product::resource());
-            }
-            Ok(())
-        };
-        let complete_ku =
-            |id: OperationId, receipt: &KuReceiptV1| -> Result<(), BaseServiceError> {
-                let result = receipt
-                    .encode()
-                    .map_err(|_| crate::ku_product::unknown())
-                    .and_then(|bytes| {
-                        store
-                            .complete(BaseOperationId(id.0), bytes)
-                            .map(|_| ())
-                            .map_err(|_| crate::ku_product::unknown())
-                    });
-                if result.is_err() {
-                    let _ = store.mark_unknown(BaseOperationId(id.0));
-                }
-                result
-            };
-        let map_receipt = |r: &BaseOperationReceiptV1| -> Result<KuReceiptV1, BaseServiceError> {
-            if r.state == State::Committed && !r.result.is_empty() {
-                return KuReceiptV1::decode(&r.result).map_err(|_| crate::ku_product::corrupt());
-            }
-            Ok(KuReceiptV1 {
-                operation_id: OperationId(r.operation_id.0),
-                state: match r.state {
-                    State::Reserved => BaseState::Reserved,
-                    State::Prepared => BaseState::Prepared,
-                    State::Confirming => BaseState::Confirming,
-                    State::Committed => BaseState::Committed,
-                    State::Canceled => BaseState::Canceled,
-                    State::Failed => BaseState::Failed,
-                    State::UnknownOutcome => BaseState::UnknownOutcome,
-                },
-                object_cids: vec![],
-                limitations: vec![],
-                published: false,
-                authorizes_reward: false,
-            })
-        };
-        let preparation_store = &store;
-        let preparation_budget = &budget;
-        let prepare = |preparation: KuPrepareV1,
-                       revision: Option<(ObjectCID, RevisionFrontier)>| async move {
-            let store = preparation_store;
-            let budget = preparation_budget;
-            let id = preparation.operation_id;
-            if store
-                .operation_kind(BaseOperationId(id.0), principal)
-                .map_err(store_error)?
-                != BaseOperationKindV1::ExistingLocalCommand
-            {
-                return Err(crate::ku_product::conflict());
-            }
-            let state = store
-                .reconcile(BaseOperationId(id.0), principal)
-                .map_err(store_error)?
-                .receipt
-                .state;
-            if !matches!(state, State::Reserved | State::Prepared) {
-                return Err(crate::ku_product::conflict());
-            }
-            if state == State::Prepared && !ku.is_prepared(principal, id)? {
-                return Err(crate::ku_product::corrupt());
-            }
-            let preview = ku.prepare(principal, preparation, revision, budget).await?;
-            let mut exact = crate::ku_product::KU_PREPARED_MARKER.to_vec();
-            exact.extend_from_slice(&id.0);
-            store
-                .prepare(
-                    BaseOperationReservationId(id.0),
-                    BaseOperationKindV1::ExistingLocalCommand,
-                    exact,
-                    None,
-                    principal,
-                )
-                .map_err(store_error)?;
-            Ok(preview)
-        };
-        let response = match request {
-            KuRequestV1::Prepare(r) => KuResponseV1::Prepare(prepare(r, None).await?),
-            KuRequestV1::Revise(r) => KuResponseV1::Revise(
-                prepare(
-                    r.preparation,
-                    Some((r.predecessor_object_cid, r.expected_revision_frontier)),
-                )
-                .await?,
-            ),
-            KuRequestV1::Preview(r) => {
-                let state = store
-                    .reconcile(BaseOperationId(r.operation_id.0), principal)
-                    .map_err(store_error)?
-                    .receipt
-                    .state;
-                if state == State::Canceled {
-                    return Err(crate::ku_product::conflict());
-                }
-                KuResponseV1::Preview(ku.preview(principal, r.operation_id)?)
-            }
-            KuRequestV1::Save(r) => {
-                r.validate().map_err(|_| crate::ku_product::invalid())?;
-                ku.preflight_save(principal, &r)?;
-                admit_receipt(&ku.confirmation_receipt(principal, r.operation_id)?)?;
-                if let Some(receipt) = store
-                    .begin_confirm(
-                        BaseOperationId(r.operation_id.0),
-                        BaseIdempotencyKey(r.idempotency_key.0),
-                        principal,
-                    )
-                    .map_err(store_error)?
-                {
-                    KuResponseV1::Save(map_receipt(&receipt)?)
-                } else {
-                    match ku.save(principal, &r) {
-                        Ok(result) => {
-                            complete_ku(r.operation_id, &result)?;
-                            KuResponseV1::Save(result)
-                        }
-                        Err(_) => {
-                            let _ = store.mark_unknown(BaseOperationId(r.operation_id.0));
-                            return Err(crate::ku_product::unknown());
-                        }
-                    }
-                }
-            }
-            KuRequestV1::Get(r) => KuResponseV1::Get(ku.get(principal, r.object_cid)?),
-            KuRequestV1::List(r) => {
-                KuResponseV1::List(ku.page(principal, None, r.limit, r.continuation, &budget)?)
-            }
-            KuRequestV1::Search(r) => KuResponseV1::Search(ku.page(
-                principal,
-                Some(r.query),
-                r.limit,
-                r.continuation,
-                &budget,
-            )?),
-            KuRequestV1::Status(r) => {
-                let mut result = ku.status();
-                if lease
-                    .core
-                    .lifecycle
-                    .lock()
-                    .map_err(|_| internal_error())?
-                    .state
-                    != BaseRuntimeLifecycle::Open
-                {
-                    result.lifecycle = Lifecycle::Degraded;
-                    result.limitations.push("base_runtime_draining".into());
-                }
-                if let Some(id) = r.operation_id {
-                    let base = store
-                        .reconcile(BaseOperationId(id.0), principal)
-                        .map_err(store_error)?;
-                    result.receipt = Some(map_receipt(&base.receipt)?);
-                }
-                KuResponseV1::Status(result)
-            }
-            KuRequestV1::Cancel(r) => {
-                if store
-                    .operation_kind(BaseOperationId(r.operation_id.0), principal)
-                    .map_err(store_error)?
-                    != BaseOperationKindV1::ExistingLocalCommand
-                {
-                    return Err(crate::ku_product::conflict());
-                }
-                let mut projected = map_receipt(
-                    &store
-                        .reconcile(BaseOperationId(r.operation_id.0), principal)
-                        .map_err(store_error)?
-                        .receipt,
-                )?;
-                projected.state = BaseState::Canceled;
-                admit_receipt(&projected)?;
-                // The eligibility check and state change share the Base journal lock.
-                let receipt = store
-                    .cancel_before_confirmation(BaseOperationId(r.operation_id.0), principal)
-                    .map_err(store_error)?;
-                ku.cancel(principal, r.operation_id)
-                    .map_err(|_| crate::ku_product::unknown())?;
-                KuResponseV1::Cancel(map_receipt(&receipt)?)
-            }
-            KuRequestV1::Reconcile(r) => {
-                let base = store
-                    .reconcile(BaseOperationId(r.operation_id.0), principal)
-                    .map_err(store_error)?
-                    .receipt;
-                if base.state == State::UnknownOutcome {
-                    if base.idempotency_key.is_some() {
-                        admit_receipt(&ku.confirmation_receipt(principal, r.operation_id)?)?;
-                    }
-                    if let Some(result) = ku.saved_receipt(principal, r.operation_id)? {
-                        admit_receipt(&result)?;
-                        complete_ku(r.operation_id, &result)?;
-                        KuResponseV1::Reconcile(result)
-                    } else if let Some(key) = base.idempotency_key {
-                        // Repair the finite saved command from encrypted staging; never invoke an encoder.
-                        let result = ku
-                            .recovery_save(principal, r.operation_id, key.0)
-                            .map_err(|_| crate::ku_product::unknown())?;
-                        complete_ku(r.operation_id, &result)?;
-                        KuResponseV1::Reconcile(result)
-                    } else {
-                        // No confirmation key means save never began. Close the
-                        // interrupted preparation without invoking its encoder.
-                        let mut projected = map_receipt(&base)?;
-                        projected.state = BaseState::Failed;
-                        admit_receipt(&projected)?;
-                        let failed = store
-                            .fail(BaseOperationId(r.operation_id.0), BaseErrorCodeV1::Conflict)
-                            .map_err(store_error)?;
-                        // ARCH-03 GC: Base `failed` is final, so the KU active
-                        // bundle/extraction row is compacted or dropped. The failed
-                        // receipt is already durable; a cleanup error only leaves
-                        // the row occupying one active slot and is not surfaced.
-                        let _ = ku.retire_unsaved(principal, r.operation_id);
-                        KuResponseV1::Reconcile(map_receipt(&failed)?)
-                    }
-                } else {
-                    KuResponseV1::Reconcile(map_receipt(&base)?)
-                }
-            }
-            KuRequestV1::Export(r) => {
-                if r.mode == ExportMode::CanonicalPublicExchange {
-                    KuResponseV1::Export(ku.public_export(principal, r)?)
-                } else {
-                    for cid in &r.object_cids {
-                        ku.get(principal, *cid)?;
-                    }
-                    if lease.core.archive_service.is_none() {
-                        return Err(crate::ku_product::unavailable());
-                    }
-                    let mut projected = KuExportViewV1 {
-                        mode: r.mode,
-                        object_cids: r.object_cids,
-                        limitations: vec!["base_archive_dataset_scope".into()],
-                        requires_base_management: true,
-                        public_records: None,
-                        archive_operation_id: Some(OperationId([0; 32])),
-                    };
-                    if projected
-                        .encode()
-                        .map_err(|_| crate::ku_product::resource())?
-                        .len() as u64
-                        > budget.max_bytes
-                    {
-                        return Err(crate::ku_product::resource());
-                    }
-                    let BaseResponseV1::Reserved(operation) = self
-                        .invoke(BaseRequestV1::ReserveOperation(
-                            BaseOperationKindV1::CreateArchive,
-                        ))
-                        .await?
-                    else {
-                        return Err(internal_error());
-                    };
-                    projected.archive_operation_id = Some(OperationId(operation.0));
-                    KuResponseV1::Export(projected)
-                }
-            }
-        };
-        if response
-            .payload_bytes()
-            .map_err(|_| crate::ku_product::resource())?
-            .len() as u64
-            > budget.max_bytes
-        {
-            return Err(crate::ku_product::resource());
-        }
-        Ok(response)
-    }
-
     pub fn negotiate(
         &self,
         request: BaseNegotiationRequest,
@@ -1334,6 +890,96 @@ impl BaseServices {
     fn lease(&self, admission: Admission) -> Result<BaseServiceLease, BaseServiceError> {
         self.upgrade()?
             .acquire(self.process_generation, self.dataset_generation, admission)
+    }
+
+    /// ARCH-09 product port: admit one product request under the same
+    /// generation fences and in-flight accounting as Base requests. Product
+    /// dispatch (`ku_product::dispatch`) receives only this lease, never the
+    /// aggregate, authority state or archive capabilities.
+    pub(crate) fn product_lease(
+        &self,
+        admission: ProductAdmission,
+    ) -> Result<ProductLease, BaseServiceError> {
+        let lease = self.lease(match admission {
+            ProductAdmission::NewWork => Admission::NewWork,
+            ProductAdmission::Recovery => Admission::Recovery,
+        })?;
+        Ok(ProductLease {
+            lease,
+            principal: self.principal,
+            dataset_generation: self.dataset_generation,
+        })
+    }
+}
+
+/// Admission class for product requests (ARCH-09 product port). New work is
+/// refused once the runtime drains; recovery (status/cancel/reconcile/preview)
+/// stays admitted while draining.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProductAdmission {
+    NewWork,
+    Recovery,
+}
+
+/// An admitted, in-flight product request bound to one authenticated
+/// principal and dataset generation. Dropping it releases the in-flight slot.
+pub(crate) struct ProductLease {
+    lease: BaseServiceLease,
+    principal: [u8; 32],
+    dataset_generation: DatasetGenerationId,
+}
+
+impl ProductLease {
+    pub(crate) fn principal(&self) -> [u8; 32] {
+        self.principal
+    }
+
+    pub(crate) fn dataset_generation(&self) -> DatasetGenerationId {
+        self.dataset_generation
+    }
+
+    /// The node-owned KU store, when this runtime was opened with KU config.
+    pub(crate) fn ku(&self) -> Option<&crate::ku_product::KuStore> {
+        self.lease.core.ku.as_ref()
+    }
+
+    /// The current Base operation journal (reserve/prepare/confirm/reconcile).
+    pub(crate) fn operations(&self) -> Result<Arc<BaseOperationStore>, BaseServiceError> {
+        self.lease.core.current_store()
+    }
+
+    pub(crate) fn lifecycle_open(&self) -> Result<bool, BaseServiceError> {
+        Ok(self
+            .lease
+            .core
+            .lifecycle
+            .lock()
+            .map_err(|_| internal_error())?
+            .state
+            == BaseRuntimeLifecycle::Open)
+    }
+
+    pub(crate) fn archive_available(&self) -> bool {
+        self.lease.core.archive_service.is_some()
+    }
+
+    /// Run `admit` while holding the lifecycle lock, only if the runtime is
+    /// still open. Drain takes the same lock, so work admitted here is always
+    /// visible to drain. Returns `None` when the runtime is draining/closed.
+    pub(crate) fn with_open_lifecycle<T>(
+        &self,
+        admit: impl FnOnce() -> Result<T, BaseServiceError>,
+    ) -> Result<Option<T>, BaseServiceError> {
+        let lifecycle = self
+            .lease
+            .core
+            .lifecycle
+            .lock()
+            .map_err(|_| internal_error())?;
+        if lifecycle.state != BaseRuntimeLifecycle::Open {
+            return Ok(None);
+        }
+        admit().map(Some)
     }
 }
 
@@ -3112,7 +2758,7 @@ fn validate_command_budget(command: &BaseCommandV1) -> Result<(), BaseServiceErr
     Ok(())
 }
 
-fn validate_budget(budget: &ResourceBudgetV1) -> Result<(), BaseServiceError> {
+pub(crate) fn validate_budget(budget: &ResourceBudgetV1) -> Result<(), BaseServiceError> {
     budget.validate().map_err(|_| {
         BaseServiceError::new(BaseErrorCodeV1::InvalidRequest, "resource_budget_invalid")
     })
@@ -3281,7 +2927,7 @@ fn now_seconds() -> u64 {
         .as_secs()
 }
 
-fn store_error(error: BaseOperationStoreError) -> BaseServiceError {
+pub(crate) fn store_error(error: BaseOperationStoreError) -> BaseServiceError {
     match error {
         BaseOperationStoreError::NotFound => not_found(),
         BaseOperationStoreError::Conflict | BaseOperationStoreError::StaleGeneration => {
@@ -3324,6 +2970,6 @@ fn corrupt_error() -> BaseServiceError {
     BaseServiceError::new(BaseErrorCodeV1::CorruptState, "base_durable_state_corrupt")
 }
 
-fn internal_error() -> BaseServiceError {
+pub(crate) fn internal_error() -> BaseServiceError {
     BaseServiceError::new(BaseErrorCodeV1::InternalError, "base_internal_error")
 }
