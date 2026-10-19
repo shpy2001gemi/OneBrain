@@ -834,7 +834,7 @@ fn format_limitations(limitations: &[&str]) -> String {
 pub(crate) fn prepare_runtime_dependencies(
     data_dir: &Path,
 ) -> Result<onebrain_node::VNextProductRuntimeDependencies, String> {
-    use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+    use onebrain_node::foundation::{MetabolicViewPolicy, ObjectReference};
     use onebrain_node::kql::LocalNeedVaultKey;
     use onebrain_node::{LocalPolicyRegistry, LocalPolicyVersion};
 
@@ -871,7 +871,7 @@ pub(crate) fn prepare_feed_publisher(
     use std::sync::Arc;
 
     use ed25519_dalek::SigningKey;
-    use ku_core::foundation::{
+    use onebrain_node::foundation::{
         decode_feed_inception, DeviceId, FeedEventSigner, FeedInception, NamespaceCommitment,
     };
 

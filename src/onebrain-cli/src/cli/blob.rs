@@ -45,7 +45,7 @@ pub(crate) async fn cmd_blob(
                     println!("  {}", "─".repeat(60));
                     for blob in &blobs {
                         let type_name =
-                            ku_core::blob_store::BlobType::from_u8(blob.blob_type).name();
+                            onebrain_node::blob::BlobType::from_u8(blob.blob_type).name();
                         let size_str = format_size(blob.total_size);
                         let pin = if blob.pinned { " \u{1f4cc}" } else { "" };
                         println!(
@@ -81,7 +81,7 @@ pub(crate) async fn cmd_blob(
             }
             match node.store_blob(file_path) {
                 Ok(meta) => {
-                    let type_name = ku_core::blob_store::BlobType::from_u8(meta.blob_type).name();
+                    let type_name = onebrain_node::blob::BlobType::from_u8(meta.blob_type).name();
                     println!();
                     println!("  \u{2713} Blob stored successfully");
                     println!(
@@ -110,7 +110,7 @@ pub(crate) async fn cmd_blob(
             }
             match node.get_blob_meta(rest) {
                 Ok(meta) => {
-                    let type_name = ku_core::blob_store::BlobType::from_u8(meta.blob_type).name();
+                    let type_name = onebrain_node::blob::BlobType::from_u8(meta.blob_type).name();
                     println!();
                     println!("  ── Blob Detail ──");
                     println!("  CID:        {}", meta.blob_cid_hex);

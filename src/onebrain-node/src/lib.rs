@@ -134,6 +134,21 @@ pub mod kql {
     pub use ku_kql::vnext_private_need::LocalNeedVaultKey;
 }
 
+/// ARCH-09 facade: blob-store items that interface crates need, re-exported so
+/// they reach `ku-core` through the node instead of depending on it directly.
+pub mod blob {
+    pub use ku_core::blob_store::BlobType;
+}
+
+/// ARCH-09 facade: foundation types (policy references, Feed inception and
+/// signing) that interface crates need, re-exported from `ku-core`.
+pub mod foundation {
+    pub use ku_core::foundation::{
+        decode_feed_inception, DeviceId, FeedEventSigner, FeedInception, MetabolicViewPolicy,
+        NamespaceCommitment, ObjectReference,
+    };
+}
+
 pub use activation_journal::{
     ActivationOperationContext, ActivationPhase, DatasetGenerationReceipt,
 };

@@ -36,7 +36,7 @@ SURFACES = {
 # shrink this list as each bypass moves behind `onebrain-node`.
 KNOWN_BYPASSES = {
     "onebrain-api": {"ku-core", "ku-encoder", "ku-kql"},
-    "onebrain-cli": {"ku-core"},
+    "onebrain-cli": set(),
 }
 
 # The node core must not pull in surfaces or server/desktop shells. The
