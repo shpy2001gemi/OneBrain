@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { KuClient, Models, ReviewJob, Session, TextIntake } from "../api/ku";
 import { KuDraftClaims } from "./KuDraftClaims";
+import { KuReviewLowering } from "./KuReviewLowering";
 
 const labels: Record<string, string> = {
   queued: "Đã nhận · đang chờ xử lý", extracting: "Đang tách nội dung",
@@ -115,6 +116,8 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
           <h3>Phần {w+1}: {labels[state] ?? state}</h3>
           {!revision && <p>Chưa có bản nháp được ghi cho phần này.</p>}
           {revision && <KuDraftClaims draft={revision.draft}/>}
+          {revision && !active(job.job.state) && !job.job.active && job.job.state!=="canceled" && revision.draft.statements.map((_,s)=>
+            <KuReviewLowering key={`${operation}-${w}-${s}`} client={client} review={operation} window={w} statement={s}/>)}
           {!!revision?.validation.uncovered.length && <p>Nội dung chưa được phân vai đầy đủ: {revision.validation.uncovered.map(q=>`“${q}”`).join(" · ")}</p>}
           {!!revision?.validation.issues.length && <p>Kiểm tra nguồn/cấu trúc: {revision.validation.issues.join(" · ")}</p>}
           {revision?.draft.unresolved.map((u,i)=><p key={i}>Cần làm rõ “{u.quote}”: {u.reason}</p>)}

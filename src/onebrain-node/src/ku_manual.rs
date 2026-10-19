@@ -77,6 +77,19 @@ pub struct PublicShareInspect {
 pub struct PublicShareIntent {
     pub intent_id: String,
 }
+/// ARCH-07: lower one claim from the latest revision of a review-job window.
+/// `reviewed` records the user's explicit review; prepare/preview/save stay
+/// separate explicit steps on the fresh reserved `operation_id`.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewLowerInput {
+    pub operation_id: OperationId,
+    pub idempotency_key: IdempotencyKey,
+    pub review_operation_id: OperationId,
+    pub window: u32,
+    pub statement: u32,
+    pub reviewed: bool,
+}
 #[derive(Deserialize)]
 #[serde(
     tag = "action",
@@ -93,6 +106,7 @@ pub enum ManualEditorRequest {
     ReviewList {},
     ReviewResume { operation_id: OperationId },
     ReviewCancel { operation_id: OperationId },
+    ReviewLower(ReviewLowerInput),
     Resolve { label: String },
     Draft(ManualDraft),
     SharePrepare(PublicSharePrepare),
@@ -117,6 +131,9 @@ pub enum ManualEditorResponse {
     },
     Review {
         review_job: serde_json::Value,
+    },
+    ReviewLowering {
+        review_lowering: serde_json::Value,
     },
     Models {
         models: Vec<crate::ku_ollama::LocalModel>,
@@ -271,6 +288,7 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ReviewList { .. }
             | ManualEditorRequest::ReviewResume { .. }
             | ManualEditorRequest::ReviewCancel { .. }
+            | ManualEditorRequest::ReviewLower(_)
             | ManualEditorRequest::SharePrepare(_)
             | ManualEditorRequest::ShareConfirm(_)
             | ManualEditorRequest::ShareInspect(_)

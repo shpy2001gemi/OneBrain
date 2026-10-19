@@ -103,6 +103,20 @@ export interface ReviewJob {
     }[];
   };
 }
+export interface ReviewLowerInput {
+  operation_id: OperationRef["operation_id"];
+  idempotency_key: Preparation["idempotency_key"];
+  review_operation_id: string;
+  window: number;
+  statement: number;
+  reviewed: true;
+}
+export interface ReviewLowering {
+  saveable: boolean;
+  preparation?: Preparation;
+  unresolved: { role: string; label: string; candidates: number }[];
+  limitations: string[];
+}
 export interface Draft {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
@@ -287,6 +301,8 @@ export function createKuClient(
       request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_resume",payload:{operation_id}}}),
     reviewCancel: (session: Session, operation_id: string) =>
       request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_cancel",payload:{operation_id}}}),
+    reviewLower: (session: Session, payload: ReviewLowerInput) =>
+      request<{review_lowering: ReviewLowering}>("editor", {session, budget, request:{action:"review_lower",payload}}),
     reserve: (session: Session) =>
       request<OperationRef>("reservations", { session }),
     catalog: (session: Session) =>

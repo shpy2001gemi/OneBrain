@@ -152,6 +152,34 @@ impl KuStore {
             review_job: json!({"operation_id":hex(&id),"source":record.source,"model":record.model,"job":record.job,"canonical_ku":false,"semantic_verification":"unassessed","factual_verification":"unassessed","limitations":["local_only","experimental_model_unqualified","draft_is_not_ku"]}),
         })
     }
+    /// ARCH-07: source text and one claim of a window's latest revision. Only
+    /// idle (not queued/running/canceled) jobs can be lowered.
+    pub(super) fn review_claim(
+        &self,
+        principal: [u8; 32],
+        id: [u8; 32],
+        window: usize,
+        statement: usize,
+    ) -> Result<(String, serde_json::Value), BaseServiceError> {
+        let record = self.read_review(principal, id)?;
+        if record.job.active.is_some()
+            || matches!(
+                record.job.state.as_str(),
+                "queued" | "extracting" | "reviewing" | "repairing" | "canceled"
+            )
+        {
+            return Err(conflict());
+        }
+        let claim = record
+            .job
+            .windows
+            .get(window)
+            .and_then(|w| w.revisions.last())
+            .and_then(|r| r.draft["statements"].get(statement))
+            .cloned()
+            .ok_or_else(not_found)?;
+        Ok((record.source, claim))
+    }
     pub(crate) fn review_start(
         &self,
         principal: [u8; 32],

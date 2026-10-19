@@ -8,6 +8,7 @@ mod ollama_worker;
 mod provider;
 mod qwen_tokenizer;
 pub mod review_draft;
+pub mod review_lowering;
 pub mod semantic_selection;
 pub mod semantic_selection_v2;
 pub use managed_ollama::ManagedOllamaProvider;

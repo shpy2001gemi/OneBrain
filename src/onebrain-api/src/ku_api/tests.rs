@@ -711,6 +711,7 @@ async fn errors_keep_all_base_retry_and_reconcile_policies() {
 mod registry_fixture;
 use registry_fixture::registry;
 mod experimental_text;
+mod review_lowering;
 
 /// Development-only integration: genuine installed model, synthetic signed
 /// Registry, fresh explicit consent/text. Never opens qualification holdouts.

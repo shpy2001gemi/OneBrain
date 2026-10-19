@@ -716,6 +716,7 @@ impl BaseServices {
             crate::ku_manual::ManualEditorRequest::EncodeText(input) => Some(input.operation_id.0),
             Editor::ReviewStart(input) => Some(input.operation_id.0),
             Editor::ReviewResume { operation_id } => Some(operation_id.0),
+            Editor::ReviewLower(input) => Some(input.operation_id.0),
             _ => None,
         };
         if let Some(operation) = operation {

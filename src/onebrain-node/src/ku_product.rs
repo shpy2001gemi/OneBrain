@@ -43,6 +43,7 @@ const TERMINAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private
 /// Bound for active (prepared, not yet committed/canceled) operations only.
 const MAX_OPERATIONS: usize = 1024;
 mod review_jobs;
+mod review_lowering;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
 /// Finite local bound for compact finished records; exceeding it is a
 /// non-retryable `ku_storage_full`, never a retryable rate limit.
@@ -503,6 +504,8 @@ struct Paging {
 pub(crate) struct KuStore {
     review_running: Mutex<BTreeMap<[u8; 32], Arc<AtomicBool>>>,
     review_gate: tokio::sync::Semaphore,
+    /// ARCH-07 lowered review drafts awaiting prepare; process memory only.
+    lowered: Mutex<BTreeMap<[u8; 32], review_lowering::LoweredDraft>>,
     vault: PrivateVault<RedbVerifiedBackend>,
     journal: Database,
     dataset: DatasetGenerationId,
@@ -726,6 +729,7 @@ impl KuStore {
             | Req::ShareConfirm(_)
             | Req::ShareInspect(_)
             | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
+            Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
             other => return self.inputs.editor(principal, other, budget),
         };
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
@@ -921,6 +925,7 @@ impl KuStore {
         let store = Self {
             review_running: Mutex::new(BTreeMap::new()),
             review_gate: tokio::sync::Semaphore::new(1),
+            lowered: Mutex::new(BTreeMap::new()),
             vault,
             journal,
             dataset: paths.current_generation(),
@@ -1463,9 +1468,12 @@ impl KuStore {
         if (request.input_mode == InputMode::ResolvedSemanticDraft) != request.draft_ref.is_some() {
             return Err(invalid());
         }
-        if !self
-            .inputs
-            .supports_implementation(request.input_mode, request.implementation_commitment.0)
+        let lowered = request.input_mode == InputMode::ResolvedSemanticDraft
+            && review_lowering::is_lowering_commitment(request.implementation_commitment.0);
+        if !lowered
+            && !self
+                .inputs
+                .supports_implementation(request.input_mode, request.implementation_commitment.0)
         {
             return Err(unavailable());
         }
@@ -1479,21 +1487,24 @@ impl KuStore {
             }
         }
         let flight = self.begin_extraction(request.operation_id)?;
-        let mut input = self
-            .inputs
-            .resolve_async(
-                principal,
-                &request,
-                &release,
-                budget,
-                KuExtractionExecution {
-                    journal: self,
-                    process: self.process,
-                    dataset: self.dataset.0,
-                    canceled: flight.cancel.clone(),
-                },
-            )
-            .await?;
+        let mut input = if lowered {
+            self.resolve_lowered(principal, &request)?
+        } else {
+            self.inputs
+                .resolve_async(
+                    principal,
+                    &request,
+                    &release,
+                    budget,
+                    KuExtractionExecution {
+                        journal: self,
+                        process: self.process,
+                        dataset: self.dataset.0,
+                        canceled: flight.cancel.clone(),
+                    },
+                )
+                .await?
+        };
         // Inference holds no service mutation lock. Revalidate the mutation and
         // cancellation frontier after the await and before any prepared write.
         let mut extraction_budget = input.extraction_budget.take();
