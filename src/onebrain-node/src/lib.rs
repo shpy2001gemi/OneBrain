@@ -127,6 +127,13 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
+/// ARCH-09 facade: KQL items that interface crates need, re-exported so they
+/// reach `ku-kql` through the node instead of depending on it directly.
+pub mod kql {
+    pub use ku_kql::read_only::{DOCUMENTED_EXAMPLES, READ_ONLY_FIELDS};
+    pub use ku_kql::vnext_private_need::LocalNeedVaultKey;
+}
+
 pub use activation_journal::{
     ActivationOperationContext, ActivationPhase, DatasetGenerationReceipt,
 };

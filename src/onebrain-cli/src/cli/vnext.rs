@@ -835,7 +835,7 @@ pub(crate) fn prepare_runtime_dependencies(
     data_dir: &Path,
 ) -> Result<onebrain_node::VNextProductRuntimeDependencies, String> {
     use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
-    use ku_kql::vnext_private_need::LocalNeedVaultKey;
+    use onebrain_node::kql::LocalNeedVaultKey;
     use onebrain_node::{LocalPolicyRegistry, LocalPolicyVersion};
 
     let vault_key = load_or_create_development_key(&data_dir.join(PRIVATE_NEED_VAULT_KEY_FILE))?;

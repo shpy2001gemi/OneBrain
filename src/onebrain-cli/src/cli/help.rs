@@ -196,13 +196,13 @@ pub(crate) fn cmd_help(args: &str) {
                 println!("    Text values use double quotes. WHERE filters the first node.");
                 println!();
                 println!("  Fields:");
-                for chunk in ku_kql::read_only::READ_ONLY_FIELDS.chunks(6) {
+                for chunk in onebrain_node::kql::READ_ONLY_FIELDS.chunks(6) {
                     println!("    {}", chunk.join(", "));
                 }
                 println!("    (trust_score and certainty are 0..10000)");
                 println!();
                 println!("  Examples:");
-                for example in ku_kql::read_only::DOCUMENTED_EXAMPLES {
+                for example in onebrain_node::kql::DOCUMENTED_EXAMPLES {
                     println!("    kql {}", example);
                 }
                 println!();

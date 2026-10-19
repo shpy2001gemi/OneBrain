@@ -324,7 +324,7 @@ async fn real_api_node_workflow_preserves_authority_replay_and_session_context()
         &[7; 32],
     )));
     node.set_vnext_product_dependencies(VNextProductRuntimeDependencies::new(
-        ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes([5; 32]),
+        onebrain_node::kql::LocalNeedVaultKey::from_bytes([5; 32]),
         policies,
     ))
     .unwrap();

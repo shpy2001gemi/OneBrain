@@ -43,7 +43,7 @@ class LayeringRatchetTests(unittest.TestCase):
 
     def test_removed_bypass_requires_tightening_the_list(self) -> None:
         edges = current_edges()
-        edges["onebrain-cli"].discard("ku-kql")
+        edges["onebrain-cli"].discard("ku-core")
         failures = evaluate({"onebrain-node"}, edges)
         self.assertEqual(len(failures), 1)
         self.assertIn("KNOWN_BYPASSES", failures[0])
