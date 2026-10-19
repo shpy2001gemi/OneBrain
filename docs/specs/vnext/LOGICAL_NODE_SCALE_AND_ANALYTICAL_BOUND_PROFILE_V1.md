@@ -3,7 +3,7 @@
 > **Task:** `QA-007`  
 > **Status:** Complete  
 > **Code:** [`onebrain-node::vnext_scale_simulation`](../../../src/onebrain-node/src/vnext_scale_simulation.rs)  
-> **Regenerator:** `cargo run -p onebrain-node --example qa007_scale_report --quiet`
+> **Regenerator:** `cargo run -p onebrain-node --features vnext-sim-harness --example qa007_scale_report --quiet`
 
 ## 1. What was tested
 

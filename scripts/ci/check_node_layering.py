@@ -56,6 +56,36 @@ NODE_FORBIDDEN = {
 
 LINE = re.compile(r"^(\d+)([A-Za-z0-9_.\-]+) v")
 
+# Simulation/benchmark/canary harness modules that must stay out of the
+# default node core: each `pub mod` for them in lib.rs must be preceded by a
+# `#[cfg(feature = "...")]` (or `#[cfg(test)]`) gate.
+NODE_LIB = WORKSPACE / "onebrain-node" / "src" / "lib.rs"
+HARNESS_MODULES = {
+    "vnext_m5_benchmark",
+    "vnext_m6_model",
+    "vnext_scale_simulation",
+    "vnext_crash_harness",
+    "vnext_fuzz_targets",
+    "vnext_soak_release",
+    "vnext_canary_operations",
+    "vnext_p5_operations",
+}
+MOD_LINE = re.compile(r"^\s*pub\s+mod\s+([A-Za-z0-9_]+)\s*;")
+GATE_LINE = re.compile(r"^\s*#\[cfg\((feature\s*=|test\))")
+
+
+def ungated_harness_modules(lib_text: str) -> list[str]:
+    """Return harness modules declared in lib.rs without a cfg gate."""
+    found: dict[str, bool] = {}
+    previous = ""
+    for line in lib_text.splitlines():
+        match = MOD_LINE.match(line)
+        if match and match.group(1) in HARNESS_MODULES:
+            found[match.group(1)] = bool(GATE_LINE.match(previous))
+        if line.strip():
+            previous = line
+    return sorted(name for name, gated in found.items() if not gated)
+
 
 def cargo_tree(package: str, depth: int | None) -> list[tuple[int, str]]:
     """Return (depth, crate) rows for the default build's normal edges."""
@@ -121,7 +151,14 @@ def check() -> list[str]:
         }
         for surface in SURFACES
     }
-    return evaluate(node_tree, direct)
+    failures = evaluate(node_tree, direct)
+    ungated = ungated_harness_modules(NODE_LIB.read_text(encoding="utf-8"))
+    if ungated:
+        failures.append(
+            f"{NODE} lib.rs compiles harness modules in the default core: {ungated} "
+            "(gate them behind a cfg(feature) such as vnext-sim-harness)"
+        )
+    return failures
 
 
 def main() -> int:

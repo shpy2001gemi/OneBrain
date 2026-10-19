@@ -23,7 +23,7 @@ cargo test -p onebrain-node vnext_mixed_conformance --lib
 cargo test -p onebrain-node vnext_security_suite --lib
 cargo test -p ku-core qa006_ --lib
 cargo test -p ku-net qa006_ --lib
-cargo test -p onebrain-node qa007_ --lib
+cargo test -p onebrain-node --features vnext-sim-harness qa007_ --lib
 cargo test -p onebrain-node qa008_ --lib
 cargo run --release -p onebrain-node --features vnext-soak-harness \
   --example dr_m5_soak_release -- --profile smoke \

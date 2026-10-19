@@ -94,7 +94,7 @@ cargo test -p ku-core qa006_ --lib
 cargo test -p ku-net qa006_ --lib
 cargo test -p onebrain-node run002_ --lib
 cargo test -p onebrain-node vnext_security_suite --lib
-cargo test -p onebrain-node qa007_ --lib
+cargo test -p onebrain-node --features vnext-sim-harness qa007_ --lib
 cargo test -p onebrain-node qa008_ --lib
 cargo test -p onebrain-node --features vnext-canary-harness p5_01_ --lib
 cargo test -p onebrain-node --features vnext-canary-harness vnext_p5_operations --lib

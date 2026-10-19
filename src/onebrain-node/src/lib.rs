@@ -68,7 +68,9 @@ pub mod vnext_linux_candidate_gatherer;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_linux_network_epoch;
 pub mod vnext_local_runtime;
+#[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_m5_benchmark;
+#[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_m6_model;
 pub mod vnext_mixed_conformance;
 #[cfg(feature = "vnext-network-runtime")]
@@ -115,6 +117,7 @@ pub mod vnext_route_authority;
 pub mod vnext_route_journal;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_runtime_rollout;
+#[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
@@ -230,6 +233,7 @@ pub use vnext_local_runtime::{
     LocalCandidateInput, LocalCandidateOutcome, LocalMaterializationRequest, LocalRuntimeError,
     LocalVerticalSlice,
 };
+#[cfg(feature = "vnext-sim-harness")]
 pub use vnext_m5_benchmark::{
     AssemblyBenchmarkCase, AssemblyMetrics, BenchmarkThresholds, BenchmarkVariant,
     BenchmarkedSideEffectKind, ConsentBoundaryCase, ConsentMetrics, GapFillCase, GapFillMetrics,
@@ -237,6 +241,7 @@ pub use vnext_m5_benchmark::{
     M5BenchmarkInput, M5BenchmarkReport, M5BenchmarkRunner, M5GateVector, MappingValidityCase,
     MetricFraction, PrivacyLeakageProbe, PrivacyMetrics,
 };
+#[cfg(feature = "vnext-sim-harness")]
 pub use vnext_m6_model::{run_m6_bounded_models, BoundedInvariantResult, M6BoundedModelReport};
 #[cfg(feature = "vnext-network-runtime")]
 pub use vnext_network_runtime::{

@@ -4,9 +4,21 @@ from __future__ import annotations
 import unittest
 
 try:
-    from scripts.ci.check_node_layering import KNOWN_BYPASSES, SURFACES, evaluate
+    from scripts.ci.check_node_layering import (
+        KNOWN_BYPASSES,
+        NODE_LIB,
+        SURFACES,
+        evaluate,
+        ungated_harness_modules,
+    )
 except ImportError:  # pragma: no cover - direct script-directory execution
-    from check_node_layering import KNOWN_BYPASSES, SURFACES, evaluate
+    from check_node_layering import (
+        KNOWN_BYPASSES,
+        NODE_LIB,
+        SURFACES,
+        evaluate,
+        ungated_harness_modules,
+    )
 
 
 def current_edges() -> dict[str, set[str]]:
@@ -35,6 +47,20 @@ class LayeringRatchetTests(unittest.TestCase):
         failures = evaluate({"onebrain-node"}, edges)
         self.assertEqual(len(failures), 1)
         self.assertIn("KNOWN_BYPASSES", failures[0])
+
+    def test_harness_modules_must_be_feature_gated(self) -> None:
+        lib = (
+            '#[cfg(feature = "vnext-sim-harness")]\r\n'
+            "pub mod vnext_m5_benchmark;\r\n"
+            "pub mod vnext_m6_model;\r\n"
+            "#[cfg(test)]\n"
+            "pub mod vnext_scale_simulation;\n"
+            "pub mod vnext_status;\n"
+        )
+        self.assertEqual(ungated_harness_modules(lib), ["vnext_m6_model"])
+
+    def test_repository_lib_keeps_harness_out_of_default_core(self) -> None:
+        self.assertEqual(ungated_harness_modules(NODE_LIB.read_text(encoding="utf-8")), [])
 
 
 if __name__ == "__main__":
