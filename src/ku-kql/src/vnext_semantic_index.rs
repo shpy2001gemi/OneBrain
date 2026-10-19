@@ -1,4 +1,5 @@
-//! Rebuildable semantic postings over immutable Receptor/Affordance sources.
+//! Rebuildable semantic postings over immutable Receptor/Affordance sources
+//! and saved Knowledge Unit semantic frame sets (ARCH-08 KU source).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,12 +21,19 @@ pub enum SemanticIndexSource<'a> {
         cid: ObjectCid,
         affordance: &'a KnowledgeAffordance,
     },
+    /// A validated, saved Knowledge Unit whose payload is a semantic frame set.
+    KnowledgeUnit {
+        cid: ObjectCid,
+        semantic: &'a SemanticFrameSet,
+    },
 }
 
 impl SemanticIndexSource<'_> {
     fn cid(self) -> ObjectCid {
         match self {
-            Self::Receptor { cid, .. } | Self::Affordance { cid, .. } => cid,
+            Self::Receptor { cid, .. }
+            | Self::Affordance { cid, .. }
+            | Self::KnowledgeUnit { cid, .. } => cid,
         }
     }
 
@@ -33,6 +41,7 @@ impl SemanticIndexSource<'_> {
         match self {
             Self::Receptor { .. } => 0,
             Self::Affordance { .. } => 1,
+            Self::KnowledgeUnit { .. } => 2,
         }
     }
 }
@@ -55,7 +64,7 @@ pub struct RebuildableSemanticIndex {
     units: BTreeMap<[u8; 16], BTreeSet<[u8; 32]>>,
     dimensions: BTreeMap<[i8; 7], BTreeSet<[u8; 32]>>,
     relation_signatures: BTreeMap<[u8; 32], BTreeSet<[u8; 32]>>,
-    snapshot: SemanticIndexSnapshot,
+    source_keys: BTreeSet<(u8, [u8; 32])>,
 }
 
 impl Default for SemanticIndexSnapshot {
@@ -72,50 +81,60 @@ impl Default for SemanticIndexSnapshot {
 impl RebuildableSemanticIndex {
     pub fn rebuild(sources: &[SemanticIndexSource<'_>]) -> Self {
         let mut index = Self::default();
-        let mut source_keys = BTreeSet::new();
         for source in sources {
-            let cid = source.cid().into_bytes();
-            source_keys.insert((source.kind_code(), cid));
-            match source {
-                SemanticIndexSource::Receptor { definition, .. } => {
-                    insert(&mut index.receptor_roles, *definition.role.as_bytes(), cid);
-                    collect_concept(&mut index, definition.role, cid);
-                    for expected in &definition.expected_types {
-                        collect_concept(&mut index, *expected, cid);
-                    }
-                    for evidence in &definition.acceptance.required_evidence_kinds {
-                        collect_concept(&mut index, *evidence, cid);
-                    }
-                    for constraint in &definition.hard_constraints {
-                        collect_constraint(&mut index, constraint, cid);
-                    }
-                }
-                SemanticIndexSource::Affordance { affordance, .. } => {
-                    for role in &affordance.offered_roles {
-                        insert(&mut index.affordance_roles, *role.as_bytes(), cid);
-                        collect_concept(&mut index, *role, cid);
-                    }
-                    for input in &affordance.accepted_inputs {
-                        collect_concept(&mut index, input.role, cid);
-                    }
-                    collect_affordance_semantics(&mut index, &affordance.semantics, cid);
-                    for pattern in &affordance.abstraction_patterns {
-                        collect_frames(&mut index, pattern, cid);
-                    }
-                }
-            }
+            index.insert(*source);
         }
-        index.snapshot = SemanticIndexSnapshot {
-            source_root: digest_source_keys(&source_keys),
-            projection_root: index.projection_root(),
-            reducer_version: SEMANTIC_INDEX_REDUCER_VERSION,
-            source_count: source_keys.len() as u64,
-        };
         index
     }
 
-    pub const fn snapshot(&self) -> SemanticIndexSnapshot {
-        self.snapshot
+    /// Adds one validated immutable source. Postings are sets, so inserting
+    /// the same source again is idempotent and insertion order never changes
+    /// the resulting roots.
+    pub fn insert(&mut self, source: SemanticIndexSource<'_>) {
+        let index = self;
+        let cid = source.cid().into_bytes();
+        index.source_keys.insert((source.kind_code(), cid));
+        match source {
+            SemanticIndexSource::Receptor { definition, .. } => {
+                insert(&mut index.receptor_roles, *definition.role.as_bytes(), cid);
+                collect_concept(index, definition.role, cid);
+                for expected in &definition.expected_types {
+                    collect_concept(index, *expected, cid);
+                }
+                for evidence in &definition.acceptance.required_evidence_kinds {
+                    collect_concept(index, *evidence, cid);
+                }
+                for constraint in &definition.hard_constraints {
+                    collect_constraint(index, constraint, cid);
+                }
+            }
+            SemanticIndexSource::Affordance { affordance, .. } => {
+                for role in &affordance.offered_roles {
+                    insert(&mut index.affordance_roles, *role.as_bytes(), cid);
+                    collect_concept(index, *role, cid);
+                }
+                for input in &affordance.accepted_inputs {
+                    collect_concept(index, input.role, cid);
+                }
+                collect_affordance_semantics(index, &affordance.semantics, cid);
+                for pattern in &affordance.abstraction_patterns {
+                    collect_frames(index, pattern, cid);
+                }
+            }
+            SemanticIndexSource::KnowledgeUnit { semantic, .. } => {
+                collect_frames(index, semantic, cid);
+            }
+        }
+    }
+
+    /// Deterministic roots over the current source set and postings.
+    pub fn snapshot(&self) -> SemanticIndexSnapshot {
+        SemanticIndexSnapshot {
+            source_root: digest_source_keys(&self.source_keys),
+            projection_root: self.projection_root(),
+            reducer_version: SEMANTIC_INDEX_REDUCER_VERSION,
+            source_count: self.source_keys.len() as u64,
+        }
     }
 
     pub fn receptors_for_role(&self, role: ConceptCcid) -> Vec<ObjectCid> {
@@ -587,5 +606,64 @@ mod tests {
         assert_eq!(index.snapshot().source_count, 0);
         assert_eq!(receptor.role, concept(1));
         assert_eq!(RebuildableSemanticIndex::rebuild(&source).snapshot(), root);
+    }
+
+    #[test]
+    fn knowledge_unit_source_indexes_frames_and_incremental_insert_matches_rebuild() {
+        let concept_only = SemanticFrameSet {
+            statements: vec![StatementFrame {
+                statement_id: StatementId(1),
+                operator_or_predicate: concept(30),
+                arguments: vec![TermRef::Concept(concept(31)), TermRef::Concept(concept(32))],
+                constraints: Vec::new(),
+                qualifiers: StatementQualifiers::default(),
+            }],
+        };
+        let quantity = SemanticFrameSet {
+            statements: vec![frame()],
+        };
+        let ku_a = ObjectCid::from_bytes([40; 32]);
+        let ku_b = ObjectCid::from_bytes([41; 32]);
+        let (receptor_cid, receptor) = receptor();
+        let forward = [
+            SemanticIndexSource::KnowledgeUnit {
+                cid: ku_a,
+                semantic: &concept_only,
+            },
+            SemanticIndexSource::KnowledgeUnit {
+                cid: ku_b,
+                semantic: &quantity,
+            },
+            SemanticIndexSource::Receptor {
+                cid: receptor_cid,
+                definition: &receptor,
+            },
+        ];
+        let index = RebuildableSemanticIndex::rebuild(&forward);
+        assert_eq!(index.objects_for_concept(concept(32)), vec![ku_a]);
+        assert_eq!(index.objects_for_predicate(concept(30)), vec![ku_a]);
+        assert_eq!(index.objects_for_unit(concept(9)), vec![ku_b]);
+        assert_eq!(
+            index.objects_for_dimension(DimensionVector::LENGTH),
+            vec![ku_b]
+        );
+        assert!(index.receptors_for_role(concept(30)).is_empty());
+        let mut incremental = RebuildableSemanticIndex::default();
+        for source in [forward[2], forward[1], forward[0], forward[1]] {
+            incremental.insert(source);
+        }
+        assert_eq!(incremental.snapshot(), index.snapshot());
+        assert_eq!(index.snapshot().source_count, 3);
+        // A KU and a Receptor with the same CID are different source kinds.
+        let same_cid = RebuildableSemanticIndex::rebuild(&[SemanticIndexSource::KnowledgeUnit {
+            cid: receptor_cid,
+            semantic: &concept_only,
+        }]);
+        assert_ne!(
+            same_cid.snapshot().source_root,
+            RebuildableSemanticIndex::rebuild(&forward[2..])
+                .snapshot()
+                .source_root
+        );
     }
 }

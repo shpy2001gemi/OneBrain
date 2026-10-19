@@ -44,6 +44,7 @@ const TERMINAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private
 const MAX_OPERATIONS: usize = 1024;
 mod review_jobs;
 mod review_lowering;
+mod search;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
 /// Finite local bound for compact finished records; exceeding it is a
 /// non-retryable `ku_storage_full`, never a retryable rate limit.
@@ -457,6 +458,8 @@ struct Snapshot {
     query: Option<String>,
     items: Vec<KuSummaryV1>,
     frontier: RevisionFrontier,
+    /// ARCH-08: free-text query ran without Registry label resolution.
+    label_resolution_unavailable: bool,
 }
 
 struct Cursor {
@@ -490,8 +493,12 @@ struct ExtractionEnvelope {
 #[derive(Default)]
 struct Catalog {
     keys: BTreeMap<[u8; 32], OperationId>,
+    /// Summary plus case-folded literal text (ARCH-08) per owned KU.
     items: BTreeMap<[u8; 32], BTreeMap<[u8; 32], (KuSummaryV1, String)>>,
     revisions: BTreeMap<[u8; 32], BTreeSet<([u8; 32], [u8; 32])>>,
+    /// ARCH-08: derived `vnext_semantic_index` projection per principal;
+    /// rebuilt from committed bundles on open, never a source of record.
+    semantic: BTreeMap<[u8; 32], ku_kql::vnext_semantic_index::RebuildableSemanticIndex>,
 }
 
 #[derive(Default)]
@@ -1322,7 +1329,18 @@ impl KuStore {
             let bytes = STANDARD
                 .decode(&a.canonical_preview)
                 .map_err(|_| corrupt())?;
-            let text = semantic_text(&bytes)?;
+            let text = search::fold_catalog_text(&semantic_text(&bytes)?);
+            if let ObjectSemantics::Known(envelope) = decode_object(&bytes)?.semantics() {
+                if envelope.kind == ObjectKind(2) {
+                    let semantic = SemanticFrameSet::from_canonical_value(&envelope.payload)
+                        .map_err(|_| corrupt())?;
+                    search::index_ku(
+                        catalog.semantic.entry(b.principal).or_default(),
+                        a.object_cid.0,
+                        &semantic,
+                    );
+                }
+            }
             let summary = KuSummaryV1 {
                 object_cid: a.object_cid,
                 semantic_content_cid: Some(a.semantic_content_cid),
@@ -2060,22 +2078,35 @@ impl KuStore {
             let cursor = paging.cursors.get(&token).ok_or_else(expired)?;
             (cursor.snapshot, Some(cursor.last_cid))
         } else {
+            // Parse before taking the catalog lock: malformed structured
+            // terms are a 400, never a silent free-text fallback.
+            let parsed = query.as_deref().map(search::parse).transpose()?;
+            let lease = match &parsed {
+                Some(q) if q.text.is_some() => self.registry.as_ref().map(|r| r.reader_lease()),
+                _ => None,
+            };
             let catalog = self.catalog.lock().map_err(|_| corrupt())?;
+            let plan = parsed
+                .as_ref()
+                .map(|q| search::plan(catalog.semantic.get(&principal), q, lease.as_ref()));
             let mut items = Vec::new();
-            let mut work = 0u64;
+            let mut work = plan.as_ref().map_or(0, |p| p.work);
             if let Some(owned) = catalog.items.get(&principal) {
-                for (summary, text) in owned.values() {
+                for (cid, (summary, text)) in owned {
+                    let phrase = parsed.as_ref().and_then(|q| q.text.as_ref());
                     work = work
-                        .checked_add(if query.is_some() {
-                            text.len() as u64 + 1
-                        } else {
-                            1
-                        })
+                        .checked_add(phrase.map_or(1, |_| text.len() as u64 + 1))
                         .ok_or_else(resource)?;
                     if work > budget.max_work_units || items.len() >= 4096 {
                         return Err(resource());
                     }
-                    if query.as_ref().is_none_or(|q| text.contains(q)) {
+                    let matched = plan.as_ref().is_none_or(|p| {
+                        p.structured.as_ref().is_none_or(|hits| hits.contains(cid))
+                            && phrase.is_none_or(|phrase| {
+                                p.label_hits.contains(cid) || text.contains(phrase.as_str())
+                            })
+                    });
+                    if matched {
                         items.push(summary.clone());
                     }
                 }
@@ -2093,6 +2124,9 @@ impl KuStore {
                 query: query.clone(),
                 items,
                 frontier: self.catalog_frontier(principal, &catalog),
+                label_resolution_unavailable: plan
+                    .as_ref()
+                    .is_some_and(|p| p.label_resolution_unavailable),
             };
             paging.snapshots.insert(id, snapshot);
             paging.order.push_back(id);
@@ -2105,15 +2139,19 @@ impl KuStore {
         {
             return Err(conflict());
         }
+        let mut limitations = vec![
+            "private_owned_store_only".into(),
+            "index_version_ku_semantic_1".into(),
+            "frontier_is_local_revision_journal".into(),
+        ];
+        if snapshot.label_resolution_unavailable {
+            limitations.push("label_resolution_unavailable".into());
+        }
         let mut page = KuPageV1 {
             items: Vec::new(),
             coverage: Coverage::LocalOnly,
             snapshot_frontier: snapshot.frontier,
-            limitations: vec![
-                "private_owned_store_only".into(),
-                "index_version_ku_text_1".into(),
-                "frontier_is_local_revision_journal".into(),
-            ],
+            limitations,
             continuation: None,
         };
         let candidates: Vec<_> = snapshot

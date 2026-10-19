@@ -766,6 +766,8 @@ export function KuWorkflowPage({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               maxLength={4096}
+              placeholder="water · concept:<32 hex> · predicate:/unit:<32 hex> · dimension:1,0,0,0,0,0,0"
+              title="Free text matches case-folded literals or a Registry label's concept; concept:/predicate:/unit:/dimension: terms filter the semantic index (AND)."
             />
             <button className="btn" disabled={busy}>
               Search / list

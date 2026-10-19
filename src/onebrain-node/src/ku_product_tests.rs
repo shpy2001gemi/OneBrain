@@ -20,6 +20,8 @@ struct Inputs {
     allowed: AtomicBool,
     calls: AtomicUsize,
     unresolved: AtomicBool,
+    /// ARCH-08: drafts carry only a CCID argument (no text literal).
+    concept_only: AtomicBool,
     source: Vec<u8>,
     cid: SourceArtifactCID,
 }
@@ -55,6 +57,7 @@ impl Inputs {
             allowed: AtomicBool::new(true),
             calls: AtomicUsize::new(0),
             unresolved: AtomicBool::new(false),
+            concept_only: AtomicBool::new(false),
             source,
             cid: SourceArtifactCID(cid.into_bytes()),
         }
@@ -99,9 +102,16 @@ impl KuInputProvider for Inputs {
                     operator_or_predicate: ku_core::foundation::semantic::ConceptCcid::from_bytes(
                         [7; 16],
                     ),
-                    arguments: vec![TermRef::Literal(LiteralValue::Text(
-                        NormalizedText::new(format!("water version {version} output {i}")).unwrap(),
-                    ))],
+                    arguments: if self.concept_only.load(Ordering::SeqCst) {
+                        // Arity keeps the two concept-only drafts distinct.
+                        let water = ku_core::foundation::semantic::ConceptCcid::from_bytes([7; 16]);
+                        vec![TermRef::Concept(water); i as usize + 1]
+                    } else {
+                        vec![TermRef::Literal(LiteralValue::Text(
+                            NormalizedText::new(format!("water version {version} output {i}"))
+                                .unwrap(),
+                        ))]
+                    },
                     constraints: vec![],
                     qualifiers: StatementQualifiers {
                         source_spans: vec![SourceSpan {
@@ -1783,4 +1793,120 @@ async fn legacy_finished_bundle_in_active_journal_migrates_on_open() {
             .canonical_bytes,
         p.artifacts[0].canonical_preview
     );
+}
+
+// ---- ARCH-08: structured KU search on the vnext_semantic_index projection ----
+
+fn search_cids(store: &KuStore, query: &str) -> BTreeSet<[u8; 32]> {
+    store
+        .page(PRINCIPAL, Some(query.into()), 256, None, &budget())
+        .unwrap()
+        .items
+        .iter()
+        .map(|s| s.object_cid.0)
+        .collect()
+}
+
+#[tokio::test]
+async fn concept_only_ku_is_findable_and_semantic_index_rebuilds_identically_after_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let input = Arc::new(Inputs::new());
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), Some(reg.clone()));
+    // One literal-text KU pair and one concept-only KU pair.
+    let r = request(operation(0, 0xD6), &input, &reg, 1);
+    let text = store
+        .prepare(PRINCIPAL, r.clone(), None, &budget())
+        .await
+        .unwrap();
+    store.save(PRINCIPAL, &save_request(&r, &text)).unwrap();
+    input.concept_only.store(true, Ordering::SeqCst);
+    let r = request(operation(1, 0xD6), &input, &reg, 2);
+    let concept = store
+        .prepare(PRINCIPAL, r.clone(), None, &budget())
+        .await
+        .unwrap();
+    store.save(PRINCIPAL, &save_request(&r, &concept)).unwrap();
+    let text_cids: BTreeSet<_> = text.object_cids.iter().map(|c| c.0).collect();
+    let concept_cids: BTreeSet<_> = concept.object_cids.iter().map(|c| c.0).collect();
+    assert_eq!(concept_cids.len(), 2);
+    let all: BTreeSet<_> = text_cids.union(&concept_cids).copied().collect();
+
+    // Concept-only KUs have no literal text, so the old `text.contains`
+    // search never found them; the Registry label and CCID postings do.
+    let water = hex(&[7; 16]);
+    assert_eq!(search_cids(&store, "WATER"), all);
+    assert_eq!(search_cids(&store, &format!("concept:{water}")), all);
+    assert_eq!(search_cids(&store, &format!("predicate:{water}")), all);
+    // Case-folded literal text still matches literal-text KUs only.
+    assert_eq!(search_cids(&store, "Water  VERSION 1"), text_cids);
+    // Structured terms AND with the free-text phrase.
+    assert_eq!(
+        search_cids(&store, &format!("concept:{water} version 1")),
+        text_cids
+    );
+    assert!(search_cids(&store, &format!("unit:{water}")).is_empty());
+    assert!(search_cids(&store, "dimension:1,0,0,0,0,0,0").is_empty());
+    assert!(search_cids(&store, "steam").is_empty());
+    let page = store
+        .page(PRINCIPAL, Some("water".into()), 256, None, &budget())
+        .unwrap();
+    assert!(page
+        .limitations
+        .contains(&"index_version_ku_semantic_1".into()));
+    assert!(!page
+        .limitations
+        .contains(&"label_resolution_unavailable".into()));
+    assert_eq!(
+        store
+            .page(
+                PRINCIPAL,
+                Some("concept:nothex".into()),
+                256,
+                None,
+                &budget()
+            )
+            .unwrap_err()
+            .code,
+        BaseErrorCodeV1::InvalidRequest
+    );
+    // Another principal sees nothing through the shared store.
+    assert!(store
+        .page([10; 32], Some("water".into()), 256, None, &budget())
+        .unwrap()
+        .items
+        .is_empty());
+    let before = store.catalog.lock().unwrap().semantic[&PRINCIPAL].snapshot();
+    assert_eq!(before.source_count, 4);
+    drop(store);
+    drop(generations);
+
+    // Restart: the projection is rebuilt from committed records only and is
+    // identical; without a Registry, label search degrades honestly while
+    // CCID search keeps working.
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input.clone(), None);
+    assert_eq!(
+        store.catalog.lock().unwrap().semantic[&PRINCIPAL].snapshot(),
+        before
+    );
+    assert_eq!(search_cids(&store, &format!("concept:{water}")), all);
+    let page = store
+        .page(PRINCIPAL, Some("water".into()), 256, None, &budget())
+        .unwrap();
+    assert!(page
+        .limitations
+        .contains(&"label_resolution_unavailable".into()));
+    let found: BTreeSet<_> = page.items.iter().map(|s| s.object_cid.0).collect();
+    assert_eq!(found, text_cids);
+    drop(store);
+    drop(generations);
+    let generations = DatasetGenerationStore::open_exclusive(&temp.path().join("dataset")).unwrap();
+    let store = open_direct(&generations, input, Some(reg));
+    assert_eq!(
+        store.catalog.lock().unwrap().semantic[&PRINCIPAL].snapshot(),
+        before
+    );
+    assert_eq!(search_cids(&store, "water"), all);
 }

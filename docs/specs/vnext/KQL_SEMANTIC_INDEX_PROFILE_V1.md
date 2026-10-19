@@ -7,7 +7,8 @@
 ## 1. Derived-index boundary
 
 `RebuildableSemanticIndex` is a disposable projection over immutable,
-validated ReceptorDefinition and KnowledgeAffordance objects. Source ObjectCIDs
+validated ReceptorDefinition and KnowledgeAffordance objects and, since ARCH-08,
+committed Knowledge Units (§6). Source ObjectCIDs
 remain the source of record. The index contains CID postings only; it cannot
 publish, materialize, adopt, mutate semantic objects or grant authority.
 
@@ -60,3 +61,23 @@ authoritative source during v1 rebuild.
   roots, modeling restart reconstruction.
 - `clear_derived` empties only the index; rebuilding restores the same root and
   the Receptor/Affordance input remains unchanged.
+
+## 6. Knowledge Unit source (ARCH-08, D-051)
+
+Additive extension; reducer version stays `1` and roots for Receptor/Affordance-only
+source sets are unchanged. Source kind `2` is a committed, validated Knowledge Unit
+whose payload is a `SemanticFrameSet`; its statements are traversed exactly like
+affordance frames (predicate, terms, constraints, qualifiers, quantity units and
+dimensions). `insert` adds one source incrementally; `rebuild` is a fold over
+`insert`, so insertion order and restart do not change the roots.
+
+Product consumer: the node KU store (`onebrain-node` `ku_product/search.rs`) keeps
+one projection per principal, rebuilt on store open from committed journal/terminal
+records and extended on each commit. `KuSearchV1.query` accepts `concept:`,
+`predicate:`, `unit:` (32 hex CCID) and `dimension:` (seven comma-separated SI
+exponents) terms combined with AND, plus a free-text phrase matched against
+case-folded literal text or resolved to CCIDs through the active Concept Registry
+label lookup. Without a Registry, label resolution is skipped and the page carries
+the `label_resolution_unavailable` limitation. Pages report
+`index_version_ku_semantic_1`. Ranking, multi-word label splitting, synonym
+expansion and network/public search are not provided.

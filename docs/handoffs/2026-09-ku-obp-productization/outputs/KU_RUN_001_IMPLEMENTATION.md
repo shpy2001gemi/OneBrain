@@ -84,7 +84,9 @@ round trips. No claim of new KU client codecs or end-to-end UI conformance.
   the returned source objects and semantic output; clients cannot install
   providers or supply authorization booleans.
 - Index coverage is the principal's committed private KU store. Search uses
-  `index_version_ku_text_1`; frontier is the local revision journal, not a
+  `index_version_ku_text_1` (since ARCH-08: `index_version_ku_semantic_1`, see
+  [KQL_SEMANTIC_INDEX_PROFILE_V1 §6](../../../specs/vnext/KQL_SEMANTIC_INDEX_PROFILE_V1.md));
+  frontier is the local revision journal, not a
   replicated Assembly supersession claim. Snapshot capacity is 32, cursor
   capacity 1,024, and each snapshot is capped at 4,096 summaries.
 - Journal capacity is 1,024 preparations and 64 MiB ciphertext, with 8 MiB per
