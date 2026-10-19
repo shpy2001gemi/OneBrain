@@ -5,27 +5,12 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { autocompletion, CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
 import { searchKeymap } from '@codemirror/search';
 import { oneDark } from '@codemirror/theme-one-dark';
-
-// KQL keywords for autocompletion
-const KQL_KEYWORDS = [
-  'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'LIKE', 'IN', 'BETWEEN',
-  'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'COUNT', 'SUM', 'AVG',
-  'GROUP', 'HAVING', 'JOIN', 'ON', 'AS', 'DISTINCT', 'EXISTS', 'NULL',
-  'TRUE', 'FALSE', 'IS',
-];
-
-const KQL_FIELDS = [
-  'gene_type', 'content', 'pomv', 'trust', 'created', 'wire_size',
-  'confidence', 'epistemic', 'evidence', 'verification_status',
-  'instruction_count', 'outgoing_bond_count', 'incoming_bond_count',
-  'cid_hex', 'codons', 'bonds',
-];
-
-const KQL_GENE_TYPES = [
-  'Fact', 'Procedure', 'Experience', 'Creative', 'MediaExperience',
-  'Testimony', 'Formal', 'Hypothesis', 'Narrative', 'Sensory',
-  'Composite', 'Normative', 'Definition',
-];
+import {
+  KQL_CONTAINS_FIELDS,
+  KQL_FIELDS,
+  KQL_GENE_TYPES,
+  KQL_KEYWORDS,
+} from './kqlVocabulary';
 
 function kqlCompletion(context: CompletionContext): CompletionResult | null {
   const word = context.matchBefore(/\w*/);
@@ -34,7 +19,8 @@ function kqlCompletion(context: CompletionContext): CompletionResult | null {
   const options = [
     ...KQL_KEYWORDS.map(k => ({ label: k, type: 'keyword' as const, boost: 2 })),
     ...KQL_FIELDS.map(f => ({ label: f, type: 'property' as const, boost: 1 })),
-    ...KQL_GENE_TYPES.map(g => ({ label: `'${g}'`, type: 'enum' as const, detail: 'GeneType' })),
+    ...KQL_CONTAINS_FIELDS.map(f => ({ label: f, type: 'property' as const, detail: 'CONTAINS only' })),
+    ...KQL_GENE_TYPES.map(g => ({ label: `"${g}"`, type: 'enum' as const, detail: 'gene_type' })),
   ];
 
   return { from: word.from, options };

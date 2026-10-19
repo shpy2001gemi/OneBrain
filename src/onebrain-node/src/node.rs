@@ -1797,15 +1797,17 @@ impl OneBrainNode {
             .map_err(|e| NodeError::Storage(format!("{}", e)))
     }
 
-    /// Execute a KQL query string.
+    /// Execute a KQL query string on the local read-only KQL surface.
     ///
-    /// Parses the query with the KQL parser, loads all KUs into a
-    /// `LocalExecutor`, executes the query, and returns matching KUs
-    /// as `KuListItem`s for the UI.
+    /// The textual KQL is frozen (D-051 / ARCH-04): only local `FIND` /
+    /// `EXPLAIN FIND` is accepted. Writes and standing queries are rejected
+    /// because this path runs on a temporary in-memory copy of all KUs and
+    /// nothing it changed was ever persisted. Results are returned as
+    /// `KuListItem`s for the UI (EXPLAIN returns no rows).
     pub fn execute_kql(&self, query_str: &str) -> Result<Vec<KuListItem>, NodeError> {
-        // 1. Parse the KQL query (validates syntax)
-        let query = ku_kql::parser::parse_query(query_str)
-            .map_err(|e| NodeError::Kql(format!("Syntax error: {}", e)))?;
+        // 1. Parse and gate the query (syntax, bounds, read-only/local only)
+        let query = ku_kql::read_only::parse_local_read_only(query_str)
+            .map_err(|e| NodeError::Kql(e.to_string()))?;
 
         // 2. Get all KUs from storage
         let state = match self.shared.try_lock() {

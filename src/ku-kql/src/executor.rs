@@ -268,7 +268,8 @@ impl LocalExecutor {
         Ok(QueryResult {
             rows: results_owned,
             total_count: total,
-            scope_used: find.scope.clone(),
+            // Execution is always local/in-memory; SCOPE is not acted on (ARCH-04).
+            scope_used: Scope::Local,
             aggregates,
             watch_id: None,
             plan: None,
@@ -883,38 +884,25 @@ impl LocalExecutor {
     // ─── EXPLAIN ──────────────────────────────────────────────────────
 
     fn exec_explain(&self, inner: &Query) -> Result<QueryResult, ExecError> {
-        let (scope, strategy, indexes) = match inner {
-            Query::Find(find) => {
-                let mut idx = Vec::new();
-                if find.where_clause.is_some() {
-                    idx.push("concept_id_index".to_string());
-                    idx.push("trust_score_index".to_string());
-                }
-                let strategy = match find.scope {
-                    Scope::Local => "local_scan",
-                    Scope::Neighbors => "neighbor_broadcast",
-                    Scope::Cluster => "super_peer_route",
-                    Scope::Dht => "kademlia_lookup",
-                    Scope::Semantic => "semantic_similarity_search",
-                    Scope::Global => "global_flood",
-                    Scope::Auto => "auto_escalation",
-                };
-                (find.scope.clone(), strategy.to_string(), idx)
-            }
-            _ => (Scope::Local, "local_scan".to_string(), Vec::new()),
+        // Honest plan (ARCH-04): this executor always runs in memory over the
+        // KUs it was given. There are no secondary indexes and no network
+        // routing; any requested SCOPE is not acted on.
+        let strategy = match inner {
+            Query::Find(find) if !find.pattern.edges.is_empty() => "local_scan+local_bond_bfs",
+            _ => "local_scan",
         };
 
         Ok(QueryResult {
             rows: Vec::new(),
             total_count: self.kus.len(),
-            scope_used: scope.clone(),
+            scope_used: Scope::Local,
             aggregates: Vec::new(),
             watch_id: None,
             plan: Some(QueryPlan {
-                scope,
+                scope: Scope::Local,
                 estimated_results: self.kus.len(),
-                strategy,
-                indexes_used: indexes,
+                strategy: strategy.to_string(),
+                indexes_used: Vec::new(),
             }),
             affected_count: 0,
         })
@@ -1392,7 +1380,14 @@ mod tests {
         let result = exec.execute(&query).unwrap();
         assert!(result.plan.is_some());
         let plan = result.plan.unwrap();
-        assert_eq!(plan.strategy, "super_peer_route");
+        // ARCH-04: the plan reports what actually runs, not the requested scope.
+        assert_eq!(plan.strategy, "local_scan");
+        assert_eq!(plan.scope, Scope::Local);
+        assert!(plan.indexes_used.is_empty());
+
+        let graph = parse_query("EXPLAIN FIND (k:KU)-[:Extends]->(m:KU)").unwrap();
+        let plan = exec.execute(&graph).unwrap().plan.unwrap();
+        assert_eq!(plan.strategy, "local_scan+local_bond_bfs");
     }
 
     #[test]

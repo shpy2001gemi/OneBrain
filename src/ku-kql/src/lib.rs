@@ -5,6 +5,7 @@
 //! ## Modules
 //! - **ast**: Query AST (Abstract Syntax Tree) types
 //! - **parser**: nom-based KQL parser
+//! - **read_only**: local read-only gate for user-facing textual KQL (ARCH-04)
 //! - **executor**: Local query execution engine (operates on KuRuntime)
 //! - **storage**: redb-backed persistent KU storage
 
@@ -17,6 +18,7 @@ pub mod executor;
 #[cfg(feature = "storage")]
 pub mod graph_storage;
 pub mod parser;
+pub mod read_only;
 #[cfg(feature = "storage")]
 pub mod storage;
 pub mod vnext_assembly_search;

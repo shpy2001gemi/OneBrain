@@ -2,6 +2,13 @@
 //!
 //! Parses KQL query strings into AST nodes.
 //! Supports FIND, CREATE, UPDATE, DEPRECATE, WATCH, and EXPLAIN queries.
+//!
+//! The textual KQL is frozen (D-051 / ARCH-04): it is corrected, not extended.
+//! User-facing surfaces must use [`crate::read_only::parse_local_read_only`],
+//! which accepts only local FIND/EXPLAIN FIND; the write forms remain parseable
+//! for the in-memory library executor and demos only.
+//!
+//! WHERE precedence: `NOT` > `AND` > `OR` (left-associative); parentheses group.
 
 use nom::{
     branch::alt,
@@ -16,6 +23,19 @@ use nom::{
 use crate::ast::*;
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Work bounds
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Maximum nesting of parentheses / `NOT` inside one WHERE condition.
+pub const MAX_CONDITION_DEPTH: usize = 32;
+/// Maximum number of leaf predicates in one WHERE condition.
+pub const MAX_CONDITION_TERMS: usize = 64;
+/// Maximum hops allowed in a variable-length edge `*min..max`.
+pub const MAX_PATH_DEPTH: usize = 8;
+/// Maximum number of edges in one pattern.
+pub const MAX_PATTERN_EDGES: usize = 8;
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -23,9 +43,25 @@ use crate::ast::*;
 pub fn parse_query(input: &str) -> Result<Query, ParseError> {
     let input = input.trim();
 
-    let (remaining, query) = query(input).map_err(|e| ParseError {
-        message: format!("Parse error: {:?}", e),
-        position: 0,
+    let (remaining, query) = query(input).map_err(|e| match e {
+        nom::Err::Failure(inner) if inner.code == nom::error::ErrorKind::TooLarge => ParseError {
+            message: format!(
+                "WHERE condition nesting exceeds the maximum depth of {}",
+                MAX_CONDITION_DEPTH
+            ),
+            position: input.len() - inner.input.len(),
+        },
+        nom::Err::Failure(inner) if inner.code == nom::error::ErrorKind::Count => ParseError {
+            message: format!(
+                "WHERE condition exceeds the maximum of {} predicates",
+                MAX_CONDITION_TERMS
+            ),
+            position: input.len() - inner.input.len(),
+        },
+        other => ParseError {
+            message: format!("Parse error: {:?}", other),
+            position: 0,
+        },
     })?;
 
     let remaining = remaining.trim();
@@ -36,6 +72,7 @@ pub fn parse_query(input: &str) -> Result<Query, ParseError> {
         });
     }
 
+    validate_bounds(&query)?;
     Ok(query)
 }
 
@@ -54,6 +91,54 @@ impl std::fmt::Display for ParseError {
             self.position, self.message
         )
     }
+}
+
+fn bound_error(message: String) -> ParseError {
+    ParseError {
+        message,
+        position: 0,
+    }
+}
+
+/// Enforce pattern bounds after parsing (WHERE depth/term bounds are enforced
+/// while parsing so an oversized condition never builds a deep tree).
+fn validate_bounds(query: &Query) -> Result<(), ParseError> {
+    match query {
+        Query::Find(find) => validate_pattern_bounds(&find.pattern),
+        Query::Watch(watch) => validate_pattern_bounds(&watch.find.pattern),
+        Query::Update(update) => validate_pattern_bounds(&update.pattern),
+        Query::Deprecate(deprecate) => validate_pattern_bounds(&deprecate.pattern),
+        Query::Create(create) => validate_pattern_bounds(&create.pattern),
+        Query::CreateFromText(_) => Ok(()),
+        Query::Explain(inner) => validate_bounds(inner),
+    }
+}
+
+fn validate_pattern_bounds(pattern: &Pattern) -> Result<(), ParseError> {
+    if pattern.edges.len() > MAX_PATTERN_EDGES {
+        return Err(bound_error(format!(
+            "pattern has {} edges; the maximum is {}",
+            pattern.edges.len(),
+            MAX_PATTERN_EDGES
+        )));
+    }
+    for edge in &pattern.edges {
+        if let Some(depth) = &edge.path_depth {
+            if depth.min > depth.max {
+                return Err(bound_error(format!(
+                    "path depth *{}..{} has min greater than max",
+                    depth.min, depth.max
+                )));
+            }
+            if depth.max > MAX_PATH_DEPTH {
+                return Err(bound_error(format!(
+                    "path depth *{}..{} exceeds the maximum of {} hops",
+                    depth.min, depth.max, MAX_PATH_DEPTH
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -846,44 +931,97 @@ fn property(input: &str) -> IResult<&str, Property> {
 fn where_clause(input: &str) -> IResult<&str, Condition> {
     let (input, _) = tag_no_case("WHERE")(input)?;
     let (input, _) = multispace1(input)?;
-    condition(input)
+    let terms = std::cell::Cell::new(0usize);
+    or_condition(input, 0, &terms)
 }
 
-fn condition(input: &str) -> IResult<&str, Condition> {
-    let (input, left) = simple_condition(input)?;
-    let (input, _) = multispace0(input)?;
-
-    // Try AND/OR continuation
-    if let Ok((input, _)) = tag_no_case::<&str, &str, nom::error::Error<&str>>("AND")(input) {
-        let (input, _) = multispace1(input)?;
-        let (input, right) = condition(input)?;
-        return Ok((input, Condition::And(Box::new(left), Box::new(right))));
+/// Match a whole keyword (case-insensitive) that is not the prefix of a longer
+/// identifier, so `OR` does not match the start of `ORDER`.
+fn keyword<'a>(kw: &'static str) -> impl Fn(&'a str) -> IResult<&'a str, &'a str> {
+    move |input: &'a str| {
+        let (rest, matched) = tag_no_case(kw)(input)?;
+        if rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+        {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
+        }
+        Ok((rest, matched))
     }
+}
 
-    if let Ok((input, _)) = tag_no_case::<&str, &str, nom::error::Error<&str>>("OR")(input) {
-        let (input, _) = multispace1(input)?;
-        let (input, right) = condition(input)?;
-        return Ok((input, Condition::Or(Box::new(left), Box::new(right))));
+/// `or := and (OR and)*` — lowest precedence, left-associative.
+fn or_condition<'a>(
+    input: &'a str,
+    depth: usize,
+    terms: &std::cell::Cell<usize>,
+) -> IResult<&'a str, Condition> {
+    let (mut input, mut left) = and_condition(input, depth, terms)?;
+    while let Ok((rest, _)) = preceded(multispace0, keyword("OR"))(input) {
+        let (rest, _) = multispace0(rest)?;
+        let (rest, right) = and_condition(rest, depth, terms)?;
+        left = Condition::Or(Box::new(left), Box::new(right));
+        input = rest;
     }
-
     Ok((input, left))
 }
 
-fn simple_condition(input: &str) -> IResult<&str, Condition> {
-    alt((
-        not_condition,
-        exists_condition,
-        contains_condition,
-        comparison_condition,
-    ))(input)
+/// `and := unary (AND unary)*` — binds tighter than OR, left-associative.
+fn and_condition<'a>(
+    input: &'a str,
+    depth: usize,
+    terms: &std::cell::Cell<usize>,
+) -> IResult<&'a str, Condition> {
+    let (mut input, mut left) = unary_condition(input, depth, terms)?;
+    while let Ok((rest, _)) = preceded(multispace0, keyword("AND"))(input) {
+        let (rest, _) = multispace0(rest)?;
+        let (rest, right) = unary_condition(rest, depth, terms)?;
+        left = Condition::And(Box::new(left), Box::new(right));
+        input = rest;
+    }
+    Ok((input, left))
 }
 
-/// Parse `NOT <condition>` — wraps the inner condition in `Condition::Not`.
-fn not_condition(input: &str) -> IResult<&str, Condition> {
-    let (input, _) = tag_no_case("NOT")(input)?;
-    let (input, _) = multispace1(input)?;
-    let (input, inner) = simple_condition(input)?;
-    Ok((input, Condition::Not(Box::new(inner))))
+/// `unary := NOT unary | '(' or ')' | predicate` — nesting is bounded by
+/// [`MAX_CONDITION_DEPTH`] and leaf predicates by [`MAX_CONDITION_TERMS`] so
+/// hostile input cannot exhaust the stack or build an unbounded tree.
+fn unary_condition<'a>(
+    input: &'a str,
+    depth: usize,
+    terms: &std::cell::Cell<usize>,
+) -> IResult<&'a str, Condition> {
+    if depth >= MAX_CONDITION_DEPTH {
+        return Err(nom::Err::Failure(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::TooLarge,
+        )));
+    }
+    if let Ok((rest, _)) = keyword("NOT")(input) {
+        let (rest, _) = multispace0(rest)?;
+        let (rest, inner) = unary_condition(rest, depth + 1, terms)?;
+        return Ok((rest, Condition::Not(Box::new(inner))));
+    }
+    if let Ok((rest, _)) = char::<&str, nom::error::Error<&str>>('(')(input) {
+        let (rest, _) = multispace0(rest)?;
+        let (rest, inner) = or_condition(rest, depth + 1, terms)?;
+        let (rest, _) = multispace0(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        return Ok((rest, inner));
+    }
+    if terms.get() >= MAX_CONDITION_TERMS {
+        return Err(nom::Err::Failure(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Count,
+        )));
+    }
+    let (rest, predicate) =
+        alt((exists_condition, contains_condition, comparison_condition))(input)?;
+    terms.set(terms.get() + 1);
+    Ok((rest, predicate))
 }
 
 fn exists_condition(input: &str) -> IResult<&str, Condition> {
@@ -1887,6 +2025,210 @@ mod tests {
                 assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
             }
             _ => panic!("Expected Find"),
+        }
+    }
+
+    // ─── ARCH-04: precedence, parentheses and work bounds ─────────────
+
+    fn where_of(query: &str) -> Condition {
+        match parse_query(query).unwrap() {
+            Query::Find(f) => f.where_clause.expect("WHERE"),
+            other => panic!("Expected Find, got {:?}", other),
+        }
+    }
+
+    fn cmp(field: &str, value: i64) -> Condition {
+        Condition::Comparison {
+            field: FieldPath::new(vec![field.to_string()]),
+            op: CompOp::Eq,
+            value: Value::Integer(value),
+        }
+    }
+
+    fn and(a: Condition, b: Condition) -> Condition {
+        Condition::And(Box::new(a), Box::new(b))
+    }
+
+    fn or(a: Condition, b: Condition) -> Condition {
+        Condition::Or(Box::new(a), Box::new(b))
+    }
+
+    #[test]
+    fn and_binds_tighter_than_or() {
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE a = 1 AND b = 2 OR c = 3"),
+            or(and(cmp("a", 1), cmp("b", 2)), cmp("c", 3))
+        );
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE a = 1 OR b = 2 AND c = 3"),
+            or(cmp("a", 1), and(cmp("b", 2), cmp("c", 3)))
+        );
+    }
+
+    #[test]
+    fn chains_are_left_associative() {
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE a = 1 OR b = 2 OR c = 3"),
+            or(or(cmp("a", 1), cmp("b", 2)), cmp("c", 3))
+        );
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE a = 1 and b = 2 and c = 3"),
+            and(and(cmp("a", 1), cmp("b", 2)), cmp("c", 3))
+        );
+    }
+
+    #[test]
+    fn parentheses_override_precedence() {
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE a = 1 AND (b = 2 OR c = 3)"),
+            and(cmp("a", 1), or(cmp("b", 2), cmp("c", 3)))
+        );
+        assert_eq!(where_of("FIND (k:KU) WHERE ((a = 1))"), cmp("a", 1));
+        assert!(parse_query("FIND (k:KU) WHERE (a = 1 OR b = 2").is_err());
+        assert!(parse_query("FIND (k:KU) WHERE a = 1 OR").is_err());
+    }
+
+    #[test]
+    fn not_binds_to_the_next_operand() {
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE NOT a = 1 AND b = 2"),
+            and(Condition::Not(Box::new(cmp("a", 1))), cmp("b", 2))
+        );
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE NOT (a = 1 OR b = 2)"),
+            Condition::Not(Box::new(or(cmp("a", 1), cmp("b", 2))))
+        );
+    }
+
+    #[test]
+    fn keywords_need_a_word_boundary() {
+        // Previously `OR` matched the start of `ORDER` and the query failed.
+        let q = parse_query("FIND (k:KU) WHERE a = 1 ORDER BY a DESC LIMIT 3").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.where_clause, Some(cmp("a", 1)));
+                assert_eq!(f.order_by.as_ref().map(Vec::len), Some(1));
+                assert_eq!(f.limit, Some(3));
+            }
+            _ => panic!("Expected Find"),
+        }
+        // Field names that start with a keyword are identifiers, not operators.
+        assert_eq!(
+            where_of("FIND (k:KU) WHERE order_x = 1 AND notes = 2"),
+            and(cmp("order_x", 1), cmp("notes", 2))
+        );
+    }
+
+    #[test]
+    fn condition_nesting_is_bounded_without_stack_overflow() {
+        let ok = format!(
+            "FIND (k:KU) WHERE {}a = 1{}",
+            "(".repeat(MAX_CONDITION_DEPTH - 1),
+            ")".repeat(MAX_CONDITION_DEPTH - 1)
+        );
+        assert!(parse_query(&ok).is_ok());
+
+        let deep = format!("FIND (k:KU) WHERE {}a = 1", "(".repeat(100_000));
+        let err = parse_query(&deep).unwrap_err();
+        assert!(err.message.contains("maximum depth"), "{}", err.message);
+
+        let nots = format!("FIND (k:KU) WHERE {}a = 1", "NOT ".repeat(100_000));
+        assert!(parse_query(&nots)
+            .unwrap_err()
+            .message
+            .contains("maximum depth"));
+    }
+
+    #[test]
+    fn condition_terms_are_bounded() {
+        let at_limit = vec!["a = 1"; MAX_CONDITION_TERMS].join(" AND ");
+        assert!(parse_query(&format!("FIND (k:KU) WHERE {}", at_limit)).is_ok());
+
+        let over = vec!["a = 1"; 100_000].join(" OR ");
+        let err = parse_query(&format!("FIND (k:KU) WHERE {}", over)).unwrap_err();
+        assert!(err.message.contains("predicates"), "{}", err.message);
+    }
+
+    #[test]
+    fn path_depth_and_pattern_length_are_bounded() {
+        assert!(parse_query("FIND (k:KU)-[*1..8:Extends]->(m:KU)").is_ok());
+        let err = parse_query("FIND (k:KU)-[*1..4000000000:Extends]->(m:KU)").unwrap_err();
+        assert!(
+            err.message.contains("exceeds the maximum"),
+            "{}",
+            err.message
+        );
+        let err = parse_query("FIND (k:KU)-[*3..1:Extends]->(m:KU)").unwrap_err();
+        assert!(
+            err.message.contains("min greater than max"),
+            "{}",
+            err.message
+        );
+
+        let long = format!(
+            "FIND (k:KU){}",
+            "-[:Extends]->(k:KU)".repeat(MAX_PATTERN_EDGES + 1)
+        );
+        let err = parse_query(&long).unwrap_err();
+        assert!(err.message.contains("edges"), "{}", err.message);
+    }
+
+    #[test]
+    fn deterministic_fuzz_never_panics() {
+        const TOKENS: &[&str] = &[
+            "FIND",
+            "(k:KU)",
+            "WHERE",
+            "AND",
+            "OR",
+            "NOT",
+            "(",
+            ")",
+            "a",
+            "k.b",
+            "=",
+            ">",
+            "<=",
+            "!=",
+            "1",
+            "-2",
+            "3.5",
+            "\"x\"",
+            "true",
+            "EXISTS",
+            "CONTAINS",
+            "ORDER",
+            "BY",
+            "DESC",
+            "LIMIT",
+            "SCOPE",
+            "LOCAL",
+            "-[*1..3:Extends]->",
+            "(m:KU)",
+            "EXPLAIN",
+            ",",
+            "",
+            " ",
+            "\"",
+            "*",
+            "..",
+        ];
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for _ in 0..5_000 {
+            let len = (next() % 24) as usize;
+            let mut query = String::from("FIND (k:KU) ");
+            for _ in 0..len {
+                query.push_str(TOKENS[(next() % TOKENS.len() as u64) as usize]);
+                query.push(' ');
+            }
+            let _ = parse_query(&query);
+            let _ = crate::read_only::parse_local_read_only(&query);
         }
     }
 }

@@ -181,20 +181,30 @@ pub(crate) fn cmd_help(args: &str) {
                 println!();
                 println!("  kql <query>");
                 println!();
-                println!("  Execute a KQL (Knowledge Query Language) query.");
+                println!("  Run a legacy KQL query over this node's local KUs (read-only).");
+                println!("  CREATE/UPDATE/DEPRECATE/WATCH are refused: they never saved anything.");
+                println!("  Create or edit knowledge in the KU workspace instead.");
                 println!();
                 println!("  Syntax:");
-                println!("    FIND <pattern> WHERE <condition> [ORDER BY <field>] [LIMIT N]");
+                println!("    FIND (k:KU)[-[*min..max:Relation]->(m:KU)] [WHERE <condition>]");
+                println!("         [SCOPE LOCAL] [ORDER BY <field> [ASC|DESC]] [LIMIT N]");
+                println!("    EXPLAIN FIND ...   (shows the local plan; no rows)");
                 println!();
-                println!("  Patterns (13 gene types):");
-                println!("    facts, procedures, experiences, creatives, hypotheses,");
-                println!("    mediaexperiences, testimonies, formals, narratives,");
-                println!("    sensories, composites, normatives, definitions");
+                println!("  Conditions: <field> = != > >= < <= <value>, EXISTS <field>,");
+                println!("    concept_ids CONTAINS <n>, concept_ccids CONTAINS \"<32 hex>\",");
+                println!("    NOT, AND, OR and ( ). Precedence: NOT > AND > OR.");
+                println!("    Text values use double quotes. WHERE filters the first node.");
+                println!();
+                println!("  Fields:");
+                for chunk in ku_kql::read_only::READ_ONLY_FIELDS.chunks(6) {
+                    println!("    {}", chunk.join(", "));
+                }
+                println!("    (trust_score and certainty are 0..10000)");
                 println!();
                 println!("  Examples:");
-                println!("    kql FIND facts WHERE trust > 0.8");
-                println!("    kql FIND procedures WHERE codons CONTAINS \"nấu\"");
-                println!("    kql FIND facts WHERE trust > 0.5 ORDER BY pomv DESC LIMIT 10");
+                for example in ku_kql::read_only::DOCUMENTED_EXAMPLES {
+                    println!("    kql {}", example);
+                }
                 println!();
             }
             "graph" => {

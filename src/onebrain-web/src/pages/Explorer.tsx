@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import type { KuListItem, KuDetail, BlobMeta } from '../api/types';
 import { ALL_GENE_TYPES } from '../api/types';
 import { KqlEditor } from '../components/KqlEditor';
+import { KQL_EXAMPLE } from '../components/kqlVocabulary';
 import { formatDate, formatSize } from '../utils/format';
 
 const GENE_TYPES = ['All', ...ALL_GENE_TYPES];
@@ -28,6 +29,7 @@ export function ExplorerPage() {
   const [kqlMode, setKqlMode] = useState(false);
   const [kqlQuery, setKqlQuery] = useState('');
   const [, setKqlResults] = useState<unknown[] | null>(null);
+  const [kqlError, setKqlError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'created' | 'pomv' | 'trust' | 'wire_size'>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
@@ -149,10 +151,14 @@ export function ExplorerPage() {
   const handleKqlSearch = async () => {
     if (!kqlQuery.trim()) return;
     setLoading(true);
+    setKqlError(null);
     try {
       const res = await api.kql(kqlQuery);
       setKqlResults(res.results);
-    } catch { setKqlResults([]); }
+    } catch (err) {
+      setKqlResults([]);
+      setKqlError(err instanceof Error ? err.message : String(err));
+    }
     finally { setLoading(false); }
   };
 
@@ -239,7 +245,7 @@ export function ExplorerPage() {
       <div style={{ display: 'flex', gap: 'var(--ob-gap-md)', marginBottom: 'var(--ob-gap-md)', alignItems: 'center' }}>
         <button
           className={`btn btn-sm ${kqlMode ? 'btn-primary' : ''}`}
-          onClick={() => { setKqlMode(!kqlMode); setKqlResults(null); }}
+          onClick={() => { setKqlMode(!kqlMode); setKqlResults(null); setKqlError(null); }}
           style={{ display: 'flex', alignItems: 'center', gap: 4 }}
           title="Toggle KQL Mode"
         >
@@ -395,12 +401,17 @@ export function ExplorerPage() {
               value={kqlQuery}
               onChange={setKqlQuery}
               onSubmit={handleKqlSearch}
-              placeholder="SELECT * FROM kus WHERE gene_type = 'Fact' ORDER BY pomv DESC LIMIT 10"
+              placeholder={KQL_EXAMPLE}
               minHeight={80}
             />
-            <button className="btn btn-primary" onClick={handleKqlSearch} style={{ marginTop: 8 }}>
+            <button className="btn btn-primary" onClick={handleKqlSearch} style={{ marginTop: 8 }} title="Legacy KQL: local, read-only FIND queries">
               <Search size={16} /> Execute KQL
             </button>
+            {kqlError && (
+              <div role="alert" style={{ marginTop: 8, color: 'var(--ob-danger, #e5484d)', fontSize: '0.85rem' }}>
+                {kqlError}
+              </div>
+            )}
           </div>
         )}
       </div>
