@@ -105,7 +105,7 @@ async fn active(
     std::sync::Arc<tokio::sync::Mutex<onebrain_node::OneBrainNode>>,
     String,
 ) {
-    use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+    use onebrain_node::foundation::{MetabolicViewPolicy, ObjectReference};
     let mut config = onebrain_node::NodeConfig {
         port: 0,
         data_dir: dir.path().into(),

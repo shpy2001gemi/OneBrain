@@ -514,17 +514,17 @@ pub struct PageQueryV1 {
 #[cfg(feature = "vnext-network-runtime")]
 #[derive(Clone)]
 pub struct VNextFeedPublisher {
-    pub(crate) author: ku_core::foundation::ValidatedFeedInception,
-    pub(crate) signer: Arc<dyn ku_core::foundation::FeedEventSigner>,
+    pub(crate) author: onebrain_node::foundation::ValidatedFeedInception,
+    pub(crate) signer: Arc<dyn onebrain_node::foundation::FeedEventSigner>,
 }
 
 #[cfg(feature = "vnext-network-runtime")]
 impl VNextFeedPublisher {
     pub fn new(
-        author: ku_core::foundation::ValidatedFeedInception,
-        signer: Arc<dyn ku_core::foundation::FeedEventSigner>,
+        author: onebrain_node::foundation::ValidatedFeedInception,
+        signer: Arc<dyn onebrain_node::foundation::FeedEventSigner>,
     ) -> Result<Self, String> {
-        ku_core::foundation::ProvenFeedEventSigner::prove_for_public_key(
+        onebrain_node::foundation::ProvenFeedEventSigner::prove_for_public_key(
             signer.as_ref(),
             author.signed.inception.feed_public_key,
         )
@@ -1036,8 +1036,8 @@ fn need_prepare_fingerprint(request: &NeedPrepareRequestV1) -> [u8; 32] {
 }
 
 #[cfg(feature = "vnext-network-runtime")]
-fn derived_reference(seed: [u8; 32], label: &[u8]) -> ku_core::foundation::ObjectReference {
-    ku_core::foundation::ObjectReference::new(
+fn derived_reference(seed: [u8; 32], label: &[u8]) -> onebrain_node::foundation::ObjectReference {
+    onebrain_node::foundation::ObjectReference::new(
         0,
         digest32(
             b"onebrain:vnext:rest-derived-reference:1\0",
@@ -1047,8 +1047,8 @@ fn derived_reference(seed: [u8; 32], label: &[u8]) -> ku_core::foundation::Objec
 }
 
 #[cfg(feature = "vnext-network-runtime")]
-fn derived_concept(seed: [u8; 32], label: &[u8]) -> ku_core::foundation::ConceptCcid {
-    ku_core::foundation::ConceptCcid::from_bytes(digest16(
+fn derived_concept(seed: [u8; 32], label: &[u8]) -> onebrain_node::foundation::ConceptCcid {
+    onebrain_node::foundation::ConceptCcid::from_bytes(digest16(
         b"onebrain:vnext:rest-derived-concept:1\0",
         &[&seed, label],
     ))
@@ -1066,7 +1066,7 @@ fn build_private_need(
     ),
     VNextHttpError,
 > {
-    use ku_core::foundation::{
+    use onebrain_node::foundation::{
         DisclosureClass, EventCid, ObjectReference, ReceptorAcceptanceProfile, ReceptorCardinality,
         ReceptorDefinition, ReceptorOrigin, ResourceProfile, SemanticFrameSet, StatementLocator,
         UnknownConstraintPolicy, RECEPTOR_DEFINITION_KIND,
@@ -1087,7 +1087,7 @@ fn build_private_need(
     validate_idempotency_key(&request.idempotency_key)?;
 
     let fingerprint = need_prepare_fingerprint(request);
-    let selector = ku_core::foundation::SelectorCid::from_bytes(digest32(
+    let selector = onebrain_node::foundation::SelectorCid::from_bytes(digest32(
         b"onebrain:vnext:rest-private-need-selector:1\0",
         &[&fingerprint],
     ));
@@ -1576,8 +1576,8 @@ fn scan_fingerprint(
 }
 
 #[cfg(feature = "vnext-network-runtime")]
-fn constraint_evaluation(value: ku_core::foundation::ConstraintEvaluation) -> &'static str {
-    use ku_core::foundation::ConstraintEvaluation;
+fn constraint_evaluation(value: onebrain_node::foundation::ConstraintEvaluation) -> &'static str {
+    use onebrain_node::foundation::ConstraintEvaluation;
     match value {
         ConstraintEvaluation::Satisfied => "satisfied",
         ConstraintEvaluation::Violated => "violated",
@@ -1590,7 +1590,7 @@ fn quarantined_match(
     runtime: &onebrain_node::VNextProductServices,
     matched: &onebrain_node::vnext_distributed_kql::DistributedKqlMatch,
 ) -> Result<QuarantinedMatchV1, VNextHttpError> {
-    use ku_core::foundation::ConstraintEvaluation;
+    use onebrain_node::foundation::ConstraintEvaluation;
     let proposal = runtime
         .proposal(matched.proposal)
         .map_err(map_runtime_error)?
@@ -1870,21 +1870,21 @@ fn public_use_fingerprint(request: &PublicUsePrepareRequestV1) -> [u8; 32] {
 }
 
 #[cfg(feature = "vnext-network-runtime")]
-fn core_use_mode(mode: UseModeV1) -> ku_core::foundation::UseMode {
+fn core_use_mode(mode: UseModeV1) -> onebrain_node::foundation::UseMode {
     match mode {
-        UseModeV1::Application => ku_core::foundation::UseMode::Application,
-        UseModeV1::Transformation => ku_core::foundation::UseMode::Transformation,
-        UseModeV1::Epistemic => ku_core::foundation::UseMode::Epistemic,
-        UseModeV1::Transfer => ku_core::foundation::UseMode::Transfer,
-        UseModeV1::Discovery => ku_core::foundation::UseMode::Discovery,
-        UseModeV1::ReceptorDiscovered => ku_core::foundation::UseMode::ReceptorDiscovered,
-        UseModeV1::CandidateEvaluated => ku_core::foundation::UseMode::CandidateEvaluated,
-        UseModeV1::ConstraintClarified => ku_core::foundation::UseMode::ConstraintClarified,
-        UseModeV1::GapPartiallyFilled => ku_core::foundation::UseMode::GapPartiallyFilled,
-        UseModeV1::AssemblyUsed => ku_core::foundation::UseMode::AssemblyUsed,
-        UseModeV1::AnalogicalTransfer => ku_core::foundation::UseMode::AnalogicalTransfer,
-        UseModeV1::ComparedOrOpposed => ku_core::foundation::UseMode::ComparedOrOpposed,
-        UseModeV1::CapabilityResultUsed => ku_core::foundation::UseMode::CapabilityResultUsed,
+        UseModeV1::Application => onebrain_node::foundation::UseMode::Application,
+        UseModeV1::Transformation => onebrain_node::foundation::UseMode::Transformation,
+        UseModeV1::Epistemic => onebrain_node::foundation::UseMode::Epistemic,
+        UseModeV1::Transfer => onebrain_node::foundation::UseMode::Transfer,
+        UseModeV1::Discovery => onebrain_node::foundation::UseMode::Discovery,
+        UseModeV1::ReceptorDiscovered => onebrain_node::foundation::UseMode::ReceptorDiscovered,
+        UseModeV1::CandidateEvaluated => onebrain_node::foundation::UseMode::CandidateEvaluated,
+        UseModeV1::ConstraintClarified => onebrain_node::foundation::UseMode::ConstraintClarified,
+        UseModeV1::GapPartiallyFilled => onebrain_node::foundation::UseMode::GapPartiallyFilled,
+        UseModeV1::AssemblyUsed => onebrain_node::foundation::UseMode::AssemblyUsed,
+        UseModeV1::AnalogicalTransfer => onebrain_node::foundation::UseMode::AnalogicalTransfer,
+        UseModeV1::ComparedOrOpposed => onebrain_node::foundation::UseMode::ComparedOrOpposed,
+        UseModeV1::CapabilityResultUsed => onebrain_node::foundation::UseMode::CapabilityResultUsed,
     }
 }
 
@@ -1934,7 +1934,7 @@ pub async fn prepare_public_use(
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
-        use ku_core::foundation::{
+        use onebrain_node::foundation::{
             ConceptCcid, DisclosureClass, NamespaceCommitment, NodeId, ObjectReference,
             SelectorCid, UseEvidencePayload,
         };
@@ -2228,8 +2228,10 @@ pub async fn get_publication(
 }
 
 #[cfg(feature = "vnext-network-runtime")]
-fn metabolic_limitation(limitation: ku_core::foundation::MetabolicViewLimitation) -> &'static str {
-    use ku_core::foundation::MetabolicViewLimitation;
+fn metabolic_limitation(
+    limitation: onebrain_node::foundation::MetabolicViewLimitation,
+) -> &'static str {
+    use onebrain_node::foundation::MetabolicViewLimitation;
     match limitation {
         MetabolicViewLimitation::LocalFrontierOnly => "local_frontier_only",
         MetabolicViewLimitation::RecentActivityUsesPerFeedEventDistance => {
@@ -2258,7 +2260,7 @@ pub async fn get_metabolic_view(
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
-        use ku_core::foundation::{ExerciseAuthority, ObjectReference, SelectorCid};
+        use onebrain_node::foundation::{ExerciseAuthority, ObjectReference, SelectorCid};
         let target_cid = bytes32("target_cid", &target)?;
         let runtime = services(&state).await?;
         let status = runtime.status().map_err(map_runtime_error)?;
@@ -2595,7 +2597,7 @@ mod tests {
 
     #[cfg(feature = "vnext-network-runtime")]
     fn product_dependencies() -> onebrain_node::VNextProductRuntimeDependencies {
-        use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+        use onebrain_node::foundation::{MetabolicViewPolicy, ObjectReference};
         use onebrain_node::kql::LocalNeedVaultKey;
         let version = onebrain_node::LocalPolicyVersion::new(1).unwrap();
         let policies = onebrain_node::LocalPolicyRegistry::new([(
@@ -2622,7 +2624,7 @@ mod tests {
         crate::vnext_ws::VNextWsHub,
     ) {
         use ed25519_dalek::SigningKey;
-        use ku_core::foundation::{
+        use onebrain_node::foundation::{
             decode_feed_inception, DeviceId, FeedInception, NamespaceCommitment,
         };
 
@@ -2655,7 +2657,7 @@ mod tests {
         .encode()
         .unwrap();
         let author = decode_feed_inception(&feed_bytes).unwrap();
-        let signer: Arc<dyn ku_core::foundation::FeedEventSigner> = feed_key;
+        let signer: Arc<dyn onebrain_node::foundation::FeedEventSigner> = feed_key;
         let publisher = VNextFeedPublisher::new(author, signer).unwrap();
         let shared = Arc::new(tokio::sync::Mutex::new(node));
         let server = ApiServer::with_shared_node(Arc::clone(&shared), "p3-test-token".into(), 0)

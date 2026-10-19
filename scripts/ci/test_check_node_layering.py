@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 try:
     from scripts.ci.check_node_layering import (
@@ -41,12 +42,22 @@ class LayeringRatchetTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("ku-net", failures[0])
 
+    def test_no_known_bypasses_remain(self) -> None:
+        self.assertEqual({s: b for s, b in KNOWN_BYPASSES.items() if b}, {})
+
     def test_removed_bypass_requires_tightening_the_list(self) -> None:
-        edges = current_edges()
-        edges["onebrain-api"].discard("ku-core")
-        failures = evaluate({"onebrain-node"}, edges)
+        # A tolerated bypass that no longer exists must be dropped from the list.
+        with mock.patch.dict(KNOWN_BYPASSES, {"onebrain-api": {"ku-net"}}):
+            failures = evaluate({"onebrain-node"}, {s: {"onebrain-node"} for s in SURFACES})
         self.assertEqual(len(failures), 1)
         self.assertIn("KNOWN_BYPASSES", failures[0])
+
+    def test_api_regaining_ku_core_fails(self) -> None:
+        edges = current_edges()
+        edges["onebrain-api"].add("ku-core")
+        failures = evaluate({"onebrain-node"}, edges)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("ku-core", failures[0])
 
     def test_cli_regaining_ku_core_fails(self) -> None:
         edges = current_edges()

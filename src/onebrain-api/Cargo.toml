@@ -23,14 +23,13 @@ required-features = ["base-v1"]
 default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]
 legacy-read-compat = ["onebrain-node/legacy-read-compat"]
-legacy = ["onebrain-node/legacy", "ku-core/legacy"]
+legacy = ["onebrain-node/legacy"]
 vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
 vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first"]
 
 [dependencies]
 onebrain-node = { path = "../onebrain-node" }
 onebrain-base-contract = { path = "../onebrain-base-contract" }
-ku-core = { path = "../ku-core" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -48,6 +47,9 @@ reqwest = { version = "0.12", features = ["json", "native-tls"] }
 [dev-dependencies]
 async-trait = "0.1"
 ed25519-dalek = "2"
+# ARCH-09: tests/examples build KU fixtures from ku-core; production code uses
+# the onebrain_node facade only.
+ku-core = { path = "../ku-core" }
 ku-encoder = { path = "../ku-encoder" }
 onebrain-base-abi = { path = "../onebrain-base-abi" }
 onebrain-archive = { path = "../onebrain-archive" }

@@ -148,11 +148,16 @@ pub mod blob {
 }
 
 /// ARCH-09 facade: foundation types (policy references, Feed inception and
-/// signing) that interface crates need, re-exported from `ku-core`.
+/// signing, receptor/use-evidence payloads, vault keys) that interface crates
+/// need, re-exported from `ku-core`.
 pub mod foundation {
     pub use ku_core::foundation::{
-        decode_feed_inception, DeviceId, FeedEventSigner, FeedInception, MetabolicViewPolicy,
-        NamespaceCommitment, ObjectReference,
+        decode_feed_inception, ConceptCcid, ConstraintEvaluation, DeviceId, DisclosureClass,
+        EventCid, ExerciseAuthority, FeedEventSigner, FeedInception, MetabolicViewLimitation,
+        MetabolicViewPolicy, NamespaceCommitment, NodeId, ObjectReference, ProvenFeedEventSigner,
+        ReceptorAcceptanceProfile, ReceptorCardinality, ReceptorDefinition, ReceptorOrigin,
+        ResourceProfile, SelectorCid, SemanticFrameSet, StatementLocator, UnknownConstraintPolicy,
+        UseEvidencePayload, UseMode, ValidatedFeedInception, VaultKey, RECEPTOR_DEFINITION_KIND,
     };
 }
 

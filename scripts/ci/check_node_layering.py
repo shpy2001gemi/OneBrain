@@ -7,10 +7,11 @@ Uses `cargo tree` on the default (normal-edge) build to enforce:
    must not depend on surface crates (API, CLI, Desktop, Web host) or on
    HTTP-server / desktop-shell libraries.
 2. Surface crates (`onebrain-api`, `onebrain-cli`) reach domain crates only
-   through the node facade. Direct workspace edges that exist today are listed
-   in KNOWN_BYPASSES and tolerated until ARCH-09 removes them; any *new*
-   direct edge to a workspace crate fails. Removing a bypass also fails until
-   the list is updated, so the ratchet only tightens.
+   through the node facade. ARCH-09 removed every pre-existing direct edge, so
+   KNOWN_BYPASSES is empty and any direct normal edge to another workspace
+   crate fails (dev-dependencies used only by tests/examples are not checked).
+   If a bypass is ever tolerated temporarily, removing it fails until the list
+   is updated, so the ratchet only tightens.
 
 Run from the repository root:  python scripts/ci/check_node_layering.py
 """
@@ -32,10 +33,10 @@ SURFACES = {
     "onebrain-cli": {"onebrain-node", "onebrain-base-contract", "onebrain-api"},
 }
 
-# Existing direct bypasses of the node facade (review §2). Owned by ARCH-09;
-# shrink this list as each bypass moves behind `onebrain-node`.
+# Tolerated direct bypasses of the node facade (review §2). ARCH-09 slice 7
+# emptied this list; keep it empty unless the owner accepts a temporary exception.
 KNOWN_BYPASSES = {
-    "onebrain-api": {"ku-core"},
+    "onebrain-api": set(),
     "onebrain-cli": set(),
 }
 
