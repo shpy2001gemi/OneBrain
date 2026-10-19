@@ -3,6 +3,17 @@
 > **Review toàn diện dự án OneBrain — 10 trụ cột chính và mức độ hoàn thiện**
 > Ngày review: 07/07/2026 | Codebase: ~65,300 dòng Rust | 1,413 tests | 155+ tài liệu nghiên cứu | 8 academic papers | 10 crates
 
+> [!WARNING]
+> **Ảnh chụp lịch sử ngày 07/07/2026 — không phản ánh trạng thái hiện tại (ghi chú 19/10/2026, ARCH-05, D-051).**
+> Số liệu và phần trăm bên dưới đã lỗi thời và đo theo mô hình legacy (Core DNA, OBT, DHT/SWIM).
+> Tại `main` 19/10/2026 workspace có 19 crate thành viên ([Cargo.toml](../src/Cargo.toml)); `onebrain-node`
+> ~86k, `ku-core` ~72k, `ku-net` ~31k, `ku-kql` ~25k dòng không rỗng. Nhiều mục “hoàn thiện” ở đây là
+> code thư viện + test, không phải tính năng người dùng chạm tới; KQL text nay là bề mặt local chỉ-đọc,
+> OBT/PoMV legacy là projection cục bộ phi kinh tế, mạng vNext mặc định tắt sau cargo feature.
+> Trạng thái hiện hành: [vNext contract index — cột Reachability](specs/vnext/README.md#reachability-arch-05-d-051),
+> [CAPABILITY_STATUS](handoffs/2026-09-ku-obp-productization/CAPABILITY_STATUS.md),
+> [Architecture review 18/10/2026](handoffs/2026-09-ku-obp-productization/outputs/ARCHITECTURE_REVIEW_2026-10-18.md).
+
 ---
 
 ## Tổng quan nhanh

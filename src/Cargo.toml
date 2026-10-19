@@ -1,9 +1,9 @@
 [workspace]
 members = [
     # ── Core Libraries ──
-    "ku-core",          # Core types, storage, PoMV, OBT, OBKG, CRDT
-    "ku-net",           # P2P networking, DHT, SWIM, transport
-    "ku-kql",           # Knowledge Query Language
+    "ku-core",          # vNext foundation (canonical objects, semantic frames, vault) + legacy Core DNA/OBT
+    "ku-net",           # vNext QUIC session/reconciliation (feature-gated) + legacy DHT/SWIM/gossip
+    "ku-kql",           # Legacy text KQL (local read-only surface) + typed vNext KQL library; storage/blob
     "ku-ai",            # AI backend (Ollama integration)
     "ku-encoder",       # Text → KU encoding pipeline
     "ku-mediator",      # User intent → AI → response pipeline
@@ -13,7 +13,7 @@ members = [
     "onebrain-relay",   # Permissionless outbound-first relay service
 
     # ── Node Runtime (shared by ALL interfaces) ──
-    "onebrain-node",    # ★ Library: OneBrainNode, networking, config
+    "onebrain-node",    # ★ Library: OneBrainNode, Base runtime, KU workspace; vNext network behind cargo features
 
     # ── Interface Projects (Rust) ──
     "onebrain-cli",     # Interface: CLI REPL (Phase 0 ✅)
@@ -33,7 +33,7 @@ members = [
 
     # ── Non-Rust Interface Projects (NOT workspace members) ──
     # onebrain-web        → React + Vite + TypeScript (Phase 1)
-    # onebrain-mobile     → Flutter + flutter_rust_bridge (Phase 3)
+    # onebrain-mobile     → Flutter + JNI NativeHost via onebrain-mobile-bridge (not flutter_rust_bridge)
     # onebrain-glasses    → Web App / visionOS (Phase 4)
     # onebrain-bot        → Node.js / Python (Phase 2, low priority)
     # onebrain-extension  → WebExtension API (Phase 3)

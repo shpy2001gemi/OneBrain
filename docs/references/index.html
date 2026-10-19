@@ -9959,6 +9959,7 @@ WATCH FIND (c:Concept) ON UPDATE
 </code></pre>
 <p><strong>Thực thi:</strong> Bộ thực thi lưu trữ đăng ký WATCH (trả về một <code>WatchId</code>). Trên mỗi thao tác <code>insert()</code> hoặc <code>update()</code> tiếp theo, bộ thực thi đánh giá tất cả các watch đã đăng ký đối với các KU bị ảnh hưởng và kích hoạt thông báo cho các kết quả khớp.</p>
 <h3>3.2.6 EXPLAIN — Nội soi Kế hoạch Truy vấn</h3>
+<blockquote><p><strong>Trạng thái triển khai (2026-10-19, D-051/ARCH-04):</strong> phần này mô tả thiết kế lịch sử. KQL text hiện là bề mặt local chỉ-đọc: chỉ <code>FIND</code>/<code>EXPLAIN FIND</code> với scope <code>LOCAL</code>/<code>AUTO</code> được chấp nhận; WATCH và mọi scope mạng bị từ chối. EXPLAIN thực tế luôn trả <code>strategy = local_scan</code> (<code>local_scan+local_bond_bfs</code> khi có cạnh), <code>indexes_used = []</code>, scope <code>Local</code>. Các chiến lược <code>neighbor_broadcast</code>, <code>super_peer_route</code>, <code>kademlia_lookup</code>, <code>global_flood</code>, <code>auto_escalation</code> và các chỉ mục trong bảng dưới không được thực thi. Xem <code>docs/specs/KQL_SPEC.md</code>.</p></blockquote>
 <pre><code>EXPLAIN &lt;any_query&gt;
 </code></pre>
 <p><strong>Ngữ nghĩa:</strong> Thay vì thực thi truy vấn, trả về kế hoạch thực thi của nó — phạm vi (scope), chiến lược (strategy), kết quả ước tính và các chỉ mục được sử dụng. Điều này rất cần thiết cho việc tối ưu hóa truy vấn và gỡ lỗi trong môi trường phân tán.</p>

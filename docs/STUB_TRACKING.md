@@ -1,69 +1,38 @@
-# STUB_TRACKING.md — OneBrain Node Stub Methods
+# STUB_TRACKING.md — OneBrain Node Legacy Placeholder Methods
 
-> **Purpose**: Track all stub methods in `onebrain-node/src/node.rs` that need
-> full implementation. These stubs were created to unblock CLI development
-> while the underlying subsystems are being built.
+> **Purpose**: Track legacy `OneBrainNode` methods in `onebrain-node/src/node.rs`
+> whose behavior is still a placeholder or keeps state only in process memory.
+> They serve the legacy `/api/*` pages and CLI; the vNext KU workspace
+> (`/api/vnext/ku`, Base runtime) does not use them.
 >
 > **Created**: 2026-07-14
-> **Last Updated**: 2026-07-14
+> **Last Updated**: 2026-10-19 (ARCH-05, D-051): refreshed against `main` `117acea`.
+> The 2026-07-14 table listed no-op stubs; most now keep state in process-memory
+> `HashMap`/`Vec` fields, which **are lost on every restart** even though older code
+> comments called them "persistent".
 
-## Stub Methods
+## Current state
 
-### Knowledge Management
+| Method(s) | Current behavior (2026-10-19) | Persistence | Remaining gap |
+|---|---|---|---|
+| `deprecate_ku(cid)`, `is_deprecated` | Inserts into `deprecated_kus` set; `get_ku` reflects it | Process memory only | No durable epigenetics write; no P2P notice |
+| `save_draft`, `list_drafts`, `get_draft`, `update_draft`, `delete_draft` | Drafts kept in `drafts` map | Process memory only | Lost on restart; vNext KU drafts (`/api/vnext/ku`) are the durable path |
+| `publish_draft(id)` | Calls legacy `encode_and_store`, then drops the draft | Legacy KU store | Uses the legacy encoder, not the vNext KU workspace |
+| `encode_with_attachments(text, files)` | Stores blobs, encodes text, then links blobs by reference; link failures are only logged | Blob + legacy KU store | Not atomic; no rollback on failure |
+| `follow_node`, `unfollow_node`, `following_list` | Kept in `following` list | Process memory only | No follow store, no PubSub subscription |
+| `get_peer_profile(node_id)` | Substring match over connected peers or follow list; fixed trust 0.5/0.6/0.7 and tier `Leaf` | — | Placeholder trust/tier values |
+| `get_feed(limit)` | Returns `trending_kus(limit)`; follows are not used | — | No follow boost |
+| `list_devices`, `register_device`, `unregister_device`, `sync_status` | Device list in memory; current device always `up-to-date` | Process memory only | No identity device group or real sync |
+| `pin_blob`, `unpin_blob` | `BlobStorage::set_pinned` (`try_lock`; `Storage busy` under contention) | Durable (blob store) | Contention returns an error instead of waiting |
+| `bulk_delete(gene, before)` | Lists up to 10,000 KUs and deletes one by one | Legacy KU store | Silently capped at 10,000; no batch delete/index cleanup |
+| `add_tag`, `remove_tag`, `list_all_tags`, `get_ku_tags` | Tags in `ku_tags` map | Process memory only | Lost on restart |
+| `pin_ku`, `unpin_ku`, `pinned_kus` | Pins in `pinned_kus` set | Process memory only | Lost on restart |
+| `create_watch`, `list_watches`, `delete_watch`, `evaluate_watches` | Watch list in memory; evaluation is a case-insensitive substring match of the raw query text against preview/gene type, not KQL | Process memory only | Lost on restart; not KQL. Text KQL `WATCH` is rejected by `/api/kql` (ARCH-04) |
 
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `deprecate_ku(cid)` | Checks KU exists, prints warning | Update Epigenetics layer, broadcast deprecation notice to P2P | Medium |
-| `encode_draft(text)` | Calls `encode_and_store` (still broadcasts) | Separate DraftStore, encrypted local, no broadcast, separate lifecycle | High |
-| `encode_with_attachments(text, files)` | Stores blobs + encodes text separately | Insert MediaRef instructions into KU, atomic encode+attach, rollback on failure | High |
+## Direction
 
-### Social & Discovery
-
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `follow_node(node_id)` | No-op with validation | Persist in follow store, subscribe to PubSub topic | Medium |
-| `unfollow_node(node_id)` | No-op with validation | Remove from follow store, unsubscribe from PubSub | Medium |
-| `following_list()` | Returns empty `Vec` | Read from persistent follow store | Medium |
-| `get_peer_profile(node_id)` | Looks up connected peers for basic info | Fetch full profile from P2P/DHT, include EigenTrust score | Low |
-
-### Multi-Device
-
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `list_devices()` | Returns current device only | Read device group from identity store, sync across group | Medium |
-| `sync_status()` | Returns "up-to-date" placeholder | Read from VectorClock-based SyncManager | Medium |
-
-### Blob Storage Extensions
-
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `pin_blob(cid)` | Checks blob exists, no-op | Update `BlobMeta.pinned = true` in BlobStorage | High |
-| `unpin_blob(cid)` | Checks blob exists, no-op | Update `BlobMeta.pinned = false` in BlobStorage | High |
-
-### Bulk Operations & Tags
-
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `bulk_delete(gene, before)` | Iterates and deletes matching KUs (works but slow) | Storage-level batch delete, index cleanup | Low |
-| `add_tag(cid, tag)` | Checks KU exists, no-op | Update KU Epigenetics layer, persist tags | High |
-| `remove_tag(cid, tag)` | Checks KU exists, no-op | Update KU Epigenetics layer, remove tag | High |
-| `list_all_tags()` | Returns empty `Vec` | Scan Epigenetics of all KUs, build tag index | Medium |
-| `pin_ku(cid)` | Checks KU exists, no-op | Persist pin state in identity-level store, sync across devices | Medium |
-| `unpin_ku(cid)` | Checks KU exists, no-op | Remove pin state from identity-level store | Medium |
-| `pinned_kus()` | Returns empty `Vec` | Read from pin store (identity-level) | Medium |
-
-### Watch (Standing Queries)
-
-| Method | Current Behavior | Full Implementation Needed | Priority |
-|--------|-----------------|---------------------------|----------|
-| `create_watch(kql)` | Generates random ID, no-op | Parse KQL WATCH query, register in WatchManager, hook into KuReceived events | Low |
-| `list_watches()` | Returns empty `Vec` | Read from WatchManager | Low |
-| `delete_watch(id)` | Validates ID, no-op | Remove from WatchManager, unhook event listener | Low |
-
-## Implementation Order (Suggested)
-
-1. **Phase 1** (High priority): `pin_blob`/`unpin_blob`, `add_tag`/`remove_tag` — simple storage updates
-2. **Phase 2** (High priority): `encode_draft`, `encode_with_attachments` — need DraftStore + MediaRef
-3. **Phase 3** (Medium): `follow_node`/`unfollow_node`/`following_list` — need FollowStore
-4. **Phase 4** (Medium): `list_devices`/`sync_status` — need SyncManager integration
-5. **Phase 5** (Low): Watch queries, peer profile, bulk operations — need subsystem integration
+- D-051 freezes the legacy surface: fix honesty bugs, do not extend it. ARCH-06
+  routes or labels the legacy Encode/Explorer pages; durable user features belong
+  in the vNext KU workspace rather than these in-memory maps.
+- If a legacy method stays user-visible, its UI should label the state as
+  session-only until it is persisted or removed.

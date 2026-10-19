@@ -2,8 +2,34 @@
 
 > **Version**: 4.1 — KU v7 Core DNA  
 > **Crate**: `ku-kql` v0.2.0  
-> **Cập nhật**: 2026-07-19  
+> **Cập nhật**: 2026-07-19 (banner trạng thái: 2026-10-19, ARCH-04/ARCH-05, D-051)\
 > **Depends on**: `ku-core` (KuRuntime, CoreDna, ConceptRegistry, ConceptTable, text\_parser)
+
+> [!WARNING]
+> **Trạng thái hiện tại (2026-10-19, D-051 mục 3): KQL text là bề mặt legacy được đóng băng —
+> chỉ đọc, chỉ local, được sửa nhưng không mở rộng.** Tài liệu bên dưới mô tả toàn bộ ngôn ngữ
+> lịch sử mà *thư viện* `parse_query` còn parse được (cho executor in-memory, `ku-demo` và fixture
+> mobile). Bề mặt sản phẩm `/api/kql`, CLI `kql` và Web Explorer đi qua
+> [`ku_kql::read_only::parse_local_read_only`](../../src/ku-kql/src/read_only.rs), nên:
+>
+> - Chỉ chấp nhận `FIND` và `EXPLAIN FIND`. `CREATE`, `CREATE FROM TEXT`, `UPDATE`, `DEPRECATE`,
+>   `WATCH` (§2.2–§2.7) và `FIND HISTORY` bị từ chối với lỗi 400 giải thích — trước đây chúng chỉ
+>   sửa một bản sao tạm và **không bao giờ được lưu**. Tạo/sửa tri thức ở KU workspace (`/api/vnext/ku`).
+> - `SCOPE` chỉ nhận `LOCAL`/`AUTO`; mọi scope mạng (`NEIGHBORS`, `CLUSTER`, `DHT`, `SEMANTIC`,
+>   `GLOBAL`) bị từ chối. Không có định tuyến truy vấn phân tán.
+> - `RETURN`, property map trên node pattern, nhãn `Concept`, field không tồn tại, field gắn alias
+>   khác node đầu, và `CONTAINS` ngoài `concept_ids`/`concept_ccids` bị từ chối thay vì bị bỏ qua.
+> - Cú pháp điều kiện thật của parser: `EXISTS field` (không ngoặc) và `field CONTAINS value`
+>   (không phải `value IN field`). Độ ưu tiên `NOT` > `AND` > `OR`, kết hợp trái, có ngoặc.
+> - Giới hạn: truy vấn ≤ 4.096 byte, độ sâu điều kiện ≤ 32, ≤ 64 vị từ, path ≤ 8 hop, ≤ 8 cạnh.
+> - `EXPLAIN` luôn báo `strategy = "local_scan"` (`"local_scan+local_bond_bfs"` khi có cạnh),
+>   `indexes_used = []`, scope `Local`. Các chiến lược `neighbor_broadcast`, `super_peer_route`,
+>   `kademlia_lookup`, `semantic_similarity_search`, `global_flood`, `auto_escalation` và index
+>   `concept_id_index`/`trust_score_index` ở §2.1/§2.8 là thiết kế lịch sử, **không được thực thi**.
+>
+> Ví dụ được kiểm thử: `ku_kql::read_only::DOCUMENTED_EXAMPLES` (CLI `help kql` in cùng danh sách).
+> KQL vNext (typed `KnowledgeNeedIr`) là hệ khác; xem trạng thái reachability trong
+> [vNext contract index](vnext/README.md#contract-index).
 
 ---
 
@@ -124,8 +150,12 @@ FIND (k:KU) WHERE k.encoding_status != "Raw" AND k.gene_type = "Definition"
 | AND | `cond AND cond` | `k.certainty > 5000 AND k.gene_type = 0` |
 | OR | `cond OR cond` | `k.gene_type = 0 OR k.gene_type = 5` |
 | NOT | `NOT cond` | `NOT k.gene_type = 7` |
-| EXISTS | `EXISTS(field)` | `EXISTS(k.certainty)` |
-| CONTAINS | `value IN field` | `301 IN k.concept_ids` |
+| Ngoặc | `( cond )` | `(gene_type = "Fact" OR gene_type = "Definition") AND certainty >= 5000` |
+| EXISTS | `EXISTS field` | `NOT EXISTS text` |
+| CONTAINS | `field CONTAINS value` | `concept_ids CONTAINS 301` |
+
+Độ ưu tiên: `NOT` > `AND` > `OR`, kết hợp trái; `a AND b OR c` = `(a AND b) OR c`.
+Bề mặt sản phẩm chỉ nhận `CONTAINS` trên `concept_ids`/`concept_ccids`.
 
 **Comparison operators**:
 
@@ -140,15 +170,15 @@ FIND (k:KU) WHERE k.encoding_status != "Raw" AND k.gene_type = "Definition"
 
 #### Scope — Phạm vi truy vấn
 
-| Scope | Chiến lược (EXPLAIN) | Mô tả |
+| Scope | Chiến lược thiết kế lịch sử | Hiện tại (bề mặt sản phẩm) |
 |---|---|---|
-| `LOCAL` | `local_scan` | Chỉ node hiện tại |
-| `NEIGHBORS` | `neighbor_broadcast` | Broadcast tới neighbors |
-| `CLUSTER` | `super_peer_route` | Route qua super peer |
-| `DHT` | `kademlia_lookup` | Kademlia DHT lookup |
-| `SEMANTIC` | `semantic_similarity_search` | Tìm kiếm semantic |
-| `GLOBAL` | `global_flood` | Flood toàn mạng |
-| `AUTO` *(default)* | `auto_escalation` | Tự động leo thang scope |
+| `LOCAL` | `local_scan` | Chấp nhận; quét local |
+| `NEIGHBORS` | `neighbor_broadcast` | Bị từ chối (không có định tuyến) |
+| `CLUSTER` | `super_peer_route` | Bị từ chối |
+| `DHT` | `kademlia_lookup` | Bị từ chối |
+| `SEMANTIC` | `semantic_similarity_search` | Bị từ chối |
+| `GLOBAL` | `global_flood` | Bị từ chối |
+| `AUTO` *(default)* | `auto_escalation` | Chấp nhận; thực thi như `LOCAL` |
 
 #### RETURN — Kết quả trả về
 
@@ -550,34 +580,25 @@ EXPLAIN <query>
 #### Ví dụ
 
 ```sql
-EXPLAIN FIND (k:KU) WHERE k.trust_score > 8000 SCOPE DHT
+EXPLAIN FIND (k:KU) WHERE k.trust_score > 8000
 ```
 
-#### Kết quả — QueryPlan
+#### Kết quả — QueryPlan (thực thi hiện tại, ARCH-04)
 
 ```rust
 QueryPlan {
-    scope: Scope::Dht,
+    scope: Scope::Local,
     estimated_results: 1500,     // = số KU hiện có
-    strategy: "kademlia_lookup", // chiến lược tìm kiếm
-    indexes_used: [
-        "concept_id_index",
-        "trust_score_index",
-    ],
+    strategy: "local_scan",      // "local_scan+local_bond_bfs" khi pattern có cạnh
+    indexes_used: [],            // executor in-memory không dùng index
 }
 ```
 
-**Strategy mapping** theo Scope:
-
-| Scope | Strategy |
-|---|---|
-| Local | `local_scan` |
-| Neighbors | `neighbor_broadcast` |
-| Cluster | `super_peer_route` |
-| Dht | `kademlia_lookup` |
-| Semantic | `semantic_similarity_search` |
-| Global | `global_flood` |
-| Auto | `auto_escalation` |
+> [!NOTE]
+> Bảng ánh xạ Scope → Strategy cũ (`neighbor_broadcast`, `super_peer_route`, `kademlia_lookup`,
+> `semantic_similarity_search`, `global_flood`, `auto_escalation`) và các index
+> `concept_id_index`/`trust_score_index` từng được EXPLAIN báo ra dù không hề được thực thi.
+> Chúng đã bị gỡ khỏi output; executor chỉ quét local. Các scope mạng bị bề mặt sản phẩm từ chối.
 
 ---
 
@@ -975,34 +996,37 @@ flowchart TD
 
 | Component | Status | Ghi chú |
 |---|---|---|
-| Parser (`parser.rs`) | ✅ Complete | nom-based, case-insensitive |
-| AST (`ast.rs`) | ✅ Complete | 7 query types, 14 create clauses |
-| Executor (`executor.rs`) | ✅ Complete | Tất cả 7 query types |
-| Storage (`storage.rs`) | ✅ Complete | redb-backed, behind feature flag |
-| Tests | ✅ 125 tests passing | Unit + integration |
+| Parser (`parser.rs`) | Library | nom-based, case-insensitive; precedence/ngoặc/giới hạn từ ARCH-04 |
+| Read-only gate (`read_only.rs`) | **Default-build** | Cửa duy nhất cho `/api/kql`, CLI `kql`, Web Explorer |
+| AST (`ast.rs`) | Library | 7 query types, 14 create clauses |
+| Executor (`executor.rs`) | Library + default-build (chỉ FIND/EXPLAIN) | In-memory; nạp KU vào executor tạm mỗi lần gọi |
+| Storage (`storage.rs`) | Library, feature `storage` | Node dùng cho lưu trữ legacy/archive; không phải index của KQL |
+| Tests | `cargo test -p ku-kql --lib` 190/190 (2026-10-19) | Unit + fuzz tất định 5.000 ca |
 
 ### 5.2 Query Support Matrix
 
-| Query | Parse | Execute | Test coverage |
+| Query | Library parse | Library execute | Bề mặt sản phẩm (`/api/kql`, CLI, Web) |
 |---|---|---|---|
-| `FIND` | ✅ | ✅ | ✅ WHERE, ORDER BY, LIMIT, aggregates |
-| `CREATE` (Tier 1) | ✅ | ✅ | ✅ All 14 clause types |
-| `CREATE FROM TEXT` (Tier 2) | ✅ | ✅ | ✅ With/without gene\_hint |
-| `CREATE` (Legacy) | ✅ | ✅ | ✅ Property-bag fallback |
-| `UPDATE` | ✅ | ✅ | ✅ All epigenetics fields |
-| `DEPRECATE` | ✅ | ✅ | ✅ Trust reset + status change |
-| `WATCH` | ✅ | ✅ | ✅ Register, check, unwatch |
-| `EXPLAIN` | ✅ | ✅ | ✅ All scope strategies |
+| `FIND` | ✅ | ✅ | ✅ WHERE, ORDER BY, LIMIT, path ≤ 8 hop; `RETURN`/aggregate bị từ chối |
+| `FIND HISTORY` | ✅ | ✅ | ❌ Từ chối |
+| `CREATE` (Tier 1) | ✅ | Chỉ bản tạm | ❌ Từ chối — chưa bao giờ được lưu |
+| `CREATE FROM TEXT` (Tier 2) | ✅ | Chỉ bản tạm | ❌ Từ chối |
+| `CREATE` (Legacy) | ✅ | Chỉ bản tạm | ❌ Từ chối |
+| `UPDATE` | ✅ | Chỉ bản tạm | ❌ Từ chối |
+| `DEPRECATE` | ✅ | Chỉ bản tạm | ❌ Từ chối |
+| `WATCH` | ✅ | Chỉ bản tạm | ❌ Từ chối |
+| `EXPLAIN` | ✅ | ✅ `local_scan` | ✅ Chỉ `EXPLAIN FIND`; không index, scope `Local` |
 
 ### 5.3 Giới hạn hiện tại
 
 | Giới hạn | Mô tả |
 |---|---|
-| Chỉ local execution | Chưa có distributed query routing |
+| Chỉ local execution | Không có distributed query routing; scope mạng bị từ chối |
+| Không index | Quét tuyến tính trên bản tạm; LIMIT áp dụng sau khi lọc |
+| Đóng băng (D-051) | Sửa lỗi được, không thêm tính năng; đầu tư mới đi vào KQL vNext |
 | ConceptDict bridge | `text_parser` dùng dict riêng, chưa bridge với v6 ConceptDict |
-| Edge pattern matching | Parsed nhưng chưa evaluate trong FIND |
-| WATCH notification | Đăng ký thành công nhưng chưa push notification thực tế |
-| Graph edge persistence | `graph_storage.rs` cung cấp OBKG edge persistence (redb-backed), adjacency queries cho knowledge graph |
+| WATCH notification | Bị từ chối ở bề mặt sản phẩm; executor thư viện không push notification |
+| Graph edge persistence | `graph_storage.rs` là library-only, chưa có consumer (D-051: chuyển sau feature `experimental`) |
 
 ---
 
@@ -1013,8 +1037,11 @@ flowchart TD
 --  KQL Quick Reference
 -- ═══════════════════════════════════════════════
 
--- FIND
+-- FIND (bề mặt sản phẩm chấp nhận)
 FIND (k:KU) WHERE k.trust_score > 8000 SCOPE LOCAL LIMIT 10
+
+-- ⚠ Các dạng ghi/standing dưới đây chỉ còn trong thư viện parse_query;
+-- /api/kql, CLI kql và Web Explorer từ chối chúng (D-051, ARCH-04).
 
 -- CREATE (Tier 1)
 CREATE (k:KU) FACT certainty=9000 {
@@ -1040,6 +1067,6 @@ DEPRECATE (k:KU) WHERE k.trust_score < 1000
 WATCH FIND (k:KU) WHERE k.gene_type = 0
   ON CREATE NOTIFY "ws://localhost/events"
 
--- EXPLAIN
-EXPLAIN FIND (k:KU) WHERE k.certainty > 5000 SCOPE DHT
+-- EXPLAIN (bề mặt sản phẩm chấp nhận; báo local_scan)
+EXPLAIN FIND (k:KU) WHERE k.certainty > 5000 SCOPE LOCAL
 ```

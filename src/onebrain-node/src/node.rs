@@ -159,7 +159,7 @@ pub struct OneBrainNode {
     saved_searches: Vec<SavedSearch>,
     /// KU collections.
     collections: Vec<Collection>,
-    // ── Persistent in-memory state (replaces stubs) ──
+    // ── Legacy session state: process memory only, lost on restart (see docs/STUB_TRACKING.md) ──
     /// Tags: CID hex → Set of tag strings.
     ku_tags: HashMap<String, HashSet<String>>,
     /// Pinned/favorited KU CID hex strings.
@@ -2868,8 +2868,8 @@ impl OneBrainNode {
 
     /// Follow a node by its NodeId.
     ///
-    /// Persists in the in-memory following list. Duplicate follows are
-    /// silently ignored.
+    /// Keeps the follow in the in-memory following list (lost on restart).
+    /// Duplicate follows are silently ignored.
     pub fn follow_node(&mut self, node_id: &str) -> Result<(), NodeError> {
         if node_id.len() < 8 {
             return Err(NodeError::InvalidArgument(
@@ -3114,11 +3114,11 @@ impl OneBrainNode {
         Ok(BulkDeleteResult { deleted, skipped })
     }
 
-    // ── #3: Tags — Persistent In-Memory ──────────────────────────────────
+    // ── #3: Tags — process memory only (lost on restart) ─────────────────
 
     /// Add a tag to a KU.
     ///
-    /// Tags are stored as strings in an in-memory HashMap.
+    /// Tags are stored as strings in an in-memory HashMap; they are not persisted.
     pub fn add_tag(&mut self, cid_hex: &str, tag: &str) -> Result<(), NodeError> {
         // Verify the KU exists
         let _detail = self.get_ku(cid_hex)?;
@@ -3169,7 +3169,7 @@ impl OneBrainNode {
             .unwrap_or_default()
     }
 
-    // ── #4: Pin/Favorite KUs — Persistent In-Memory ──────────────────────
+    // ── #4: Pin/Favorite KUs — process memory only (lost on restart) ─────
 
     /// Pin/favorite a KU for quick access.
     pub fn pin_ku(&mut self, cid_hex: &str) -> Result<bool, NodeError> {
