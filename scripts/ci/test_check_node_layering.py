@@ -43,7 +43,7 @@ class LayeringRatchetTests(unittest.TestCase):
 
     def test_removed_bypass_requires_tightening_the_list(self) -> None:
         edges = current_edges()
-        edges["onebrain-api"].discard("ku-kql")
+        edges["onebrain-api"].discard("ku-core")
         failures = evaluate({"onebrain-node"}, edges)
         self.assertEqual(len(failures), 1)
         self.assertIn("KNOWN_BYPASSES", failures[0])
@@ -61,6 +61,13 @@ class LayeringRatchetTests(unittest.TestCase):
         failures = evaluate({"onebrain-node"}, edges)
         self.assertEqual(len(failures), 1)
         self.assertIn("ku-encoder", failures[0])
+
+    def test_api_regaining_ku_kql_fails(self) -> None:
+        edges = current_edges()
+        edges["onebrain-api"].add("ku-kql")
+        failures = evaluate({"onebrain-node"}, edges)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("ku-kql", failures[0])
 
     def test_harness_modules_must_be_feature_gated(self) -> None:
         lib = (

@@ -561,7 +561,7 @@ struct PreparedNeedEntry {
     fingerprint: [u8; 32],
     activation_idempotency_key: String,
     prepared: PreparedNeedV1,
-    bundle: ku_kql::vnext_private_need::PrivateNeedBundle,
+    bundle: onebrain_node::kql::PrivateNeedBundle,
 }
 
 #[cfg(feature = "vnext-network-runtime")]
@@ -911,7 +911,7 @@ async fn services(state: &AppState) -> Result<onebrain_node::VNextProductService
 
 #[cfg(feature = "vnext-network-runtime")]
 fn map_runtime_error(error: onebrain_node::VNextProductRuntimeError) -> VNextHttpError {
-    use ku_kql::vnext_private_need::PrivateNeedError;
+    use onebrain_node::kql::PrivateNeedError;
     use onebrain_node::vnext_distributed_kql::DistributedKqlError;
     use onebrain_node::vnext_distributed_pomv::DistributedPomvError;
     use onebrain_node::VNextProductRuntimeError;
@@ -1062,7 +1062,7 @@ fn build_private_need(
     (
         [u8; 32],
         PreparedNeedV1,
-        ku_kql::vnext_private_need::PrivateNeedBundle,
+        onebrain_node::kql::PrivateNeedBundle,
     ),
     VNextHttpError,
 > {
@@ -1071,8 +1071,8 @@ fn build_private_need(
         ReceptorDefinition, ReceptorOrigin, ResourceProfile, SemanticFrameSet, StatementLocator,
         UnknownConstraintPolicy, RECEPTOR_DEFINITION_KIND,
     };
-    use ku_kql::vnext_matcher::MatcherMetricConcepts;
-    use ku_kql::vnext_private_need::{adapt_local_intent, LocalIntentSource, LocalIntentTemplate};
+    use onebrain_node::kql::MatcherMetricConcepts;
+    use onebrain_node::kql::{adapt_local_intent, LocalIntentSource, LocalIntentTemplate};
 
     if request.local_query.is_empty()
         || request.local_query.len() > MAX_LOCAL_QUERY_BYTES
@@ -1195,10 +1195,10 @@ fn build_private_need(
 
 #[cfg(feature = "vnext-network-runtime")]
 fn need_view(
-    id: ku_kql::vnext_standing_need::StandingNeedId,
-    need: &ku_kql::vnext_standing_need::StandingNeed,
+    id: onebrain_node::kql::StandingNeedId,
+    need: &onebrain_node::kql::StandingNeed,
 ) -> NeedViewV1 {
-    use ku_kql::vnext_standing_need::StandingNeedState;
+    use onebrain_node::kql::StandingNeedState;
     NeedViewV1 {
         standing_need_id: hex32(id.as_bytes()),
         state: match need.state {
@@ -1377,7 +1377,7 @@ pub async fn activate_need(
         let (id, outcome) = runtime
             .register_private_need(entry.bundle)
             .map_err(map_runtime_error)?;
-        use ku_kql::vnext_standing_need::StandingNeedWriteOutcome;
+        use onebrain_node::kql::StandingNeedWriteOutcome;
         if matches!(
             outcome,
             StandingNeedWriteOutcome::StaleGeneration
@@ -1473,7 +1473,7 @@ pub async fn get_need(
     #[cfg(feature = "vnext-network-runtime")]
     {
         let id_bytes = bytes32("standing_need_id", &id)?;
-        let id = ku_kql::vnext_standing_need::StandingNeedId::from_bytes(id_bytes);
+        let id = onebrain_node::kql::StandingNeedId::from_bytes(id_bytes);
         let runtime = services(&state).await?;
         let need = runtime
             .standing_need(id)
@@ -1524,7 +1524,7 @@ pub async fn retire_need(
                 ),
             ));
         }
-        let typed_id = ku_kql::vnext_standing_need::StandingNeedId::from_bytes(id_bytes);
+        let typed_id = onebrain_node::kql::StandingNeedId::from_bytes(id_bytes);
         let runtime = services(&state).await?;
         let need = runtime
             .standing_need(typed_id)
@@ -1710,13 +1710,13 @@ pub async fn scan_need(
                 ));
             }
         }
-        let typed_id = ku_kql::vnext_standing_need::StandingNeedId::from_bytes(id_bytes);
+        let typed_id = onebrain_node::kql::StandingNeedId::from_bytes(id_bytes);
         let runtime = services(&state).await?;
         let need = runtime
             .standing_need(typed_id)
             .map_err(map_runtime_error)?
             .ok_or_else(|| VNextHttpError::not_found("StandingNeed was not found locally"))?;
-        if need.state != ku_kql::vnext_standing_need::StandingNeedState::Active {
+        if need.state != onebrain_node::kql::StandingNeedState::Active {
             return Err(VNextHttpError::conflict(
                 "only an active StandingNeed can scan one-hop affordances",
             ));
@@ -1811,7 +1811,7 @@ pub async fn list_need_matches(
     #[cfg(feature = "vnext-network-runtime")]
     {
         let id_bytes = bytes32("standing_need_id", &id)?;
-        let typed_id = ku_kql::vnext_standing_need::StandingNeedId::from_bytes(id_bytes);
+        let typed_id = onebrain_node::kql::StandingNeedId::from_bytes(id_bytes);
         let runtime = services(&state).await?;
         runtime
             .standing_need(typed_id)
@@ -2596,7 +2596,7 @@ mod tests {
     #[cfg(feature = "vnext-network-runtime")]
     fn product_dependencies() -> onebrain_node::VNextProductRuntimeDependencies {
         use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
-        use ku_kql::vnext_private_need::LocalNeedVaultKey;
+        use onebrain_node::kql::LocalNeedVaultKey;
         let version = onebrain_node::LocalPolicyVersion::new(1).unwrap();
         let policies = onebrain_node::LocalPolicyRegistry::new([(
             version,

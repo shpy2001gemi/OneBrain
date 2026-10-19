@@ -35,7 +35,7 @@ SURFACES = {
 # Existing direct bypasses of the node facade (review §2). Owned by ARCH-09;
 # shrink this list as each bypass moves behind `onebrain-node`.
 KNOWN_BYPASSES = {
-    "onebrain-api": {"ku-core", "ku-kql"},
+    "onebrain-api": {"ku-core"},
     "onebrain-cli": set(),
 }
 

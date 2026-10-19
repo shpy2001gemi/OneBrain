@@ -3526,7 +3526,6 @@ dependencies = [
  "futures",
  "ku-core",
  "ku-encoder",
- "ku-kql",
  "onebrain-archive",
  "onebrain-base-abi",
  "onebrain-base-contract",

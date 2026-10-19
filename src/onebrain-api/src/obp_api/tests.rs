@@ -128,7 +128,7 @@ async fn active(
         &[7; 32],
     )));
     node.set_vnext_product_dependencies(onebrain_node::VNextProductRuntimeDependencies::new(
-        ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes([5; 32]),
+        onebrain_node::kql::LocalNeedVaultKey::from_bytes([5; 32]),
         policies,
     ))
     .unwrap();

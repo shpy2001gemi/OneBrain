@@ -131,7 +131,14 @@ pub mod vnext_workflow_surface;
 /// reach `ku-kql` through the node instead of depending on it directly.
 pub mod kql {
     pub use ku_kql::read_only::{DOCUMENTED_EXAMPLES, READ_ONLY_FIELDS};
-    pub use ku_kql::vnext_private_need::LocalNeedVaultKey;
+    pub use ku_kql::vnext_matcher::MatcherMetricConcepts;
+    pub use ku_kql::vnext_private_need::{
+        adapt_local_intent, LocalIntentSource, LocalIntentTemplate, LocalNeedVaultKey,
+        PrivateNeedBundle, PrivateNeedError,
+    };
+    pub use ku_kql::vnext_standing_need::{
+        StandingNeed, StandingNeedId, StandingNeedState, StandingNeedWriteOutcome,
+    };
 }
 
 /// ARCH-09 facade: blob-store items that interface crates need, re-exported so
