@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { Zap, CheckCircle, AlertCircle, FileText, Copy, Loader, Clock, Save, Paperclip, X as XIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -132,6 +133,35 @@ export function EncodePage() {
       <div className="page-header">
         <h1>{t('encode.title')}</h1>
         <p>Transform text into Knowledge Units with biological encoding</p>
+      </div>
+
+      <div
+        role="note"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 'var(--ob-gap-md)',
+          padding: '12px 16px',
+          marginBottom: 'var(--ob-gap-lg)',
+          borderRadius: 'var(--ob-radius-md)',
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          color: '#fde68a',
+          fontSize: '0.85rem',
+        }}
+      >
+        <span>
+          <strong>Legacy Core DNA v7 encode (`/api/encode`)</strong> — non-canonical compatibility surface; disabled in the default build unless compiled with <code>--features legacy</code>. Create canonical vNext Knowledge Units via <code>/api/vnext/ku</code>.
+        </span>
+        <Link
+          to="/ku"
+          className="btn btn-sm btn-primary"
+          style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >
+          Open Local KU Workspace (/api/vnext/ku)
+        </Link>
       </div>
 
       <div className="grid-3" style={{ gridTemplateColumns: '1fr 1fr', gap: 'var(--ob-gap-lg)' }}>

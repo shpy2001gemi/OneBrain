@@ -2,6 +2,8 @@
 //!
 //! End-to-end tests for the full KQL pipeline and stress tests.
 
+#![cfg(feature = "legacy")]
+
 use ku_core::foundation::ConceptCcid;
 use ku_core::*;
 use ku_net::identity::*;

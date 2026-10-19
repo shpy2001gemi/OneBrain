@@ -7,6 +7,10 @@ license = "MIT"
 
 [features]
 default = []
+# Read-only Core DNA v7 compatibility data structures for frozen KQL / migration views
+legacy-read = []
+# Legacy Core DNA v7 / OBT / OBKG / PoMV / tool-encoding modules (ARCH-06 / D-051)
+legacy = ["legacy-read"]
 # Enable persistent ConceptDict storage (pure Rust, no C compiler needed)
 persist = ["dep:redb"]
 # Test-only process-kill synchronization. Production builds leave every hook a no-op.

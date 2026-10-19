@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, ChevronLeft, ChevronRight, X, Star, Tag, Plus, Code, ArrowUpDown, Trash2, AlertTriangle, CheckSquare, History, Bookmark, BookmarkPlus } from 'lucide-react';
 import { VersionTimeline } from '../components/VersionTimeline';
 import { FilePreview } from '../components/FilePreview';
@@ -28,7 +29,7 @@ export function ExplorerPage() {
   const [newTag, setNewTag] = useState('');
   const [kqlMode, setKqlMode] = useState(false);
   const [kqlQuery, setKqlQuery] = useState('');
-  const [, setKqlResults] = useState<unknown[] | null>(null);
+  const [kqlResults, setKqlResults] = useState<KuListItem[] | null>(null);
   const [kqlError, setKqlError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'created' | 'pomv' | 'trust' | 'wire_size'>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -154,7 +155,12 @@ export function ExplorerPage() {
     setKqlError(null);
     try {
       const res = await api.kql(kqlQuery);
-      setKqlResults(res.results);
+      const rows = Array.isArray(res)
+        ? (res as KuListItem[])
+        : Array.isArray((res as { results?: KuListItem[] })?.results)
+          ? (res as { results: KuListItem[] }).results
+          : [];
+      setKqlResults(rows);
     } catch (err) {
       setKqlResults([]);
       setKqlError(err instanceof Error ? err.message : String(err));
@@ -189,14 +195,15 @@ export function ExplorerPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const displayKus = useMemo(() => {
-    let filtered = showPinnedOnly ? kus.filter(k => pinnedCids.has(k.cid_hex)) : kus;
+    const sourceKus = kqlMode && kqlResults !== null ? kqlResults : kus;
+    let filtered = showPinnedOnly ? sourceKus.filter(k => pinnedCids.has(k.cid_hex)) : sourceKus;
     filtered = [...filtered].sort((a, b) => {
       const av = a[sortBy];
       const bv = b[sortBy];
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return filtered;
-  }, [kus, showPinnedOnly, pinnedCids, sortBy, sortDir]);
+  }, [kus, kqlMode, kqlResults, showPinnedOnly, pinnedCids, sortBy, sortDir]);
 
   const toggleSelectAll = () => {
     if (selectedCids.size === displayKus.length) {
@@ -239,6 +246,35 @@ export function ExplorerPage() {
       <div className="page-header">
         <h1>{t('explorer.title')}</h1>
         <p>{t('explorer.total', { count: total })}</p>
+      </div>
+
+      <div
+        role="note"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 'var(--ob-gap-md)',
+          padding: '12px 16px',
+          marginBottom: 'var(--ob-gap-md)',
+          borderRadius: 'var(--ob-radius-md)',
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          color: '#fde68a',
+          fontSize: '0.85rem',
+        }}
+      >
+        <span>
+          <strong>Legacy Core DNA v7 explorer (`/api/kus`, `/api/kql`)</strong> — read-only compatibility surface. Manage canonical vNext Knowledge Units via <code>/api/vnext/ku</code>.
+        </span>
+        <Link
+          to="/ku"
+          className="btn btn-sm btn-primary"
+          style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}
+        >
+          Open Local KU Workspace (/api/vnext/ku)
+        </Link>
       </div>
 
       {/* Search + Filters */}
@@ -493,7 +529,7 @@ export function ExplorerPage() {
       <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner" /></div>
-        ) : kus.length === 0 ? (
+        ) : displayKus.length === 0 ? (
           <div className="empty-state"><Search size={40} /><p>No knowledge units found</p></div>
         ) : (
           <table className="data-table">

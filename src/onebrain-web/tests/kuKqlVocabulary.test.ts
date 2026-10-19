@@ -37,4 +37,32 @@ describe('legacy KQL editor vocabulary', () => {
   it('uses an example the Rust tests parse and run', () => {
     expect(rustStringArray('DOCUMENTED_EXAMPLES')).toContain(KQL_EXAMPLE);
   });
+
+  it('labels legacy Encode and Explorer surfaces and routes Chat KU creation to /ku (/api/vnext/ku)', () => {
+    const encodeTsx = readFileSync(
+      fileURLToPath(new URL('../src/pages/Encode.tsx', import.meta.url)),
+      'utf8',
+    );
+    const explorerTsx = readFileSync(
+      fileURLToPath(new URL('../src/pages/Explorer.tsx', import.meta.url)),
+      'utf8',
+    );
+    const chatTsx = readFileSync(
+      fileURLToPath(new URL('../src/pages/Chat.tsx', import.meta.url)),
+      'utf8',
+    );
+
+    expect(encodeTsx).toContain('Legacy Core DNA v7 encode (`/api/encode`)');
+    expect(encodeTsx).toContain('to="/ku"');
+    expect(encodeTsx).toContain('/api/vnext/ku');
+
+    expect(explorerTsx).toContain('Legacy Core DNA v7 explorer (`/api/kus`, `/api/kql`)');
+    expect(explorerTsx).toContain('to="/ku"');
+    expect(explorerTsx).toContain('/api/vnext/ku');
+    expect(explorerTsx).toContain('const sourceKus = kqlMode && kqlResults !== null ? kqlResults : kus;');
+
+    expect(chatTsx).toContain('to="/ku"');
+    expect(chatTsx).toContain('/api/vnext/ku');
+    expect(chatTsx).not.toContain('api.encode(');
+  });
 });

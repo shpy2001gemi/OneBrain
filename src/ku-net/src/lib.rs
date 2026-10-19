@@ -23,29 +23,48 @@
 //! - SPEC D: Message Catalog (`02d_message_catalog.md`)
 
 pub mod constants;
+#[cfg(feature = "legacy")]
 pub mod dht;
-#[cfg(feature = "persist")]
+#[cfg(all(feature = "persist", feature = "legacy"))]
 pub mod dht_store; // ★ Phase 3: DHT persistence (redb-backed)
+#[cfg(feature = "legacy")]
 pub mod discovery;
+#[cfg(feature = "legacy")]
 pub mod encoding_gossip; // ★ v6 NEW: Encoding consensus network protocol
+#[cfg(feature = "legacy")]
 pub mod encoding_job; // ★ v6 NEW: DHT-based encoding job board
+#[cfg(feature = "legacy")]
 pub mod encoding_stigmergy; // ★ v6 NEW: Pheromone-based job load balancing
 pub mod error;
+#[cfg(feature = "legacy")]
 pub mod graph_gossip; // ★ OBKG: Graph gossip (FedR deltas, graph stats, dream reports)
+#[cfg(feature = "legacy")]
 pub mod identity;
+#[cfg(feature = "legacy")]
 pub mod membership;
+#[cfg(feature = "legacy")]
 pub mod messages;
+#[cfg(feature = "legacy")]
 pub mod metabolism_gossip;
+#[cfg(feature = "legacy")]
 pub mod obt_gossip; // ★ OBT: Gossip protocol (fork warrants, mint relay, epoch summary)
+#[cfg(feature = "legacy")]
 pub mod obt_transfer; // ★ OBT: Token transfer protocol messages
+#[cfg(feature = "legacy")]
 pub mod pubsub;
+#[cfg(feature = "legacy")]
 pub mod query;
+#[cfg(feature = "legacy")]
 pub mod registry_gossip;
+#[cfg(feature = "legacy")]
 pub mod replication; // ★ Phase 4: R=7 tier-aware replication manager
+#[cfg(feature = "legacy")]
 pub mod stigmergy;
+#[cfg(feature = "legacy")]
 pub mod sync;
 #[cfg(feature = "quic")]
 pub mod transport;
+#[cfg(feature = "legacy")]
 pub mod vacuum; // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
 
 pub mod vnext_bridge_merge;
@@ -79,5 +98,5 @@ pub mod vnext_route_plan;
 pub mod vnext_secure_session_adapter;
 pub mod vnext_session;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy"))]
 mod tests;

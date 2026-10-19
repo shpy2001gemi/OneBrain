@@ -13,9 +13,11 @@ mod cli;
 
 use cli::vnext::{NeedArgs, PomvArgs, VNextArgs, VNextStartArgs};
 use onebrain_api::ApiServer;
+#[cfg(feature = "legacy")]
+use onebrain_node::seed_client::SeedClient;
 use onebrain_node::{
-    mdns_discovery, peer_memory::PeerMemory, seed_client::SeedClient, upnp, ConceptRegistryMode,
-    LegacyTcpListener, NodeConfig, OneBrainNode,
+    mdns_discovery, peer_memory::PeerMemory, upnp, ConceptRegistryMode, LegacyTcpListener,
+    NodeConfig, OneBrainNode,
 };
 
 #[cfg(all(feature = "legacy-read-compat", not(feature = "base-v1")))]
@@ -123,6 +125,7 @@ enum BaseCommand {
     Status,
 }
 
+#[cfg(feature = "legacy")]
 fn generate_peer_id() -> String {
     use std::time::SystemTime;
     let t = SystemTime::now()
@@ -368,34 +371,48 @@ async fn main() {
                 let upnp_result = upnp::try_upnp_map(config.port).await;
                 println!("  {}", upnp_result.message);
 
-                let peer_id = generate_peer_id();
-                let mut seed = SeedClient::new(peer_id.clone(), config.name.clone(), config.port);
-                match seed.connect().await {
-                    Ok(_) => {
-                        if let Some(stream) = seed.stream() {
-                            SeedClient::run_background(
-                                stream,
-                                peer_id.clone(),
-                                node.event_tx.clone(),
-                            )
-                            .await;
-                        }
-                        match seed.get_peers().await {
-                            Ok(peers) => {
-                                println!("  \u{2713} Found {} legacy peer(s) online", peers.len());
-                                for p in &peers {
-                                    let short_id = if p.peer_id.len() >= 8 {
-                                        &p.peer_id[..8]
-                                    } else {
-                                        &p.peer_id
-                                    };
-                                    println!("    - {} ({})", p.name, short_id);
+                #[cfg(not(feature = "legacy"))]
+                {
+                    println!("  ⚠ Legacy central seed client is disabled in the default build (build with `--features legacy` to enable SeedClient).");
+                }
+
+                #[cfg(feature = "legacy")]
+                {
+                    let peer_id = generate_peer_id();
+                    let mut seed =
+                        SeedClient::new(peer_id.clone(), config.name.clone(), config.port);
+                    match seed.connect().await {
+                        Ok(_) => {
+                            if let Some(stream) = seed.stream() {
+                                SeedClient::run_background(
+                                    stream,
+                                    peer_id.clone(),
+                                    node.event_tx.clone(),
+                                )
+                                .await;
+                            }
+                            match seed.get_peers().await {
+                                Ok(peers) => {
+                                    println!(
+                                        "  \u{2713} Found {} legacy peer(s) online",
+                                        peers.len()
+                                    );
+                                    for p in &peers {
+                                        let short_id = if p.peer_id.len() >= 8 {
+                                            &p.peer_id[..8]
+                                        } else {
+                                            &p.peer_id
+                                        };
+                                        println!("    - {} ({})", p.name, short_id);
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("  \u{26a0} Could not get legacy peer list: {}", e)
                                 }
                             }
-                            Err(e) => println!("  \u{26a0} Could not get legacy peer list: {}", e),
                         }
+                        Err(e) => println!("  \u{26a0} Legacy seed connection failed: {}", e),
                     }
-                    Err(e) => println!("  \u{26a0} Legacy seed connection failed: {}", e),
                 }
             }
 

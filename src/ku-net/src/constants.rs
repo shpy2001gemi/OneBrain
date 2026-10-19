@@ -7,9 +7,14 @@
 //! plus transport/routing constants used across multiple modules.
 
 // ─── Re-exports from identity.rs (SPEC A §1) ──────────────────────────────
+#[cfg(feature = "legacy")]
 pub use crate::identity::{
     DEVICE_GROUP_MAX, OBP_ALPN, OBP_PORT, PUZZLE_C_LARGE, PUZZLE_C_MEDIUM, PUZZLE_C_SMALL,
 };
+#[cfg(not(feature = "legacy"))]
+pub const OBP_PORT: u16 = 44242;
+#[cfg(not(feature = "legacy"))]
+pub const OBP_ALPN: &[u8] = b"obp/1";
 
 // ─── Transport (SPEC A §3) ─────────────────────────────────────────────────
 

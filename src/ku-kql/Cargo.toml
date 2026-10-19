@@ -12,8 +12,8 @@ storage = ["dep:redb", "dep:fs2", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
 
 [dependencies]
-# KU data types
-ku-core = { path = "../ku-core" }
+# KU data types (frozen read-only KQL requires Core DNA read types)
+ku-core = { path = "../ku-core", features = ["legacy-read"] }
 
 # Parser
 nom = "7"

@@ -5,6 +5,11 @@ edition = "2021"
 description = "OneBrain AI-assisted KU encoding — text to CoreDna via local LLM tool calling"
 license = "MIT"
 
+[features]
+default = []
+# Legacy AiEncoder / Core DNA tool-encoding pipeline (ARCH-06 / D-051)
+legacy = ["ku-core/legacy"]
+
 [dependencies]
 ku-core = { path = "../ku-core" }
 ku-ai = { path = "../ku-ai" }

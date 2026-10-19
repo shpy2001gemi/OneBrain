@@ -14,6 +14,7 @@ default = ["base-v1"]
 vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first", "onebrain-api/vnext-outbound-first"]
 base-v1 = ["onebrain-node/base-v1", "onebrain-api/base-v1"]
 legacy-read-compat = ["onebrain-node/legacy-read-compat", "onebrain-api/legacy-read-compat"]
+legacy = ["onebrain-node/legacy", "onebrain-api/legacy", "ku-core/legacy"]
 vnext-network-runtime = [
     "onebrain-node/vnext-network-runtime",
     "onebrain-api/vnext-network-runtime",

@@ -24,6 +24,7 @@ use crate::encoding_consensus::EncodingStatus;
 use crate::epigenetics::{Epigenetics, Expression};
 use crate::error::KuError;
 use crate::foundation::ConceptCcid;
+#[cfg(feature = "legacy")]
 use crate::pomv_runtime::TrustSectionUpdate;
 use crate::types::ConceptId;
 
@@ -154,6 +155,7 @@ impl KuRuntime {
     /// This is the bridge between `PomvRuntime::tick()` output and a live
     /// `KuRuntime`. It copies all signal fields into `epi.trust` via
     /// `TrustSectionUpdate::apply_to` (which also sets epistemic_status).
+    #[cfg(feature = "legacy")]
     pub fn apply_pomv_update(&mut self, update: &TrustSectionUpdate) {
         update.apply_to(&mut self.epi.trust);
     }
@@ -1842,6 +1844,7 @@ mod tests {
     // PoMV Bridge tests
     // ====================================================================
 
+    #[cfg(feature = "legacy")]
     #[test]
     fn test_apply_pomv_update_copies_all_signals() {
         use crate::types::EpistemicStatus;
@@ -1870,6 +1873,7 @@ mod tests {
         assert_eq!(rt.epi.trust.niche_fitness, 6000);
     }
 
+    #[cfg(feature = "legacy")]
     #[test]
     fn test_apply_pomv_update_syncs_epistemic_status() {
         use crate::types::EpistemicStatus;
@@ -1906,6 +1910,7 @@ mod tests {
         assert!(bytes.iter().any(|&b| b != 0));
     }
 
+    #[cfg(feature = "legacy")]
     #[test]
     fn test_cid_bytes_usable_as_pomv_key() {
         use crate::pomv_runtime::{PomvConfig, PomvRuntime};

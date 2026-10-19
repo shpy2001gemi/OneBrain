@@ -45,38 +45,60 @@
 //! assert!(verification.passed);
 //! ```
 
+#[cfg(feature = "legacy")]
 pub mod batch;
+#[cfg(feature = "legacy")]
 pub mod encoder;
 pub mod error;
+#[cfg(feature = "legacy")]
 pub mod fallback;
+#[cfg(feature = "legacy")]
 pub mod log;
+#[cfg(feature = "legacy")]
 pub mod prompt;
+#[cfg(feature = "legacy")]
 pub mod verifier;
 
 // v2 pipeline modules
+#[cfg(feature = "legacy")]
 pub mod analyzer;
+#[cfg(feature = "legacy")]
 pub mod builder;
+#[cfg(feature = "legacy")]
 pub mod concept_resolver;
 pub mod extraction;
+#[cfg(feature = "legacy")]
 pub mod extractor;
+#[cfg(feature = "legacy")]
 pub mod prescan;
+#[cfg(feature = "legacy")]
 pub mod splitter;
+#[cfg(feature = "legacy")]
 pub mod types;
 pub mod vnext_affordance_extractor;
 pub mod vnext_observation_intake;
 pub mod vnext_receptor_encoder;
 
+#[cfg(feature = "legacy")]
 pub use batch::{BatchEncoder, BatchResult};
+#[cfg(feature = "legacy")]
 pub use encoder::{AiEncoder, EncoderConfig, EncodingResult};
 pub use error::EncoderError;
+#[cfg(feature = "legacy")]
 pub use fallback::{EncodingDecision, FallbackChain};
+#[cfg(feature = "legacy")]
 pub use log::{EncodingLog, LogEntry};
+#[cfg(feature = "legacy")]
 pub use verifier::{EncodingVerifier, VerificationResult};
 
 // v2 pipeline re-exports
+#[cfg(feature = "legacy")]
 pub use builder::KuBuilder;
+#[cfg(feature = "legacy")]
 pub use concept_resolver::{ConceptResolver, ResolutionWarning, ResolutionWarningType};
+#[cfg(feature = "legacy")]
 pub use extractor::SpoExtractor;
+#[cfg(feature = "legacy")]
 pub use types::{AnalyzedTriple, Anchor, NotationType, ResolvedTriple, SpoTriple};
 pub use vnext_affordance_extractor::{
     AffordanceEvidenceKind, AffordanceEvidenceSnapshot, AffordanceExtractionDraft,

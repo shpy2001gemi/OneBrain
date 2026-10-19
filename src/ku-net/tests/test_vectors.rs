@@ -3,6 +3,8 @@
 //! Hardcoded byte-level verification ensuring binary compatibility.
 //! These vectors can be used by any OBP implementation to verify conformance.
 
+#![cfg(feature = "legacy")]
+
 use ku_net::identity::*;
 use ku_net::messages::*;
 

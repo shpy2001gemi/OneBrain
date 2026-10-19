@@ -7,6 +7,8 @@ license = "MIT"
 
 [features]
 default = []
+# Legacy DHT / SWIM / gossip / OBT network modules (ARCH-06 / D-051)
+legacy = ["ku-core/legacy"]
 # Enable QUIC transport (requires C compiler for TLS crypto)
 quic = ["dep:quinn", "dep:rustls", "dep:tokio", "dep:rcgen"]
 outbound-first = ["quic", "dep:tokio-rustls", "tokio/io-util"]

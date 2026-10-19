@@ -4,6 +4,7 @@
 //! Mediator, AI backend, concept dictionary, persistent storage,
 //! anti-gaming guard, and peer networking.
 
+#[cfg(feature = "legacy")]
 use crate::anti_gaming_guard::AntiGamingGuard;
 use crate::base_runtime::{
     BaseManagementGrant, BaseManagementScope, BaseRuntime, BaseRuntimeConfig, BaseServices,
@@ -31,6 +32,7 @@ use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo
 use crate::peer_manager::PeerManager;
 use crate::signer_ports::{SignerPossessionProof, SignerProviderRegistry};
 use crate::text::truncate_preview;
+#[cfg(feature = "legacy")]
 use crate::verifier_service;
 #[cfg(feature = "vnext-network-runtime")]
 use crate::vnext_network_runtime::OutboundVNextSession;
@@ -52,6 +54,7 @@ use ku_core::concept_registry::ConceptLookup;
 use ku_core::foundation::{ObjectReference, RedbVerifiedBackend, StoredRecordKind};
 use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
+#[cfg(feature = "legacy")]
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
 use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig};
 use ku_kql::storage::KuStorage;
@@ -137,6 +140,7 @@ pub struct OneBrainNode {
     /// and remain usable without holding the node mutex.
     base_runtime: Option<BaseRuntime>,
     mediator: Mediator,
+    #[cfg(feature = "legacy")]
     guard: AntiGamingGuard,
     /// Concept dictionary (shared across encoder and mediator).
     dict: ConceptDict,
@@ -157,7 +161,6 @@ pub struct OneBrainNode {
     notification_prefs: NotificationPrefs,
     /// Saved searches.
     saved_searches: Vec<SavedSearch>,
-    /// KU collections.
     collections: Vec<Collection>,
     // ── Legacy session state: process memory only, lost on restart (see docs/STUB_TRACKING.md) ──
     /// Tags: CID hex → Set of tag strings.
@@ -178,6 +181,7 @@ pub struct OneBrainNode {
     staked_amount: u64,
     /// ConceptRegistry for encode_v2 (loaded from concepts.obr).
     /// None if OBR file not found — falls back to encode v1.
+    #[allow(dead_code)]
     registry: Option<Box<dyn ConceptLookup>>,
     /// Observable startup policy/result for the external Concept Registry.
     registry_status: ConceptRegistryStatus,
@@ -355,6 +359,7 @@ impl OneBrainNode {
         }
 
         // Create anti-gaming guard
+        #[cfg(feature = "legacy")]
         let guard = AntiGamingGuard::new();
 
         // Create shared state
@@ -384,6 +389,7 @@ impl OneBrainNode {
             dataset_paths: dataset_paths.clone(),
             base_runtime: None,
             mediator,
+            #[cfg(feature = "legacy")]
             guard,
             dict,
             shared,
@@ -827,197 +833,215 @@ impl OneBrainNode {
         text: &str,
         progress_tx: Option<&tokio::sync::broadcast::Sender<String>>,
     ) -> Result<EncodeStoreResult, NodeError> {
-        let total_steps: u8 = 6;
-
-        // Helper to send progress
-        let send_progress = |step: u8, msg: String| {
-            if let Some(tx) = progress_tx {
-                let event = serde_json::json!({
-                    "event_type": "encode_progress",
-                    "timestamp": std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default().as_secs(),
-                    "data": { "step": step, "total_steps": total_steps, "message": msg }
-                });
-                let _ = tx.send(event.to_string());
-            }
-        };
-
-        // 1. Rate limit check
-        send_progress(1, "Rate limit check...".into());
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 1,
-                total_steps,
-                message: "Rate limit check...".into(),
-            })
-            .await;
-        self.guard.check_rate_limit().map_err(NodeError::Pipeline)?;
-
-        // 2. Create a fresh encoder backend (OllamaBackend doesn't impl Clone)
-        send_progress(
-            2,
-            format!("Creating AI encoder (model: {})...", self.config.model),
-        );
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 2,
-                total_steps,
-                message: format!("Creating AI encoder (model: {})...", self.config.model),
-            })
-            .await;
-        let encoder_backend = OllamaBackend::new(
-            &self.config.ollama_url,
-            &self.config.model,
-            "nomic-embed-text",
-            300,
-        )
-        .map_err(NodeError::Ai)?;
-
-        let encoder = AiEncoder::new(
-            Box::new(encoder_backend),
-            self.dict.clone(),
-            EncoderConfig::default(),
-        );
-
-        // 3. Encode via AI (this is the slow step)
-        send_progress(
-            3,
-            "AI generating tool calls (this may take a while)...".into(),
-        );
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 3,
-                total_steps,
-                message: "AI generating tool calls (this may take a while)...".into(),
-            })
-            .await;
-
-        // Smart dispatch: v2 if ConceptRegistry available, v1 fallback
-        let encoding_result: EncodingResult = if let Some(ref reg) = self.registry {
-            encoder
-                .encode_v2(text, reg.as_ref())
-                .await
-                .map_err(NodeError::Encoder)?
-        } else {
-            encoder.encode(text).await.map_err(NodeError::Encoder)?
-        };
-
-        if encoding_result.wire_bytes.is_empty() {
-            return Err(NodeError::Pipeline("Encoding produced no KUs".into()));
+        #[cfg(not(feature = "legacy"))]
+        {
+            let _ = (text, progress_tx);
+            return Err(NodeError::InvalidArgument(
+                "Legacy Core DNA encoding (/api/encode) is disabled in the default build; use the canonical vNext KU workflow (/api/vnext/ku or `onebrain ku`) or build with `--features legacy`."
+                    .into(),
+            ));
         }
 
-        // 4. Process the first (primary) KU
-        send_progress(
-            4,
-            format!(
-                "Processing KU ({} bytes wire data)...",
-                encoding_result.wire_bytes[0].len()
-            ),
-        );
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 4,
-                total_steps,
-                message: format!(
+        #[cfg(feature = "legacy")]
+        {
+            let total_steps: u8 = 6;
+
+            // Helper to send progress
+            let send_progress = |step: u8, msg: String| {
+                if let Some(tx) = progress_tx {
+                    let event = serde_json::json!({
+                        "event_type": "encode_progress",
+                        "timestamp": std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default().as_secs(),
+                        "data": { "step": step, "total_steps": total_steps, "message": msg }
+                    });
+                    let _ = tx.send(event.to_string());
+                }
+            };
+
+            // 1. Rate limit check
+            send_progress(1, "Rate limit check...".into());
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 1,
+                    total_steps,
+                    message: "Rate limit check...".into(),
+                })
+                .await;
+            self.guard.check_rate_limit().map_err(NodeError::Pipeline)?;
+
+            // 2. Create a fresh encoder backend (OllamaBackend doesn't impl Clone)
+            send_progress(
+                2,
+                format!("Creating AI encoder (model: {})...", self.config.model),
+            );
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 2,
+                    total_steps,
+                    message: format!("Creating AI encoder (model: {})...", self.config.model),
+                })
+                .await;
+            let encoder_backend = OllamaBackend::new(
+                &self.config.ollama_url,
+                &self.config.model,
+                "nomic-embed-text",
+                300,
+            )
+            .map_err(NodeError::Ai)?;
+
+            let encoder = AiEncoder::new(
+                Box::new(encoder_backend),
+                self.dict.clone(),
+                EncoderConfig::default(),
+            );
+
+            // 3. Encode via AI (this is the slow step)
+            send_progress(
+                3,
+                "AI generating tool calls (this may take a while)...".into(),
+            );
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 3,
+                    total_steps,
+                    message: "AI generating tool calls (this may take a while)...".into(),
+                })
+                .await;
+
+            // Smart dispatch: v2 if ConceptRegistry available, v1 fallback
+            let encoding_result: EncodingResult = if let Some(ref reg) = self.registry {
+                encoder
+                    .encode_v2(text, reg.as_ref())
+                    .await
+                    .map_err(NodeError::Encoder)?
+            } else {
+                encoder.encode(text).await.map_err(NodeError::Encoder)?
+            };
+
+            if encoding_result.wire_bytes.is_empty() {
+                return Err(NodeError::Pipeline("Encoding produced no KUs".into()));
+            }
+
+            // 4. Process the first (primary) KU
+            send_progress(
+                4,
+                format!(
                     "Processing KU ({} bytes wire data)...",
                     encoding_result.wire_bytes[0].len()
                 ),
-            })
-            .await;
-        let wire_bytes = &encoding_result.wire_bytes[0];
+            );
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 4,
+                    total_steps,
+                    message: format!(
+                        "Processing KU ({} bytes wire data)...",
+                        encoding_result.wire_bytes[0].len()
+                    ),
+                })
+                .await;
+            let wire_bytes = &encoding_result.wire_bytes[0];
 
-        // 4a. Decode wire bytes → KuRuntime
-        let ku = KuRuntime::from_wire(wire_bytes.clone())
-            .map_err(|e| NodeError::Pipeline(format!("KuRuntime decode failed: {}", e)))?;
+            // 4a. Decode wire bytes → KuRuntime
+            let ku = KuRuntime::from_wire(wire_bytes.clone())
+                .map_err(|e| NodeError::Pipeline(format!("KuRuntime decode failed: {}", e)))?;
 
-        let instruction_count = ku.dna.instructions.len();
+            let instruction_count = ku.dna.instructions.len();
 
-        // 4b. Quality gate check
-        self.guard
-            .check_quality(wire_bytes, instruction_count)
-            .map_err(NodeError::Pipeline)?;
+            // 4b. Quality gate check
+            self.guard
+                .check_quality(wire_bytes, instruction_count)
+                .map_err(NodeError::Pipeline)?;
 
-        // 4c-4e. Store, index, record (using shared state)
-        send_progress(5, "Storing KU and indexing...".into());
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 5,
-                total_steps,
-                message: "Storing KU and indexing...".into(),
-            })
-            .await;
-        let cid;
-        let cid_hex;
-        {
-            let state = self.shared.lock().await;
+            // 4c-4e. Store, index, record (using shared state)
+            send_progress(5, "Storing KU and indexing...".into());
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 5,
+                    total_steps,
+                    message: "Storing KU and indexing...".into(),
+                })
+                .await;
+            let cid;
+            let cid_hex;
+            {
+                let state = self.shared.lock().await;
 
-            // 4c. Store in redb
-            cid = state
-                .storage
-                .put(&ku)
-                .map_err(|e| NodeError::Storage(format!("{}", e)))?;
+                // 4c. Store in redb
+                cid = state
+                    .storage
+                    .put(&ku)
+                    .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-            // Legacy KU persistence is fenced in Base mode. It never grants
-            // retriever authority; only a proven Vault source binding may do so.
-            cid_hex = hex_cid(&cid);
-        }
+                // Legacy KU persistence is fenced in Base mode. It never grants
+                // retriever authority; only a proven Vault source binding may do so.
+                cid_hex = hex_cid(&cid);
+            }
 
-        // 4e. Record creation in rate tracker
-        self.guard.record_creation();
+            // 4e. Record creation in rate tracker
+            self.guard.record_creation();
 
-        // 5. Also process any additional KUs (if encoding produced multiple)
-        {
-            let state = self.shared.lock().await;
-            for extra_bytes in encoding_result.wire_bytes.iter().skip(1) {
-                if let Ok(extra_ku) = KuRuntime::from_wire(extra_bytes.clone()) {
-                    let extra_instr = extra_ku.dna.instructions.len();
-                    if self.guard.check_quality(extra_bytes, extra_instr).is_ok() {
-                        let _ = state.storage.put(&extra_ku);
+            // 5. Also process any additional KUs (if encoding produced multiple)
+            {
+                let state = self.shared.lock().await;
+                for extra_bytes in encoding_result.wire_bytes.iter().skip(1) {
+                    if let Ok(extra_ku) = KuRuntime::from_wire(extra_bytes.clone()) {
+                        let extra_instr = extra_ku.dna.instructions.len();
+                        if self.guard.check_quality(extra_bytes, extra_instr).is_ok() {
+                            let _ = state.storage.put(&extra_ku);
+                        }
                     }
                 }
             }
-        }
 
-        // 6. Broadcast to peers + request verification
-        send_progress(6, "Broadcasting to peers...".into());
-        let _ = self
-            .event_tx
-            .send(NodeEvent::EncodeProgress {
-                step: 6,
-                total_steps,
-                message: "Broadcasting to peers...".into(),
+            // 6. Broadcast to peers + request verification
+            send_progress(6, "Broadcasting to peers...".into());
+            let _ = self
+                .event_tx
+                .send(NodeEvent::EncodeProgress {
+                    step: 6,
+                    total_steps,
+                    message: "Broadcasting to peers...".into(),
+                })
+                .await;
+            let peers_reached = self.broadcast_ku(&cid_hex, wire_bytes, text).await;
+            self.request_verification(&cid_hex, text).await;
+
+            Ok(EncodeStoreResult {
+                cid,
+                wire_size: wire_bytes.len(),
+                instruction_count,
+                gene_type: encoding_result.gene_type,
+                confidence: encoding_result.confidence,
+                source_text: text.to_string(),
+                wire_bytes: wire_bytes.clone(),
+                peers_reached,
             })
-            .await;
-        let peers_reached = self.broadcast_ku(&cid_hex, wire_bytes, text).await;
-        self.request_verification(&cid_hex, text).await;
+        }
+    }
 
-        Ok(EncodeStoreResult {
-            cid,
-            wire_size: wire_bytes.len(),
-            instruction_count,
-            gene_type: encoding_result.gene_type,
-            confidence: encoding_result.confidence,
-            source_text: text.to_string(),
-            wire_bytes: wire_bytes.clone(),
-            peers_reached,
-        })
+    /// Process user input through the mediator pipeline and return the full response.
+    pub async fn process_input_response(
+        &mut self,
+        input: &str,
+    ) -> Result<ku_mediator::MediatorResponse, NodeError> {
+        let user_input = UserInput::Text(input.to_string());
+        self.mediator
+            .process(user_input)
+            .await
+            .map_err(NodeError::Mediator)
     }
 
     /// Process user input through the mediator pipeline.
     pub async fn process_input(&mut self, input: &str) -> Result<String, NodeError> {
-        let user_input = UserInput::Text(input.to_string());
-        let response = self
-            .mediator
-            .process(user_input)
-            .await
-            .map_err(NodeError::Mediator)?;
-        Ok(response.text)
+        Ok(self.process_input_response(input).await?.text)
     }
 
     /// Get the number of KUs in persistent storage.
@@ -4040,47 +4064,53 @@ async fn handle_connection(
             let Ok(_verification) = verifications.try_acquire() else {
                 return;
             };
-            // Get config for Ollama
-            let (ollama_url, model, _original_wire) = {
-                let state = shared.lock().await;
-                // Try to retrieve the original wire bytes from storage
-                // For demo: we re-encode from source_text, so we don't strictly
-                // need the original. But we need them for comparison.
-                // Since we might not have this KU, we'll just re-encode.
-                (
-                    state.config.ollama_url.clone(),
-                    state.config.model.clone(),
-                    None::<Vec<u8>>, // We don't have the original stored yet in this path
+            #[cfg(not(feature = "legacy"))]
+            {
+                let _ = source_text;
+                let response = NetMessage::VerifyResponse {
+                    cid_hex,
+                    agreement_score: 0.0,
+                    verified: false,
+                };
+                let _ = send_message(&mut stream, &response).await;
+            }
+            #[cfg(feature = "legacy")]
+            {
+                // Get config for Ollama
+                let (ollama_url, model, _original_wire) = {
+                    let state = shared.lock().await;
+                    (
+                        state.config.ollama_url.clone(),
+                        state.config.model.clone(),
+                        None::<Vec<u8>>,
+                    )
+                };
+
+                let result = verifier_service::verify_ku(
+                    &source_text,
+                    &[],
+                    &ollama_url,
+                    &model,
                 )
-            };
-
-            // For the demo, we use the source_text sent along with the request.
-            // The verifier re-encodes it and the requester sends wire_bytes
-            // separately via KuPush. For now, just re-encode and report.
-            let result = verifier_service::verify_ku(
-                &source_text,
-                &[], // We don't have original wire bytes in verify path for demo
-                &ollama_url,
-                &model,
-            )
-            .await;
-
-            // Send response
-            let response = NetMessage::VerifyResponse {
-                cid_hex: cid_hex.clone(),
-                agreement_score: result.agreement_score,
-                verified: result.verified,
-            };
-            let _ = send_message(&mut stream, &response).await;
-
-            let _ = event_tx
-                .send(NodeEvent::Notification(format!(
-                    "  📋 Verified KU {} for {} (score: {:.0}%)",
-                    &cid_hex[..8],
-                    peer_addr,
-                    result.agreement_score * 100.0
-                )))
                 .await;
+
+                // Send response
+                let response = NetMessage::VerifyResponse {
+                    cid_hex: cid_hex.clone(),
+                    agreement_score: result.agreement_score,
+                    verified: result.verified,
+                };
+                let _ = send_message(&mut stream, &response).await;
+
+                let _ = event_tx
+                    .send(NodeEvent::Notification(format!(
+                        "  📋 Verified KU {} for {} (score: {:.0}%)",
+                        &cid_hex[..8],
+                        peer_addr,
+                        result.agreement_score * 100.0
+                    )))
+                    .await;
+            }
         }
 
         NetMessage::VerifyResponse {

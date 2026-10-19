@@ -897,16 +897,16 @@ pub async fn chat(
     Json(body): Json<ChatRequest>,
 ) -> ApiResult<ChatResponse> {
     let mut node = state.node.lock().await;
-    let text = node
-        .process_input(&body.message)
+    let response = node
+        .process_input_response(&body.message)
         .await
         .map_err(ApiError::from)?;
     Ok(ok(ChatResponse {
-        text,
-        intent: None,
-        suggestions: vec![],
-        kus_encoded: 0,
-        kus_retrieved: 0,
+        text: response.text,
+        intent: response.intent_detected,
+        suggestions: response.suggestions,
+        kus_encoded: response.kus_encoded.len() as u64,
+        kus_retrieved: response.kus_retrieved as u64,
     }))
 }
 

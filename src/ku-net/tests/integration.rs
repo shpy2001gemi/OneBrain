@@ -3,6 +3,8 @@
 //! End-to-end tests verifying the full ku-core ↔ ku-net integration pipeline.
 //! These are extracted from the ku-demo binary into proper #[test] functions.
 
+#![cfg(feature = "legacy")]
+
 use ku_core::*;
 use ku_net::discovery::*;
 use ku_net::identity::*;

@@ -21,6 +21,7 @@ use crate::profile::UserProfile;
 use crate::retriever::KuRetriever;
 use crate::session::MediatorSession;
 
+#[cfg(feature = "legacy")]
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingDecision, EncodingVerifier, FallbackChain};
 
 /// Configuration for the Mediator.
@@ -52,6 +53,7 @@ impl Default for MediatorConfig {
 pub struct Mediator {
     config: MediatorConfig,
     backend: Box<dyn ModelBackend>,
+    #[cfg(feature = "legacy")]
     encoder: AiEncoder,
     classifier: IntentClassifier,
     context: ContextManager,
@@ -61,9 +63,12 @@ pub struct Mediator {
     detector: KnowledgeDetector,
     graph_agent: GraphAgent,
     profile: UserProfile,
+    #[cfg(feature = "legacy")]
     verifier: EncodingVerifier,
+    #[cfg(feature = "legacy")]
     fallback: FallbackChain,
     /// Concept dictionary for fallback encoding.
+    #[allow(dead_code)]
     dict: ConceptDict,
 }
 
@@ -99,13 +104,18 @@ impl Mediator {
         config: MediatorConfig,
         retriever: Arc<RwLock<KuRetriever>>,
     ) -> Self {
+        #[cfg(not(feature = "legacy"))]
+        let _ = encoder_backend;
+        #[cfg(feature = "legacy")]
         let encoder_config = EncoderConfig::default();
+        #[cfg(feature = "legacy")]
         let encoder = AiEncoder::new(encoder_backend, dict.clone(), encoder_config.clone());
 
         Self {
             context: ContextManager::new(config.max_history),
             config,
             backend,
+            #[cfg(feature = "legacy")]
             encoder,
             classifier: IntentClassifier::new(),
             session: MediatorSession::new(),
@@ -114,7 +124,9 @@ impl Mediator {
             detector: KnowledgeDetector::new(),
             graph_agent: GraphAgent::new(),
             profile: UserProfile::default(),
+            #[cfg(feature = "legacy")]
             verifier: EncodingVerifier::default(),
+            #[cfg(feature = "legacy")]
             fallback: FallbackChain::new(encoder_config),
             dict,
         }
@@ -127,8 +139,13 @@ impl Mediator {
         encoder_backend: Box<dyn ModelBackend>,
     ) {
         self.backend = chat_backend;
-        let encoder_config = EncoderConfig::default();
-        self.encoder = AiEncoder::new(encoder_backend, self.dict.clone(), encoder_config);
+        #[cfg(not(feature = "legacy"))]
+        let _ = encoder_backend;
+        #[cfg(feature = "legacy")]
+        {
+            let encoder_config = EncoderConfig::default();
+            self.encoder = AiEncoder::new(encoder_backend, self.dict.clone(), encoder_config);
+        }
     }
 
     /// Process a user input — the main entry point.
@@ -165,7 +182,7 @@ impl Mediator {
         if self.config.proactive_encoding {
             if let Some(signal) = self.detector.detect(&text) {
                 response = response.with_suggestion(format!(
-                    "I detected potential knowledge ({:?}). Would you like me to encode it?",
+                    "I detected potential knowledge ({:?}). Open /ku (/api/vnext/ku) to review and save it as a canonical vNext KU.",
                     signal.signal_type
                 ));
             }
@@ -174,7 +191,9 @@ impl Mediator {
         // 6. Update context and profile
         self.context
             .add_message(MessageRole::Assistant, &response.text);
-        response = response.with_intent(format!("{:?}", intent));
+        if response.intent_detected.is_none() {
+            response = response.with_intent(format!("{:?}", intent));
+        }
 
         Ok(response)
     }
@@ -200,7 +219,17 @@ impl Mediator {
             DeduplicationResult::New => {}
         }
 
-        // Encode via AiEncoder
+        #[cfg(not(feature = "legacy"))]
+        {
+            return Ok(MediatorResponse::chat(
+                "Chat mediator does not persist KUs directly. Use the canonical two-step vNext KU workflow at /ku (/api/vnext/ku/extract or /api/vnext/ku/draft, then /api/vnext/ku/confirm) or `onebrain ku` to review and save this knowledge.",
+            )
+            .with_intent("encode_suggestion")
+            .with_suggestion("Open /ku (/api/vnext/ku) to review and save as a canonical vNext KU"));
+        }
+
+        // Encode via legacy AiEncoder (only when compiled with `--features legacy`)
+        #[cfg(feature = "legacy")]
         match self.encoder.encode(text).await {
             Ok(result) => {
                 let decision = self.fallback.decide(&result, 0);
@@ -378,11 +407,12 @@ impl Mediator {
         if let Some(signal) = self.detector.detect(text) {
             return Ok(MediatorResponse::chat(format!(
                 "I detected a {:?} signal (confidence: {:.0}%). \
-                     Would you like me to encode this as knowledge?",
+                     Use the canonical vNext KU workflow at /ku (/api/vnext/ku) or `onebrain ku` to review and save this knowledge.",
                 signal.signal_type,
                 signal.confidence * 100.0
             ))
-            .with_suggestion("Say 'encode' to save this knowledge"));
+            .with_intent("encode_suggestion")
+            .with_suggestion("Open /ku (/api/vnext/ku) to review and save this knowledge"));
         }
 
         // Default to chat
@@ -481,8 +511,19 @@ mod tests {
             ))
             .await
             .unwrap();
-        // Should attempt encoding (may fail with mock, but should handle gracefully)
         assert!(!response.text.is_empty());
+        #[cfg(not(feature = "legacy"))]
+        {
+            assert!(response.text.contains("/api/vnext/ku"));
+            assert_eq!(
+                response.intent_detected.as_deref(),
+                Some("encode_suggestion")
+            );
+            assert!(response
+                .suggestions
+                .iter()
+                .any(|s| s.contains("/api/vnext/ku")));
+        }
     }
 
     #[tokio::test]

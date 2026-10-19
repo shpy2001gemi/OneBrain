@@ -5,8 +5,13 @@ edition = "2021"
 description = "OneBrain Personal AI Mediator — intent routing, RAG, context management, knowledge detection"
 license = "MIT"
 
+[features]
+default = []
+# Legacy AiEncoder Core DNA path in Mediator::handle_encode (ARCH-06 / D-051)
+legacy = ["ku-core/legacy", "ku-encoder/legacy"]
+
 [dependencies]
-ku-core = { path = "../ku-core" }
+ku-core = { path = "../ku-core", features = ["legacy-read"] }
 ku-ai = { path = "../ku-ai" }
 ku-encoder = { path = "../ku-encoder" }
 serde = { version = "1", features = ["derive"] }

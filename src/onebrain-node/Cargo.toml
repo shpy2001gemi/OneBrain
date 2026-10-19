@@ -64,6 +64,7 @@ required-features = ["vnext-outbound-first"]
 default = ["base-v1"]
 base-v1 = []
 legacy-read-compat = []
+legacy = ["ku-core/legacy", "ku-encoder/legacy", "ku-net/legacy", "ku-mediator/legacy"]
 vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
@@ -105,7 +106,7 @@ vnext-canary-harness = ["vnext-network-runtime"]
 vnext-production-canary-harness = ["vnext-canary-harness", "vnext-outbound-first"]
 
 [dependencies]
-ku-core = { path = "../ku-core" }
+ku-core = { path = "../ku-core", features = ["legacy-read"] }
 ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
 ku-ai = { path = "../ku-ai" }

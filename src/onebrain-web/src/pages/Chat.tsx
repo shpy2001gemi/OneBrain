@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Send, Bot, User, Sparkles, Database, BookOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
@@ -18,7 +19,7 @@ export function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, [messages]);
 
   const sendMessage = async (overrideText?: string) => {
@@ -66,27 +67,30 @@ export function ChatPage() {
     sendMessage(suggestion);
   };
 
-  const encodeFromChat = async (text: string) => {
-    try {
-      await api.encode(text);
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: '✅ Knowledge encoded as KU successfully!',
-        timestamp: Date.now(),
-      }]);
-    } catch {
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: '⚠️ Failed to encode knowledge.',
-        timestamp: Date.now(),
-      }]);
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--ob-header-height))' }}>
+      <div
+        role="note"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 'var(--ob-gap-sm)',
+          padding: '8px 16px',
+          borderBottom: '1px solid var(--ob-glass-border)',
+          background: 'rgba(99, 102, 241, 0.08)',
+          color: 'var(--ob-text-secondary)',
+          fontSize: '0.8rem',
+        }}
+      >
+        <span>
+          Canonical KU creation uses <code>/api/vnext/ku</code> (Draft → Review → Save). Legacy Core DNA encode is disabled in the default build.
+        </span>
+        <Link to="/ku" style={{ color: '#a5b4fc', fontWeight: 600, textDecoration: 'none' }}>
+          Open Local KU Workspace (/api/vnext/ku) →
+        </Link>
+      </div>
       {/* Messages */}
       <div style={{ flex: 1, overflow: 'auto', padding: 'var(--ob-gap-lg)' }}>
         {messages.length === 0 && (
@@ -166,25 +170,18 @@ export function ChatPage() {
                     </span>
                   )}
                   {msg.intent === 'encode_suggestion' && (msg.kus_encoded ?? 0) === 0 && (
-                    <button
-                      onClick={() => {
-                        // Find the user message before this assistant message
-                        const idx = messages.findIndex(m => m.id === msg.id);
-                        const userMsg = idx > 0 ? messages[idx - 1] : null;
-                        if (userMsg && userMsg.role === 'user') encodeFromChat(userMsg.content);
-                      }}
+                    <Link
+                      to="/ku"
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 4,
                         padding: '4px 12px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600,
                         background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24',
                         border: '1px solid rgba(245, 158, 11, 0.3)',
-                        cursor: 'pointer', transition: 'all 0.2s',
+                        textDecoration: 'none', transition: 'all 0.2s',
                       }}
-                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.3)'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'; }}
                     >
-                      💡 Encode as KU?
-                    </button>
+                      💡 Open Local KU Workspace (/api/vnext/ku)
+                    </Link>
                   )}
                 </div>
               )}

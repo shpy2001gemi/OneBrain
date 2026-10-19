@@ -5,6 +5,10 @@ edition = "2021"
 description = "OneBrain Protocol E2E demo — 3 simulated nodes exchanging Knowledge Units"
 license = "MIT"
 
+[features]
+default = []
+legacy = ["ku-core/legacy", "ku-net/legacy"]
+
 [dependencies]
 ku-core = { path = "../ku-core" }
 ku-net = { path = "../ku-net" }

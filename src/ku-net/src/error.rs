@@ -8,6 +8,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum NetError {
     Identity(IdentityError),
+    #[cfg(feature = "legacy")]
     Message(crate::messages::MessageError),
     Membership(MembershipError),
     Bootstrap(BootstrapError),
@@ -20,6 +21,7 @@ impl fmt::Display for NetError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Identity(e) => write!(f, "Identity: {}", e),
+            #[cfg(feature = "legacy")]
             Self::Message(e) => write!(f, "Message: {}", e),
             Self::Membership(e) => write!(f, "Membership: {}", e),
             Self::Bootstrap(e) => write!(f, "Bootstrap: {}", e),
@@ -252,6 +254,7 @@ impl From<IdentityError> for NetError {
     }
 }
 
+#[cfg(feature = "legacy")]
 impl From<crate::messages::MessageError> for NetError {
     fn from(e: crate::messages::MessageError) -> Self {
         NetError::Message(e)

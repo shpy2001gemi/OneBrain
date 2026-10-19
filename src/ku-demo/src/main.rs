@@ -12,15 +12,30 @@
 //! └─────────────┘                   └─────────────┘                   └─────────────┘
 //! ```
 
+#[cfg(feature = "legacy")]
 mod runtime;
+#[cfg(feature = "legacy")]
 mod testbed;
 
+#[cfg(feature = "legacy")]
 use ku_core::*;
+#[cfg(feature = "legacy")]
 use ku_net::discovery::*;
+#[cfg(feature = "legacy")]
 use ku_net::identity::*;
+#[cfg(feature = "legacy")]
 use ku_net::membership::*;
+#[cfg(feature = "legacy")]
 use ku_net::messages::*;
 
+#[cfg(not(feature = "legacy"))]
+fn main() {
+    eprintln!(
+        "ku-demo exercises the legacy Core DNA / DHT / SWIM simulation; run with `--features legacy`."
+    );
+}
+
+#[cfg(feature = "legacy")]
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║     OneBrain Protocol (OBP) — End-to-End Integration Demo    ║");

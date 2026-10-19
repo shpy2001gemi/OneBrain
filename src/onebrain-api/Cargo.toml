@@ -23,6 +23,7 @@ required-features = ["base-v1"]
 default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]
 legacy-read-compat = ["onebrain-node/legacy-read-compat"]
+legacy = ["onebrain-node/legacy", "ku-core/legacy", "ku-encoder/legacy"]
 vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
 vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first"]
 

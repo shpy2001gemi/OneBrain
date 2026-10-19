@@ -8,6 +8,7 @@
 compile_error!("legacy-read-compat requires base-v1");
 
 mod activation_journal;
+#[cfg(feature = "legacy")]
 pub mod anti_gaming_guard;
 pub mod archive;
 pub mod archive_capabilities;
@@ -36,12 +37,14 @@ pub mod network;
 pub mod node;
 pub mod peer_manager;
 pub mod peer_memory;
+#[cfg(feature = "legacy")]
 pub mod seed_client;
 pub mod signer_ports;
 pub mod source_capture_transaction;
 pub mod text;
 pub mod types;
 pub mod upnp;
+#[cfg(feature = "legacy")]
 pub mod verifier_service;
 #[cfg(feature = "vnext-bootstrap-https")]
 pub mod vnext_bootstrap_client;
