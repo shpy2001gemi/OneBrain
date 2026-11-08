@@ -6,7 +6,37 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — D-045 outbound intent state explanations in `/ku` Web (2026-11-08)
+## Latest follow-up — bounded automatic re-check of a Pending outbound intent in `/ku` Web (2026-11-09)
+
+Chosen and recorded before implementation as a bounded D-044 MVP step. Before,
+a `Pending` intent required repeated manual `Inspect share intent` clicks.
+
+- `src/onebrain-web/src/pages/KuWorkflow.tsx`: when the intent view is exactly
+  `Pending`, the page re-reads the same intent read-only with
+  `client.shareIntent` (default at most 5 times, every 3 s; optional
+  `shareIntentRecheck` prop) and shows an `Automatic intent re-check` status
+  line. It stops at the first non-`Pending` state, at the limit, on a request
+  failure (without setting Base `uncertain` or a global error; a manual Inspect
+  shows details), when the intent ID/view changes or when the page unmounts.
+  Unrecognized states are not re-checked. No resend, prepare or confirm.
+- `src/onebrain-web/src/pages/kuFeedback.ts`: the `Pending` next step mentions
+  the automatic re-check, still pointing to a later manual Inspect.
+- `tests/kuWorkflow.test.tsx`: two tests (terminal stop, limit, failure, ID
+  change, unknown state, no share mutation calls, axe; unmount stop) fail with
+  the previous page restored.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the behavior.
+
+Code `164d973` on main `b3ef354`, pushed under D-050. Windows checks 08/11
+~23:56–23:58 Asia/Saigon: `npm run test:ku` 124/124 (`kuWorkflow.test.tsx` 42/42),
+`npm run build`, `npm run lint` (0 errors, 8 existing warnings), `python
+scripts/ci/validate_vnext_contracts.py`, mobile validator and `git diff --check`
+PASS. No Rust code changed; no live two-host run. The re-check runs only in the
+open tab; it is not background monitoring. Parent task stays Merged, 22 Merged /
+2 Deferred.
+
+## Earlier follow-up — D-045 outbound intent state explanations in `/ku` Web (2026-11-08)
 
 Resumed after ARCH-10 was deferred (D-054). Previously the `Outbound share
 intent status` card showed only the raw sender outbox `state` (`Pending`,
@@ -1384,6 +1414,12 @@ Broader provisioning/composition remains open.
   intent status` card (`describeShareIntentState`), 2026-11-08 after D-054.
   Commit/push `2e2f520` under D-050; `npm run test:ku` 122/122
   (`kuWorkflow.test.tsx` 40/40), `npm run build`, `npm run lint`, vNext
+  validator and whitespace PASS.
+
+- [x] Bounded read-only automatic re-check of a `Pending` outbound intent
+  (default 5 × 3 s; stops at a terminal state, limit, failure, intent ID change
+  or unmount), 2026-11-09. Commit/push `164d973` under D-050; `npm run test:ku`
+  124/124 (`kuWorkflow.test.tsx` 42/42), `npm run build`, `npm run lint`, vNext
   validator and whitespace PASS.
 
 Preserve Registry trust and private source/key custody. Saved-artifact inspect
