@@ -539,7 +539,15 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   `invalid_peer_address`, `invalid_selector`, `invalid_namespace`,
   `invalid_public_identity`, `invalid_intent_identity`,
   `consent_randomness_unavailable`, `invalid_clock`), and
-  distinguishes durable outbound intent creation from peer delivery. Before
+  distinguishes durable outbound intent creation from peer delivery. The
+  `Outbound share intent status` card explains each sender outbox state
+  (`describeShareIntentState` in `kuFeedback.ts`): `Pending` (no terminal
+  receipt yet; retried while the network runtime runs), `Acknowledged`
+  (recipient validated/stored; a transport receipt only, not adoption, Use,
+  verification or reward), `DeadLetter` (recipient rejected as invalid; not
+  retried) and `RetryExhausted` (retry limit reached; a new address does not
+  replenish retries); an unknown state is shown as unconfirmed delivery. The
+  page offers no resend for terminal intents. Before
   each `share_prepare` call it clears any previous `sharePrepared`,
   `shareConfirmPublic` and `shareConfirmed` state so a failed re-prepare
   cannot leave an old preview or confirmation card visible. D-045 share

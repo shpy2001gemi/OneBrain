@@ -22,6 +22,7 @@ import type {
 import "./kuWorkflow.css";
 import {
   describeKuError as describeError,
+  describeShareIntentState,
   isStaleSharePreparationError,
 } from "./kuFeedback";
 import { KuReviewDraft } from "./KuReviewDraft";
@@ -1149,6 +1150,23 @@ export function KuWorkflowPage({
               network completion:{" "}
               {String(shareIntentView.claims_network_completion)}
             </p>
+            {(() => {
+              const stateFeedback = describeShareIntentState(
+                shareIntentView.state,
+              );
+              return (
+                <div
+                  role="note"
+                  aria-label="Outbound intent state explanation"
+                >
+                  <p>
+                    <strong>{stateFeedback.title}</strong>
+                  </p>
+                  <p>{stateFeedback.meaning}</p>
+                  <p>{stateFeedback.next}</p>
+                </div>
+              );
+            })()}
           </article>
         )}
         <fieldset disabled={busy || !session}>

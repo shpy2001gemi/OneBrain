@@ -107,7 +107,11 @@ canonical store (failing closed with `capability_disabled` /
 `ku_public_share_network_unavailable` when local-only), consumes the single-use
 `prepared_id`, and enqueues the durable outbound transfer intent while reporting
 delivery as pending (`authorizes_reward: false`). `share_intent` inspects the
-sender's durable outbox state (`claims_network_completion: false`), and
+sender's durable outbox state (`claims_network_completion: false`; `state` is one
+of `Pending`, `Acknowledged` (terminal `ValidatedStored`/`AlreadyPresent`
+receipt), `DeadLetter` (terminal `RejectedInvalid`) or `RetryExhausted`
+(transport/deferral retry limit reached), and `/ku` Web explains each state
+without treating acknowledgement as adoption, Use, verification or reward), and
 `share_inspect` inspects an accepted Public KU and its authenticated transport/selector
 provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`

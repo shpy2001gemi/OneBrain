@@ -332,3 +332,60 @@ export function describeKuError(error: unknown) {
     isShareError: shareFeedback !== undefined,
   };
 }
+
+export type ShareIntentStateFeedback = {
+  title: string;
+  meaning: string;
+  next: string;
+  terminal: boolean;
+};
+
+// D-045 sender-side outbound intent states (`OutboundIntentState` in
+// `src/onebrain-node/src/vnext_outbox.rs`, rendered with `{:?}` by
+// `inspect_outbound_intent`). None of them claims network completion.
+const SHARE_INTENT_STATE_FEEDBACK: Record<string, ShareIntentStateFeedback> = {
+  Pending: {
+    title: "Pending — no terminal receipt from the recipient peer yet",
+    meaning:
+      "The durable outbound intent is recorded on this host but has not reached a terminal receipt. While this host's network runtime runs, it retries delivery to the recorded peer address; a recipient that deferred validation (budget or missing dependency) also keeps the intent Pending until the retry limit.",
+    next: "Keep both hosts running with networking enabled, then click Inspect share intent again later. Do not prepare or confirm again for this; the recorded intent stays in the durable outbox.",
+    terminal: false,
+  },
+  Acknowledged: {
+    title:
+      "Acknowledged — the recipient peer validated and stored this Public object",
+    meaning:
+      "The recipient node returned a terminal ValidatedStored or AlreadyPresent receipt for this exact Public ObjectCID.",
+    next: "Nothing further is needed for this intent. Acknowledgement is a transport receipt only: it is not adoption, Use, original-source, author or fidelity verification, or reward. On the recipient host, Inspect accepted Public KU shows what it accepted.",
+    terminal: true,
+  },
+  DeadLetter: {
+    title:
+      "Dead letter — the recipient peer rejected this Public object as invalid",
+    meaning:
+      "The recipient's validating sink returned a terminal RejectedInvalid receipt. This host will not retry the intent.",
+    next: "The Public disclosure is not withdrawn by the rejection, and this page offers no resend for a terminal intent. Check that both hosts run compatible OneBrain builds and Registry releases before sharing other artifacts.",
+    terminal: true,
+  },
+  RetryExhausted: {
+    title: "Retry exhausted — delivery stopped at the retry limit",
+    meaning:
+      "This host got no terminal receipt within its retry limit: transport attempts to the recorded peer address kept failing, or the recipient kept deferring validation. The intent is terminal and will not be retried; a new peer address does not replenish its retry allowance.",
+    next: "Check that the recipient host is running with networking enabled at the loopback address and NodeID you entered. The Public disclosure is not withdrawn, and this page offers no resend for a terminal intent.",
+    terminal: true,
+  },
+};
+
+export function describeShareIntentState(
+  state: string,
+): ShareIntentStateFeedback {
+  return (
+    SHARE_INTENT_STATE_FEEDBACK[state] ?? {
+      title: `Unrecognized outbound intent state: ${state}`,
+      meaning:
+        "This page does not recognize the state reported by the host, so it cannot explain it.",
+      next: "Treat delivery as unconfirmed. Check that the Web page and host come from the same OneBrain build, then click Inspect share intent again.",
+      terminal: false,
+    }
+  );
+}

@@ -72,6 +72,7 @@ function fixture(
       | "intent_not_found"
       | "outbox_unavailable"
       | "invalid_intent_identity";
+    shareIntentState?: string;
     shareInspectFailure?:
       | "public_object_not_found"
       | "public_store_unavailable"
@@ -342,8 +343,11 @@ function fixture(
               event: "intent",
               intent_id: body.request.payload.intent_id,
               public_object_cid: publicObject,
-              state: "Acknowledged",
-              terminal_sequence: 1,
+              state: options.shareIntentState ?? "Acknowledged",
+              terminal_sequence:
+                (options.shareIntentState ?? "Acknowledged") === "Pending"
+                  ? null
+                  : 1,
               claims_network_completion: false,
             };
             break;
@@ -2178,5 +2182,75 @@ describe("local KU component journey", () => {
     expect(
       screen.queryByRole("article", { name: "Confirmed public share intent" }),
     ).toBeNull();
+  });
+
+  it("explains each D-045 outbound intent state without claiming network completion", async () => {
+    const options: Parameters<typeof fixture>[0] = { emptyCatalog: true };
+    const f = fixture(options);
+    const { container } = render(
+      <main>
+        <KuWorkflowPage client={f.client} />
+      </main>,
+    );
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    fireEvent.change(
+      screen.getByLabelText("Outbound intent ID (64 lowercase hex)"),
+      { target: { value: "f".repeat(64) } },
+    );
+    const cases: [string, string, string, string][] = [
+      [
+        "Acknowledged",
+        "Acknowledged — the recipient peer validated and stored this Public object",
+        "it is not adoption, Use, original-source, author or fidelity verification, or reward",
+        "Terminal sequence: 1",
+      ],
+      [
+        "Pending",
+        "Pending — no terminal receipt from the recipient peer yet",
+        "click Inspect share intent again later",
+        "Terminal sequence: none",
+      ],
+      [
+        "DeadLetter",
+        "Dead letter — the recipient peer rejected this Public object as invalid",
+        "this page offers no resend for a terminal intent",
+        "Terminal sequence: 1",
+      ],
+      [
+        "RetryExhausted",
+        "Retry exhausted — delivery stopped at the retry limit",
+        "a new peer address does not replenish its retry allowance",
+        "Terminal sequence: 1",
+      ],
+      [
+        "Delivered",
+        "Unrecognized outbound intent state: Delivered",
+        "Treat delivery as unconfirmed",
+        "Terminal sequence: 1",
+      ],
+    ];
+    for (const [state, title, detail, sequence] of cases) {
+      options.shareIntentState = state;
+      fireEvent.click(
+        screen.getByRole("button", { name: "Inspect share intent" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("note", {
+            name: "Outbound intent state explanation",
+          }).textContent,
+        ).toContain(title),
+      );
+      const card = screen.getByRole("article", {
+        name: "Outbound share intent status",
+      });
+      expect(card.textContent).toContain(detail);
+      expect(card.textContent).toContain(sequence);
+      expect(card.textContent).toContain("Claims network completion: false");
+    }
+    const result = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(result.violations).toEqual([]);
   });
 });
