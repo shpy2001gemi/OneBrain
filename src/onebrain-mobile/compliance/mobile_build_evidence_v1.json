@@ -3,7 +3,7 @@
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "6e2627f4360d0d6a05f939c619ace7a52f035173f5967c486c69fb2e3390b5af",
   "phase": "feature",
-  "work_package": "MOB-01",
+  "work_package": "MOB-03",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -227,8 +227,8 @@
     },
     {
       "id": "MOB-03-ENCRYPTED-ARCHIVE",
-      "path": "src/onebrain-mobile-core/src/archive.rs",
-      "proves": "The new OBARV001 portable path has an encrypted versioned manifest, independently authenticated chunks, length/digest binding and fail-closed wrong-key, corrupt, truncated and downgrade tests."
+      "path": "src/onebrain-mobile-core/tests/shared_archive.rs",
+      "proves": "ARCH-10/D-053: the mobile core no longer keeps its own archive format and re-exports the shared onebrain-archive container used by the Base runtime. New mobile archives are OBARV002, reach plaintext only through verified-spool materialization and fail closed on a wrong key or corruption; an OBARV001 fixture written by the retired mobile code stays authenticated-inspectable only and is rejected as a v2 restore source. The dependency-isolation guard is unchanged; no backup UI or physical-device claim is added."
     },
     {
       "id": "MOB-03-ANDROID-KEYSTORE",

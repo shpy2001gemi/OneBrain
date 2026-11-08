@@ -3668,6 +3668,7 @@ dependencies = [
  "infer 0.22.0",
  "ku-core",
  "ku-kql",
+ "onebrain-archive",
  "redb",
  "serde",
  "serde_json",

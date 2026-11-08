@@ -16,6 +16,7 @@ hex = "0.4"
 infer = "0.22.0"
 ku-core = { path = "../ku-core", default-features = false, features = ["persist"] }
 ku-kql = { path = "../ku-kql", default-features = false }
+onebrain-archive = { path = "../onebrain-archive" }
 redb = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

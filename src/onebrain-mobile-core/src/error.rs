@@ -71,3 +71,9 @@ impl From<serde_json::Error> for MobileCoreError {
         Self::Serialization(error.to_string())
     }
 }
+
+impl From<onebrain_archive::ArchiveError> for MobileCoreError {
+    fn from(error: onebrain_archive::ArchiveError) -> Self {
+        Self::Archive(error.to_string())
+    }
+}

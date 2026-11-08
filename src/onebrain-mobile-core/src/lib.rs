@@ -6,7 +6,7 @@
 //! the durable platform-transfer barrier and a signed local KQL smoke.
 
 mod activation;
-mod archive;
+pub mod archive;
 mod bootstrap;
 mod draft;
 mod error;
@@ -21,11 +21,7 @@ mod services;
 pub use activation::{
     ActivationArbiter, ActivationPhase, ExecutionGrant, ExecutionGrantKind, NetworkScope,
 };
-pub use archive::{
-    create_encrypted_archive, create_encrypted_archive_file, inspect_encrypted_archive,
-    inspect_encrypted_archive_file, open_encrypted_archive, open_encrypted_archive_file,
-    EncryptedArchiveInspection, EncryptedArchivePayload, RecoveryKey, MOBILE_ARCHIVE_VERSION,
-};
+pub use archive::RecoveryKey;
 pub use bootstrap::{
     BootstrapStore, InstallationAuthorityRecord, OnboardingCursor, PrivacyPolicyRecord,
     ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
