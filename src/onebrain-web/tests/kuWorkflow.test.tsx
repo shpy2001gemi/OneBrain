@@ -73,6 +73,8 @@ function fixture(
       | "outbox_unavailable"
       | "invalid_intent_identity";
     shareIntentState?: string;
+    /** Per-call share_intent states; an `error:<reason>` entry fails that call. */
+    shareIntentSequence?: string[];
     shareInspectFailure?:
       | "public_object_not_found"
       | "public_store_unavailable"
@@ -336,21 +338,24 @@ function fixture(
               authorizes_reward: false,
             };
             break;
-          case "share_intent":
+          case "share_intent": {
             if (options.shareIntentFailure)
               return shareErrorResponse(options.shareIntentFailure);
+            const intentState = options.shareIntentSequence?.length
+              ? options.shareIntentSequence.shift()!
+              : (options.shareIntentState ?? "Acknowledged");
+            if (intentState.startsWith("error:"))
+              return shareErrorResponse(intentState.slice("error:".length));
             payload = {
               event: "intent",
               intent_id: body.request.payload.intent_id,
               public_object_cid: publicObject,
-              state: options.shareIntentState ?? "Acknowledged",
-              terminal_sequence:
-                (options.shareIntentState ?? "Acknowledged") === "Pending"
-                  ? null
-                  : 1,
+              state: intentState,
+              terminal_sequence: intentState === "Pending" ? null : 1,
               claims_network_completion: false,
             };
             break;
+          }
           case "share_inspect":
             if (options.shareInspectFailure)
               return shareErrorResponse(options.shareInspectFailure);
@@ -2252,5 +2257,137 @@ describe("local KU component journey", () => {
       rules: { "color-contrast": { enabled: false } },
     });
     expect(result.violations).toEqual([]);
+  });
+
+  it("re-checks a Pending outbound intent a bounded number of times, read-only, and stops at a terminal state, the limit, a failure or an intent ID change", async () => {
+    const recheck = { limit: 3, intervalMs: 100 };
+    const options: Parameters<typeof fixture>[0] = { emptyCatalog: true };
+    const f = fixture(options);
+    const intentCalls = () =>
+      f.calls.filter((c) => c.body?.request?.action === "share_intent");
+    const mutatingShareCalls = () =>
+      f.calls.filter((c) =>
+        ["share_prepare", "share_confirm"].includes(c.body?.request?.action),
+      );
+    const { container } = render(
+      <main>
+        <KuWorkflowPage client={f.client} shareIntentRecheck={recheck} />
+      </main>,
+    );
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    const intentInput = screen.getByLabelText(
+      "Outbound intent ID (64 lowercase hex)",
+    );
+    fireEvent.change(intentInput, { target: { value: "f".repeat(64) } });
+    const inspect = () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Inspect share intent" }),
+      );
+    const card = () =>
+      screen.getByRole("article", { name: "Outbound share intent status" });
+    const autoStatus = () =>
+      screen.queryByRole("status", { name: "Automatic intent re-check" });
+
+    // 1. Pending, Pending, then Acknowledged: stops at the terminal state.
+    options.shareIntentSequence = ["Pending", "Pending", "Acknowledged"];
+    inspect();
+    await waitFor(() =>
+      expect(autoStatus()?.textContent).toContain("Checking this intent again automatically"),
+    );
+    expect(autoStatus()!.textContent).toContain("nothing is resent");
+    await waitFor(() =>
+      expect(card().textContent).toContain("Outbound intent status: Acknowledged"),
+    );
+    expect(autoStatus()).toBeNull();
+    expect(intentCalls()).toHaveLength(3);
+    await new Promise((r) => setTimeout(r, recheck.intervalMs * 3));
+    expect(intentCalls()).toHaveLength(3);
+
+    // 2. Always Pending: stops after the limit with manual guidance.
+    options.shareIntentSequence = [];
+    options.shareIntentState = "Pending";
+    inspect();
+    await waitFor(() =>
+      expect(autoStatus()?.textContent).toContain(
+        "Automatic re-check stopped after 3 of 3 checks; the intent is still Pending",
+      ),
+    );
+    expect(intentCalls()).toHaveLength(3 + 1 + 3);
+    await new Promise((r) => setTimeout(r, recheck.intervalMs * 3));
+    expect(intentCalls()).toHaveLength(7);
+
+    // 3. A failed re-check stops without Base reconcile or a global error.
+    options.shareIntentSequence = ["Pending", "error:outbox_unavailable"];
+    inspect();
+    await waitFor(() =>
+      expect(autoStatus()?.textContent).toContain(
+        "Automatic re-check stopped after 0 of 3 checks because a status request failed",
+      ),
+    );
+    expect(intentCalls()).toHaveLength(9);
+    expect(card().textContent).toContain("Outbound intent status: Pending");
+    expect(
+      screen.queryByRole("button", { name: "Check recorded outcome" }),
+    ).toBeNull();
+    expect(screen.queryByText("outbox_unavailable", { exact: false })).toBeNull();
+
+    // 4. Changing the intent ID clears the view and stops re-checking.
+    options.shareIntentSequence = [];
+    inspect();
+    await waitFor(() =>
+      expect(autoStatus()?.textContent).toContain("0 of 3 checks done"),
+    );
+    expect(intentCalls()).toHaveLength(10);
+    fireEvent.change(intentInput, { target: { value: "9".repeat(64) } });
+    expect(
+      screen.queryByRole("article", { name: "Outbound share intent status" }),
+    ).toBeNull();
+    await new Promise((r) => setTimeout(r, recheck.intervalMs * 3));
+    expect(intentCalls()).toHaveLength(10);
+
+    // 5. Unrecognized states are never re-checked automatically.
+    options.shareIntentState = "Delivered";
+    inspect();
+    await waitFor(() =>
+      expect(card().textContent).toContain("Outbound intent status: Delivered"),
+    );
+    expect(autoStatus()).toBeNull();
+    await new Promise((r) => setTimeout(r, recheck.intervalMs * 3));
+    expect(intentCalls()).toHaveLength(11);
+    expect(mutatingShareCalls()).toHaveLength(0);
+
+    const result = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(result.violations).toEqual([]);
+  });
+
+  it("stops re-checking a Pending outbound intent when the page unmounts", async () => {
+    const options: Parameters<typeof fixture>[0] = {
+      emptyCatalog: true,
+      shareIntentState: "Pending",
+    };
+    const f = fixture(options);
+    const { unmount } = render(
+      <KuWorkflowPage
+        client={f.client}
+        shareIntentRecheck={{ limit: 5, intervalMs: 20 }}
+      />,
+    );
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    fireEvent.change(
+      screen.getByLabelText("Outbound intent ID (64 lowercase hex)"),
+      { target: { value: "f".repeat(64) } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect share intent" }));
+    await screen.findByRole("status", { name: "Automatic intent re-check" });
+    unmount();
+    const count = f.calls.filter(
+      (c) => c.body?.request?.action === "share_intent",
+    ).length;
+    await new Promise((r) => setTimeout(r, 120));
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "share_intent"),
+    ).toHaveLength(count);
   });
 });

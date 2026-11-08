@@ -111,7 +111,8 @@ sender's durable outbox state (`claims_network_completion: false`; `state` is on
 of `Pending`, `Acknowledged` (terminal `ValidatedStored`/`AlreadyPresent`
 receipt), `DeadLetter` (terminal `RejectedInvalid`) or `RetryExhausted`
 (transport/deferral retry limit reached), and `/ku` Web explains each state
-without treating acknowledgement as adoption, Use, verification or reward), and
+without treating acknowledgement as adoption, Use, verification or reward, and
+re-reads only an exact `Pending` view a bounded number of times, read-only), and
 `share_inspect` inspects an accepted Public KU and its authenticated transport/selector
 provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`

@@ -547,7 +547,13 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   verification or reward), `DeadLetter` (recipient rejected as invalid; not
   retried) and `RetryExhausted` (retry limit reached; a new address does not
   replenish retries); an unknown state is shown as unconfirmed delivery. The
-  page offers no resend for terminal intents. Before
+  page offers no resend for terminal intents. A `Pending` view is re-read
+  automatically and read-only with `client.shareIntent` (default at most 5
+  times, every 3 s; `shareIntentRecheck` prop) and an `Automatic intent
+  re-check` status line; it stops at the first non-`Pending` state, at the
+  limit, on a request failure (without setting Base `uncertain` or a global
+  error), when the intent ID changes or the page unmounts. Unknown states are
+  not re-checked. Before
   each `share_prepare` call it clears any previous `sharePrepared`,
   `shareConfirmPublic` and `shareConfirmed` state so a failed re-prepare
   cannot leave an old preview or confirmation card visible. D-045 share

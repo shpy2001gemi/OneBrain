@@ -348,7 +348,7 @@ const SHARE_INTENT_STATE_FEEDBACK: Record<string, ShareIntentStateFeedback> = {
     title: "Pending — no terminal receipt from the recipient peer yet",
     meaning:
       "The durable outbound intent is recorded on this host but has not reached a terminal receipt. While this host's network runtime runs, it retries delivery to the recorded peer address; a recipient that deferred validation (budget or missing dependency) also keeps the intent Pending until the retry limit.",
-    next: "Keep both hosts running with networking enabled, then click Inspect share intent again later. Do not prepare or confirm again for this; the recorded intent stays in the durable outbox.",
+    next: "Keep both hosts running with networking enabled. This page re-reads the status a few times automatically; if it is still Pending, click Inspect share intent again later. Do not prepare or confirm again for this; the recorded intent stays in the durable outbox.",
     terminal: false,
   },
   Acknowledged: {

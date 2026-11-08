@@ -33,10 +33,19 @@ type Pending = {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
 };
+/** Bounded, read-only re-check of a Pending outbound share intent. */
+export type ShareIntentRecheck = { limit: number; intervalMs: number };
+const DEFAULT_SHARE_INTENT_RECHECK: ShareIntentRecheck = {
+  limit: 5,
+  intervalMs: 3000,
+};
+type ShareIntentAutoCheck = { done: number; stopped?: "limit" | "error" };
 export function KuWorkflowPage({
   client = defaultClient,
+  shareIntentRecheck = DEFAULT_SHARE_INTENT_RECHECK,
 }: {
   client?: KuClient;
+  shareIntentRecheck?: ShareIntentRecheck;
 }) {
   const [session, setSession] = useState<Session>();
   const [status, setStatus] = useState<Status>();
@@ -81,6 +90,8 @@ export function KuWorkflowPage({
   const [shareIntentId, setShareIntentId] = useState("");
   const [shareIntentView, setShareIntentView] =
     useState<PublicShareIntentView>();
+  const [shareIntentAutoCheck, setShareIntentAutoCheck] =
+    useState<ShareIntentAutoCheck>();
   const [shareInspectCid, setShareInspectCid] = useState("");
   const [shareInspectSelector, setShareInspectSelector] = useState("");
   const [shareInspectView, setShareInspectView] =
@@ -204,6 +215,56 @@ export function KuWorkflowPage({
       clearTimeout(timer);
     };
   }, [client, encoding, pending, session]);
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+  // Only an exact Pending view is re-read: terminal or unrecognized states stop.
+  const pendingIntentId =
+    shareIntentView?.state === "Pending" ? shareIntentView.intent_id : undefined;
+  const { limit: recheckLimit, intervalMs: recheckIntervalMs } =
+    shareIntentRecheck;
+  useEffect(() => {
+    setShareIntentAutoCheck(undefined);
+    if (!pendingIntentId || recheckLimit < 1) return;
+    let live = true;
+    let done = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    setShareIntentAutoCheck({ done });
+    const poll = async () => {
+      const current = sessionRef.current;
+      if (!live) return;
+      if (!current) {
+        setShareIntentAutoCheck({ done, stopped: "error" });
+        return;
+      }
+      try {
+        // Read-only status read; never resends, prepares or confirms.
+        const result = await client.shareIntent(current, {
+          intent_id: pendingIntentId,
+        });
+        if (!live) return;
+        done += 1;
+        setShareIntentView(result.data.payload);
+        setMetadata(result.meta);
+        if (result.data.payload.state !== "Pending") return;
+        if (done >= recheckLimit) {
+          setShareIntentAutoCheck({ done, stopped: "limit" });
+          return;
+        }
+        setShareIntentAutoCheck({ done });
+        timer = setTimeout(() => void poll(), recheckIntervalMs);
+      } catch {
+        // Details come from a manual Inspect; Base reconcile state is untouched.
+        if (live) setShareIntentAutoCheck({ done, stopped: "error" });
+      }
+    };
+    timer = setTimeout(() => void poll(), recheckIntervalMs);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [client, pendingIntentId, recheckLimit, recheckIntervalMs]);
   const lockedDraft =
     !!pending &&
     !["committed", "canceled", "failed"].includes(receipt?.state ?? "");
@@ -1167,6 +1228,15 @@ export function KuWorkflowPage({
                 </div>
               );
             })()}
+            {shareIntentView.state === "Pending" && shareIntentAutoCheck && (
+              <p role="status" aria-label="Automatic intent re-check">
+                {shareIntentAutoCheck.stopped === "limit"
+                  ? `Automatic re-check stopped after ${shareIntentAutoCheck.done} of ${recheckLimit} checks; the intent is still Pending. Click Inspect share intent to check again.`
+                  : shareIntentAutoCheck.stopped === "error"
+                    ? `Automatic re-check stopped after ${shareIntentAutoCheck.done} of ${recheckLimit} checks because a status request failed. Click Inspect share intent to check again and see the error.`
+                    : `Checking this intent again automatically every ${recheckIntervalMs / 1000} s while this page stays open: ${shareIntentAutoCheck.done} of ${recheckLimit} checks done. It stops at a terminal state, after ${recheckLimit} checks, or when you change the intent ID or leave the page. This only reads status; nothing is resent.`}
+              </p>
+            )}
           </article>
         )}
         <fieldset disabled={busy || !session}>
