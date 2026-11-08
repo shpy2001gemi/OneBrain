@@ -1,7 +1,10 @@
 use super::*;
 use async_trait::async_trait;
+#[cfg(feature = "ollama-http")]
 use ku_ai::backend::OllamaBackend;
-use ku_ai::types::{ChatMessage, InferenceOptions};
+use ku_ai::types::ChatMessage;
+#[cfg(feature = "ollama-http")]
+use ku_ai::types::InferenceOptions;
 use serde_json::Value;
 
 /// Exact pinned adapter identity and resource declaration, validated by the host
@@ -37,12 +40,14 @@ pub trait ExtractionTokenizer: Send + Sync {
     fn count_chat(&self, messages: &[ChatMessage]) -> Result<u32>;
 }
 
+#[cfg(feature = "ollama-http")]
 pub struct OllamaExtractionProvider {
     backend: OllamaBackend,
     manifest: Value,
     tokenizer: Arc<dyn ExtractionTokenizer>,
 }
 
+#[cfg(feature = "ollama-http")]
 impl OllamaExtractionProvider {
     pub fn new(
         backend: OllamaBackend,
@@ -94,6 +99,7 @@ impl OllamaExtractionProvider {
     }
 }
 
+#[cfg(feature = "ollama-http")]
 #[async_trait]
 impl ExtractionProvider for OllamaExtractionProvider {
     fn manifest(&self) -> &Value {

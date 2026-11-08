@@ -48,7 +48,8 @@ pub enum AiError {
     #[error("json error: {0}")]
     JsonError(#[from] serde_json::Error),
 
-    /// HTTP request error.
+    /// HTTP request error (Ollama HTTP adapter, `ollama` feature).
+    #[cfg(feature = "ollama")]
     #[error("http error: {0}")]
     HttpError(#[from] reqwest::Error),
 

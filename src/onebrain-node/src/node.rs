@@ -48,7 +48,7 @@ use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 use ku_net::vnext_session::SessionIdentitySigner;
 
 use crate::types::*;
-use ku_ai::OllamaBackend;
+use crate::model_host;
 use ku_core::blob_store::{BlobCid, BlobMeta, BlobType};
 use ku_core::concept_registry::ConceptLookup;
 use ku_core::foundation::{ObjectReference, RedbVerifiedBackend, StoredRecordKind};
@@ -254,15 +254,12 @@ impl OneBrainNode {
         let registry = loaded_registry.registry;
         let registry_status = loaded_registry.status;
 
-        // Create chat backend
-        let chat_backend =
-            OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(NodeError::Ai)?;
+        // Create chat backend (ARCH-09: Ollama host adapter or explicit unavailable)
+        let chat_backend = model_host::model_backend(&config.ollama_url, &config.model, 120)?;
 
         // Create encoder backend for mediator
         let mediator_encoder_backend =
-            OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(NodeError::Ai)?;
+            model_host::model_backend(&config.ollama_url, &config.model, 120)?;
 
         // Create concept dictionary
         let dict: ConceptDict = default_dict();
@@ -335,8 +332,8 @@ impl OneBrainNode {
         let retriever = retriever_projection.retriever();
 
         let mediator = Mediator::new_with_retriever(
-            Box::new(chat_backend),
-            Box::new(mediator_encoder_backend),
+            chat_backend,
+            mediator_encoder_backend,
             dict.clone(),
             MediatorConfig::default(),
             retriever.clone(),
@@ -885,16 +882,11 @@ impl OneBrainNode {
                     message: format!("Creating AI encoder (model: {})...", self.config.model),
                 })
                 .await;
-            let encoder_backend = OllamaBackend::new(
-                &self.config.ollama_url,
-                &self.config.model,
-                "nomic-embed-text",
-                300,
-            )
-            .map_err(NodeError::Ai)?;
+            let encoder_backend =
+                model_host::model_backend(&self.config.ollama_url, &self.config.model, 300)?;
 
             let encoder = AiEncoder::new(
-                Box::new(encoder_backend),
+                encoder_backend,
                 self.dict.clone(),
                 EncoderConfig::default(),
             );
@@ -2156,16 +2148,14 @@ impl OneBrainNode {
     pub fn switch_model(&mut self, model_name: &str) -> Result<(), NodeError> {
         // Create new backends with the new model
         let new_chat_backend =
-            OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(NodeError::Ai)?;
+            model_host::model_backend(&self.config.ollama_url, model_name, 120)?;
 
         let new_encoder_backend =
-            OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(NodeError::Ai)?;
+            model_host::model_backend(&self.config.ollama_url, model_name, 120)?;
 
         // Replace backends in mediator
         self.mediator
-            .replace_backends(Box::new(new_chat_backend), Box::new(new_encoder_backend));
+            .replace_backends(new_chat_backend, new_encoder_backend);
 
         // Update config
         self.config.model = model_name.to_string();

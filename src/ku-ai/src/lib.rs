@@ -64,8 +64,10 @@ pub use device::{DeviceProfile, DeviceTier, GpuBackend, GpuInfo, MemoryMonitor, 
 // Configuration
 pub use config::AiConfig;
 
-// Backend
-pub use backend::{create_backend, MockBackend, OllamaBackend};
+// Backend (the Ollama HTTP adapter requires the `ollama` feature)
+#[cfg(feature = "ollama")]
+pub use backend::OllamaBackend;
+pub use backend::{create_backend, MockBackend, UnavailableBackend};
 
 // Registry
 pub use registry::{ModelCatalog, ModelEntry, ModelRegistry, ModelSelector, ModelType};

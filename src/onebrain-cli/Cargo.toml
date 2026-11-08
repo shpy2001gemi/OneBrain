@@ -21,7 +21,8 @@ vnext-network-runtime = [
 ]
 
 [dependencies]
-onebrain-node = { path = "../onebrain-node" }
+# ARCH-09: hosts enable the local Ollama adapter that the node core omits.
+onebrain-node = { path = "../onebrain-node", features = ["ollama-host"] }
 onebrain-api = { path = "../onebrain-api" }
 onebrain-base-contract = { path = "../onebrain-base-contract" }
 clap = { version = "4", features = ["derive"] }

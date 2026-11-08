@@ -36,7 +36,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Core OneBrain crates
-onebrain-node = { path = "../onebrain-node" }
+# ARCH-09: hosts enable the local Ollama adapter that the node core omits.
+onebrain-node = { path = "../onebrain-node", features = ["ollama-host"] }
 onebrain-api = { path = "../onebrain-api" }
 
 # Tauri

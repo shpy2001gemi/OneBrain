@@ -68,7 +68,12 @@ required-features = ["vnext-sim-harness"]
 default = ["base-v1"]
 base-v1 = []
 legacy-read-compat = []
-legacy = ["ku-core/legacy", "ku-encoder/legacy", "ku-net/legacy", "ku-mediator/legacy"]
+# ARCH-09: local Ollama host adapters (chat/encoder `OllamaBackend`, managed
+# Ollama extraction worker; reqwest HTTP client). Not part of the default core:
+# API/CLI/Desktop hosts enable it. Without it, chat reports an explicit
+# "no LLM host adapter" error and KU extraction uses the host's provider port.
+ollama-host = ["ku-ai/ollama", "ku-encoder/ollama-http"]
+legacy = ["ollama-host", "ku-core/legacy", "ku-encoder/legacy", "ku-net/legacy", "ku-mediator/legacy"]
 vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
@@ -116,8 +121,8 @@ vnext-sim-harness = []
 ku-core = { path = "../ku-core", features = ["legacy-read"] }
 ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
-ku-ai = { path = "../ku-ai" }
-ku-encoder = { path = "../ku-encoder" }
+ku-ai = { path = "../ku-ai", default-features = false }
+ku-encoder = { path = "../ku-encoder", default-features = false }
 regex = "1"
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }

@@ -33,6 +33,7 @@ pub mod ku_product;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod ku_public_share;
 pub mod mdns_discovery;
+pub mod model_host;
 pub mod network;
 pub mod node;
 pub mod peer_manager;
@@ -163,9 +164,12 @@ pub mod foundation {
 
 /// ARCH-09 facade: extraction-provider items that interface crates need,
 /// re-exported so hosts reach `ku-encoder` through the node instead of
-/// depending on it directly.
+/// depending on it directly. The managed Ollama provider is a host adapter
+/// (`ollama-host` feature).
 pub mod extraction {
-    pub use ku_encoder::extraction::{ExtractionProvider, ManagedOllamaProvider};
+    pub use ku_encoder::extraction::ExtractionProvider;
+    #[cfg(feature = "ollama-host")]
+    pub use ku_encoder::extraction::ManagedOllamaProvider;
 }
 
 pub use activation_journal::{

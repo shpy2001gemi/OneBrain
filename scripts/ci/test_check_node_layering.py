@@ -35,6 +35,12 @@ class LayeringRatchetTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertIn("axum", failures[0])
 
+    def test_node_core_regaining_http_client_fails(self) -> None:
+        # ARCH-09 slice 8: Ollama/HTTP adapters live behind `ollama-host`.
+        failures = evaluate({"onebrain-node", "ku-ai", "reqwest"}, current_edges())
+        self.assertEqual(len(failures), 1)
+        self.assertIn("reqwest", failures[0])
+
     def test_new_surface_bypass_fails(self) -> None:
         edges = current_edges()
         edges["onebrain-api"].add("ku-net")

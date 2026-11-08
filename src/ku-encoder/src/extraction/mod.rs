@@ -3,21 +3,26 @@
 //! This module never routes through the legacy encoder/defaults. Host custody,
 //! signed Registry lookup and consent are separate from structural conformance.
 mod compiler;
+// ARCH-09: HTTP/worker host adapter, compiled only with `ollama-http`.
+#[cfg(feature = "ollama-http")]
 mod managed_ollama;
+#[cfg(feature = "ollama-http")]
 mod ollama_worker;
 mod provider;
+#[cfg(feature = "ollama-http")]
 mod qwen_tokenizer;
 pub mod review_draft;
 pub mod review_lowering;
 pub mod semantic_selection;
 pub mod semantic_selection_v2;
+#[cfg(feature = "ollama-http")]
 pub use managed_ollama::ManagedOllamaProvider;
 mod rules;
 mod schema;
 mod workflow;
-pub use provider::{
-    ExtractionProvider, ExtractionTokenizer, OllamaExtractionProvider, ProviderRequest,
-};
+#[cfg(feature = "ollama-http")]
+pub use provider::OllamaExtractionProvider;
+pub use provider::{ExtractionProvider, ExtractionTokenizer, ProviderRequest};
 pub use rules::NoLlmProvider;
 pub use workflow::{
     ExtractionAuthority, ExtractionCheckpoint, ExtractionJob, ExtractionJournal, ExtractionOutput,

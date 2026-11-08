@@ -28,7 +28,8 @@ vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
 vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first"]
 
 [dependencies]
-onebrain-node = { path = "../onebrain-node" }
+# ARCH-09: hosts enable the local Ollama adapter that the node core omits.
+onebrain-node = { path = "../onebrain-node", features = ["ollama-host"] }
 onebrain-base-contract = { path = "../onebrain-base-contract" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 serde = { version = "1", features = ["derive"] }

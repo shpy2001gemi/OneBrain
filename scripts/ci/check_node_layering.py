@@ -40,10 +40,11 @@ KNOWN_BYPASSES = {
     "onebrain-cli": set(),
 }
 
-# The node core must not pull in surfaces or server/desktop shells. The
-# `reqwest` HTTP client (with tower-http/hyper-util) still reaches the core
-# through `ku-ai` (Ollama) and `ku-encoder`; moving that host adapter out of
-# the core is a remaining ARCH-09 item, so it is not forbidden yet.
+# The node core must not pull in surfaces, server/desktop shells or the
+# `reqwest` HTTP client. ARCH-09 slice 8 moved the Ollama host adapters
+# (`ku-ai` OllamaBackend, `ku-encoder` managed Ollama/worker) behind the node
+# `ollama-host` feature, which the API/CLI/Desktop hosts enable; the HTTPS
+# bootstrap client stays behind `vnext-bootstrap-https`.
 NODE = "onebrain-node"
 NODE_FORBIDDEN = {
     "onebrain-api",
@@ -53,6 +54,7 @@ NODE_FORBIDDEN = {
     "axum",
     "tauri",
     "wry",
+    "reqwest",
 }
 
 LINE = re.compile(r"^(\d+)([A-Za-z0-9_.\-]+) v")

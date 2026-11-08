@@ -9,7 +9,7 @@ use async_trait::async_trait;
 
 /// Trait for a model backend that supports chat, structured output, and tool calling.
 ///
-/// Implementations include [`OllamaBackend`](crate::backend::OllamaBackend) for local Ollama
+/// Implementations include `OllamaBackend` (local Ollama, `ollama` feature)
 /// and [`MockBackend`](crate::backend::MockBackend) for testing.
 #[async_trait]
 pub trait ModelBackend: Send + Sync {

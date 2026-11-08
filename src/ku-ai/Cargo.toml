@@ -7,7 +7,10 @@ license = "MIT"
 
 [features]
 default = ["ollama"]
-ollama = []
+# ARCH-09: the Ollama HTTP adapter (reqwest) is a host concern. Runtime-core
+# consumers (onebrain-node, ku-encoder, ku-mediator) depend on ku-ai with
+# default-features = false and only hosts enable this feature.
+ollama = ["dep:reqwest"]
 
 [dependencies]
 ku-core = { path = "../ku-core" }
@@ -17,7 +20,7 @@ serde_json = "1"
 async-trait = "0.1"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs"] }
-reqwest = { version = "0.12", features = ["json", "native-tls"] }
+reqwest = { version = "0.12", features = ["json", "native-tls"], optional = true }
 sysinfo = "0.33"
 directories = "5"
 toml = "0.8"
