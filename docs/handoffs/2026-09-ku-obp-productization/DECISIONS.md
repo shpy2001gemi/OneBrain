@@ -1,5 +1,34 @@
 # Decisions and claim boundary
 
+## D-053 — ARCH-10 starts with the shared archive; full node reuse waits for a mobile-safe core
+
+On 2026-11-08 the agent ran the mobile preflight for ARCH-10 and found a real
+conflict. D-051 §2 asks `onebrain-mobile-core` to reuse the node core instead of
+its own draft/archive code. The pinned mobile authority does not allow that yet:
+implementation plan §2.3 permits only a narrow dependency graph, and evidence
+`MOB-02-RUST-DEPENDENCY-ISOLATION` (`verify_mobile_rust_dependency_graph.py`)
+forbids `onebrain-node`, `ku-ai`, `ku-net`, `onebrain-protocol` and `tokio`.
+After ARCH-09 the default `onebrain-node` build still pulls `ku-ai`, `ku-net`,
+`ku-encoder`, `ku-mediator`, `onebrain-protocol` and `tokio`. The owner chose the
+recommended option:
+
+1. **Do now:** `onebrain-mobile-core` drops its mobile-only `archive.rs`
+   (`OBARV001`) and uses the shared `onebrain-archive` crate (`OBARV002`; v1 is
+   accepted for authenticated inspection only). Mobile work package `MOB-03`,
+   IDs `MOB-DAT-006/007/008`. No screen, component or pattern change. The guard
+   stays unchanged.
+2. **Keep:** mobile `draft.rs` stays mobile-owned. It is the Limited-mode
+   encrypted raw-draft/share-spool store (`MOB-CAP-001/002`) and has no
+   canonical node equivalent.
+3. **Later:** mobile reuse of the KU product/Base runtime (`MOB-ENC-001..004`)
+   waits for a further-split core crate that does not pull `tokio`, `ku-net`,
+   `ku-ai` or `onebrain-protocol`. This stays a recorded follow-up step of
+   ARCH-10. Changing the mobile guard instead would need a new owner decision,
+   an ADR and new manifest/evidence digests.
+
+This does not change mobile authority documents, product scope, qualification,
+consent or private/save/share boundaries.
+
 ## D-052 — Mixed-version legacy/vNext concurrency applies to legacy-compat opt-in nodes
 
 On 2026-10-18 the owner delegated the open ARCH-02 question: “bạn hãy quyết định
