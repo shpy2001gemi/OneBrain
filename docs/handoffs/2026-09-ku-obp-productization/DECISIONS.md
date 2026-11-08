@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-054 — ARCH-10 pauses after the boundary map; MVP Web follow-up resumes
+
+On 2026-11-08 the agent mapped what keeps `ku_product`/`base_runtime` out of a
+mobile-safe core ([MASTER_PLAN — ARCH-10 boundary map](MASTER_PLAN.md#arch-10-mobile-safe-core--boundary-map-2026-11-08-proposal-awaiting-owner)):
+one 33-module dependency cycle and six cut edges (E1–E6), roughly 6–7 bounded
+slices before `onebrain-mobile-core` can reuse the KU/Base runtime under the
+unchanged guard. The owner chose the recommended option: ARCH-10 is **Deferred**
+after slice 1 (`0b6d8d0`) and the map. Work returns to the paused task 20 `/ku`
+Web D-045 follow-up under the D-044 MVP priority. The map stays as the starting
+point when ARCH-10 resumes; resuming, or relaxing the mobile guard, needs a new
+owner direction. No code, guard, mobile authority or claim boundary changes.
+
 ## D-053 — ARCH-10 starts with the shared archive; full node reuse waits for a mobile-safe core
 
 On 2026-11-08 the agent ran the mobile preflight for ARCH-10 and found a real

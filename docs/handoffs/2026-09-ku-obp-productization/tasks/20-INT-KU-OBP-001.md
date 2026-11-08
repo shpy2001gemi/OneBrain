@@ -6,7 +6,39 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — D-045 `sharePrepare` pre-call cleanup and Base `pending` isolation in `/ku` Web (2026-10-18)
+## Latest follow-up — D-045 outbound intent state explanations in `/ku` Web (2026-11-08)
+
+Resumed after ARCH-10 was deferred (D-054). Previously the `Outbound share
+intent status` card showed only the raw sender outbox `state` (`Pending`,
+`Acknowledged`, `DeadLetter`, `RetryExhausted` from `OutboundIntentState` in
+`src/onebrain-node/src/vnext_outbox.rs`), so a demo user could not tell what an
+acknowledgement proves or whether a terminal failure would be retried.
+
+- `src/onebrain-web/src/pages/kuFeedback.ts` adds `describeShareIntentState`:
+  title, meaning and next step per state, matching the node semantics
+  (`Pending` = no terminal receipt, retried while the network runtime runs or
+  the recipient defers; `Acknowledged` = terminal `ValidatedStored`/
+  `AlreadyPresent`, a transport receipt only — not adoption, Use, source/author/
+  fidelity verification or reward; `DeadLetter` = terminal `RejectedInvalid`, not
+  retried; `RetryExhausted` = transport/deferral retry limit, a new address does
+  not replenish retries). Unknown states read as unconfirmed delivery. No resend
+  is offered for terminal intents; Public disclosure is never described as withdrawn.
+- `src/onebrain-web/src/pages/KuWorkflow.tsx` renders it as a labelled note in
+  the intent card; `tests/kuWorkflow.test.tsx` covers all four states plus an
+  unknown one (`terminal_sequence` none for `Pending`) and runs axe; it fails
+  with the previous page restored.
+- [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+  and [KU_WEB_001_IMPLEMENTATION](../outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)
+  document the states.
+
+Code `2e2f520` on main `a798671`, pushed under D-050. Windows checks 08/11
+~23:47–23:50 Asia/Saigon: `npm run test:ku` 122/122 (`kuWorkflow.test.tsx` 40/40),
+`npm run build`, `npm run lint` (0 errors, 8 existing warnings), `python
+scripts/ci/validate_vnext_contracts.py` (530 local links) and `git diff --check`
+PASS. No Rust code changed; no live two-host run. Parent task stays Merged,
+22 Merged / 2 Deferred.
+
+## Earlier follow-up — D-045 `sharePrepare` pre-call cleanup and Base `pending` isolation in `/ku` Web (2026-10-18)
 
 Implementation/spec/guide `d1a762c`, based on main `ca39ead`, is committed/pushed
 and directly verified under D-050. Previously a failed re-prepare in
@@ -1346,6 +1378,13 @@ Broader provisioning/composition remains open.
   when lookup inputs change or a subsequent lookup fails. Commit/push `04f74cd`
   under D-050; `npm run test:ku` 109/109 (`kuWorkflow.test.tsx` 34/34),
   `npm run build`, `npm run lint`, vNext validator and whitespace PASS.
+
+- [x] Explain the four sender outbox states (`Pending`, `Acknowledged`,
+  `DeadLetter`, `RetryExhausted`) and unknown states in the `Outbound share
+  intent status` card (`describeShareIntentState`), 2026-11-08 after D-054.
+  Commit/push `2e2f520` under D-050; `npm run test:ku` 122/122
+  (`kuWorkflow.test.tsx` 40/40), `npm run build`, `npm run lint`, vNext
+  validator and whitespace PASS.
 
 Preserve Registry trust and private source/key custody. Saved-artifact inspect
 state synchronization with the D-045 section (`shareConfirmed` cleanup and
