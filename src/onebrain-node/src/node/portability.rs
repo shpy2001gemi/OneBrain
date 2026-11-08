@@ -234,3 +234,21 @@ impl OneBrainNode {
         Err(NodeError::UnsupportedLegacyBackup)
     }
 }
+
+fn admission_priority(kind: StoredRecordKind) -> u8 {
+    match kind {
+        StoredRecordKind::FeedInception => 0,
+        StoredRecordKind::Object => 1,
+        StoredRecordKind::AuthorityEvent => 2,
+        StoredRecordKind::Event => 3,
+    }
+}
+
+fn reconcile_kind(kind: StoredRecordKind) -> ReconcileManifestKind {
+    match kind {
+        StoredRecordKind::Object => ReconcileManifestKind::Object,
+        StoredRecordKind::Event => ReconcileManifestKind::Event,
+        StoredRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+        StoredRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
+    }
+}
