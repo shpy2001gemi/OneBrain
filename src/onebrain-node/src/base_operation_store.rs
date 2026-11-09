@@ -32,7 +32,21 @@ const SUBSCRIPTION_RECORD_DOMAIN: &str = "onebrain:base:subscription-record:1";
 const GAP_RECORD_DOMAIN: &str = "onebrain:base:event-gap-record:1";
 const AUTHORITY_RECORD_DOMAIN: &str = "onebrain:base:authority-record:1";
 const PROCESS_GENERATION_DOMAIN: &str = "onebrain:base:process-generation:1";
+/// Bound on non-terminal (in-flight) operation records. Terminal records are
+/// compacted into `TERMINAL_DIRECTORY` and counted against the terminal bounds
+/// below instead (ARCH-15).
 const MAX_OPERATION_RECORDS: usize = 4096;
+/// Bound on all retained operation records (in-flight plus compacted terminal
+/// receipts). Checked only when reserving, so an operation that already
+/// started can always reach its terminal state.
+const MAX_TERMINAL_OPERATION_RECORDS: usize = 65_536;
+/// Bound on command plus result bytes kept for compacted terminal receipts.
+/// Checked only when reserving; in-flight operations may finish past it by at
+/// most their own (already bounded) payload.
+const MAX_TERMINAL_OPERATION_BYTES: usize = 256 * 1024 * 1024;
+/// One checksummed envelope per terminal operation: `<operation hex>.json`.
+const TERMINAL_DIRECTORY: &str = "terminal-v1";
+const TERMINAL_STAGING_SUFFIX: &str = ".json.tmp";
 const MAX_AUTHORITY_RECORDS: usize = 4096;
 const MAX_OPERATION_REVISIONS: u64 = 64;
 const MAX_PROCESS_TOMBSTONES: usize = 32;
@@ -364,6 +378,7 @@ impl BaseOperationStore {
             .map_err(|_| BaseOperationStoreError::CorruptState)?
             .join("operations-v1");
         std::fs::create_dir_all(root.join("records"))?;
+        std::fs::create_dir_all(root.join(TERMINAL_DIRECTORY))?;
         std::fs::create_dir_all(root.join("subscriptions"))?;
         std::fs::create_dir_all(root.join("gaps"))?;
         std::fs::create_dir_all(root.join("authority"))?;
@@ -400,7 +415,7 @@ impl BaseOperationStore {
         base_ops_failpoint("before_begin_write")?;
         let mut records = self.lock_records()?;
         base_ops_failpoint("after_begin_write_before_mutation")?;
-        if records.len() >= MAX_OPERATION_RECORDS {
+        if !reservation_has_capacity(&records) {
             return Err(BaseOperationStoreError::Capacity);
         }
         for _ in 0..32 {
@@ -1140,6 +1155,16 @@ impl BaseOperationStore {
             return Err(BaseOperationStoreError::Capacity);
         }
         let directory = self.root.join("records").join(hex(&record.operation_id));
+        if record.state.is_terminal() {
+            // ARCH-15: the terminal envelope rename is the commit point; the
+            // superseded revision directory is then removed (open() removes
+            // any leftover from an interrupted removal).
+            base_ops_failpoint("after_mutation_before_commit")?;
+            write_terminal_envelope(&self.root, record)?;
+            let _ = remove_revision_directory(&directory);
+            base_ops_failpoint("after_commit_before_next_side_effect")?;
+            return Ok(());
+        }
         std::fs::create_dir_all(&directory)?;
         let envelope = envelope(record.clone())?;
         let path = directory.join(format!("{:020}.json", record.revision));
@@ -1566,12 +1591,20 @@ fn load_records(
     process_generation: ProcessGenerationId,
     dataset_generation: DatasetGenerationId,
 ) -> Result<BTreeMap<[u8; 32], DurableOperationRecord>, BaseOperationStoreError> {
-    let mut records = BTreeMap::new();
+    let mut records = load_terminal_records(root, process_generation, dataset_generation)?;
     let directory = root.join("records");
     for operation in std::fs::read_dir(&directory)? {
         let operation = operation?;
         if !operation.file_type()?.is_dir() {
             return Err(BaseOperationStoreError::CorruptState);
+        }
+        let superseded = decode_hex_32(&operation.file_name().to_string_lossy())
+            .is_ok_and(|id| records.get(&id).is_some_and(|r| r.state.is_terminal()));
+        if superseded {
+            // Interrupted ARCH-15 compaction: the terminal envelope already
+            // committed, so these revisions are superseded.
+            remove_revision_directory(&operation.path())?;
+            continue;
         }
         let mut revisions = Vec::new();
         for revision in std::fs::read_dir(operation.path())? {
@@ -1606,6 +1639,12 @@ fn load_records(
             latest = Some(envelope.record);
         }
         let mut record = latest.ok_or(BaseOperationStoreError::CorruptState)?;
+        if record.state.is_terminal() {
+            // Legacy layout (before ARCH-15) kept terminal revisions here:
+            // migrate to one compact envelope, then drop the revisions.
+            write_terminal_envelope(root, &record)?;
+            remove_revision_directory(&operation.path())?;
+        }
         if record.process_generation != process_generation
             || record.dataset_generation != dataset_generation
         {
@@ -1640,10 +1679,103 @@ fn load_records(
             return Err(BaseOperationStoreError::CorruptState);
         }
     }
-    if records.len() > MAX_OPERATION_RECORDS {
+    let active = records
+        .values()
+        .filter(|record| !record.state.is_terminal())
+        .count();
+    if active > MAX_OPERATION_RECORDS {
         return Err(BaseOperationStoreError::Capacity);
     }
     Ok(records)
+}
+
+fn load_terminal_records(
+    root: &Path,
+    process_generation: ProcessGenerationId,
+    dataset_generation: DatasetGenerationId,
+) -> Result<BTreeMap<[u8; 32], DurableOperationRecord>, BaseOperationStoreError> {
+    let mut records = BTreeMap::new();
+    let directory = root.join(TERMINAL_DIRECTORY);
+    for entry in std::fs::read_dir(&directory)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == ".onebrain-directory-sync" {
+            continue;
+        }
+        if !entry.file_type()?.is_file() {
+            return Err(BaseOperationStoreError::CorruptState);
+        }
+        if name.ends_with(TERMINAL_STAGING_SUFFIX) {
+            // Staged before the commit rename: never authoritative.
+            std::fs::remove_file(entry.path())?;
+            continue;
+        }
+        let id = name
+            .strip_suffix(".json")
+            .ok_or(BaseOperationStoreError::CorruptState)
+            .and_then(decode_hex_32)?;
+        let envelope: DurableEnvelope = serde_json::from_slice(&std::fs::read(entry.path())?)
+            .map_err(|_| BaseOperationStoreError::CorruptState)?;
+        verify_envelope(&envelope)?;
+        let mut record = envelope.record;
+        if record.operation_id != id || !record.state.is_terminal() {
+            return Err(BaseOperationStoreError::CorruptState);
+        }
+        record.process_generation = process_generation;
+        record.dataset_generation = dataset_generation;
+        if records.insert(id, record).is_some() {
+            return Err(BaseOperationStoreError::CorruptState);
+        }
+    }
+    Ok(records)
+}
+
+/// Reservation admission (ARCH-15): bounded in-flight records plus bounded
+/// compacted terminal receipts. Never consulted when finishing an operation.
+fn reservation_has_capacity(records: &BTreeMap<[u8; 32], DurableOperationRecord>) -> bool {
+    let mut active = 0_usize;
+    let mut terminal_bytes = 0_usize;
+    for record in records.values() {
+        if record.state.is_terminal() {
+            terminal_bytes = terminal_bytes
+                .saturating_add(record.command.len())
+                .saturating_add(record.result.len());
+        } else {
+            active += 1;
+        }
+    }
+    capacity_admits_reservation(active, records.len(), terminal_bytes)
+}
+
+const fn capacity_admits_reservation(active: usize, total: usize, terminal_bytes: usize) -> bool {
+    active < MAX_OPERATION_RECORDS
+        && total < MAX_TERMINAL_OPERATION_RECORDS
+        && terminal_bytes < MAX_TERMINAL_OPERATION_BYTES
+}
+
+/// Stage, fsync and rename one terminal envelope; the rename is the commit.
+fn write_terminal_envelope(
+    root: &Path,
+    record: &DurableOperationRecord,
+) -> Result<(), BaseOperationStoreError> {
+    let directory = root.join(TERMINAL_DIRECTORY);
+    let name = hex(&record.operation_id);
+    let staged = directory.join(format!("{name}{TERMINAL_STAGING_SUFFIX}"));
+    match std::fs::remove_file(&staged) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
+        _ => {}
+    }
+    write_new_synced(&staged, &envelope(record.clone())?)?;
+    std::fs::rename(&staged, directory.join(format!("{name}.json")))?;
+    sync_directory(&directory)?;
+    Ok(())
+}
+
+fn remove_revision_directory(path: &Path) -> Result<(), BaseOperationStoreError> {
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+        _ => Ok(()),
+    }
 }
 
 fn envelope(record: DurableOperationRecord) -> Result<DurableEnvelope, BaseOperationStoreError> {
@@ -2072,6 +2204,221 @@ mod tests {
                 BaseAuthorityStateV1::Active,
             ),
             Err(BaseOperationStoreError::Conflict)
+        ));
+    }
+
+    fn operation_entries(root: &Path, directory: &str) -> Vec<String> {
+        let mut names = std::fs::read_dir(root.join(directory))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name != ".onebrain-directory-sync")
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    fn reserve_and_cancel(store: &BaseOperationStore, principal: [u8; 32]) -> BaseOperationId {
+        let reservation = store
+            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, principal)
+            .unwrap();
+        let operation_id = BaseOperationId(reservation.0);
+        assert_eq!(
+            store.cancel(operation_id, principal).unwrap().state,
+            BaseOperationStateV1::Canceled
+        );
+        operation_id
+    }
+
+    #[test]
+    fn terminal_receipts_compact_past_active_cap_and_restart_keeps_them_reconcilable() {
+        let temp = tempfile::tempdir().unwrap();
+        let resolver = BootstrapDatasetPathResolver::new(temp.path()).unwrap();
+        let principal = [9; 32];
+        let store = BaseOperationStore::open(&resolver, ProcessGenerationId([7; 32])).unwrap();
+        let root = store.root.clone();
+
+        let reservation = store
+            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, principal)
+            .unwrap();
+        let committed = store
+            .prepare(
+                reservation,
+                BaseOperationKindV1::ExistingLocalCommand,
+                vec![1, 2, 3],
+                None,
+                principal,
+            )
+            .unwrap()
+            .operation_id;
+        let key = BaseIdempotencyKey([8; 32]);
+        assert!(store
+            .begin_confirm(committed, key, principal)
+            .unwrap()
+            .is_none());
+        store.complete(committed, b"saved result".to_vec()).unwrap();
+
+        // Before ARCH-15 the 4,097th operation was refused with `Capacity`.
+        let canceled = (0..MAX_OPERATION_RECORDS + 4)
+            .map(|_| reserve_and_cancel(&store, principal))
+            .collect::<Vec<_>>();
+        assert!(operation_entries(&root, "records").is_empty());
+        assert_eq!(
+            operation_entries(&root, TERMINAL_DIRECTORY).len(),
+            canceled.len() + 1
+        );
+        let pending = store
+            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, principal)
+            .unwrap();
+        drop(store);
+
+        let reopened = BaseOperationStore::open(&resolver, ProcessGenerationId([6; 32])).unwrap();
+        for operation_id in [canceled[0], canceled[canceled.len() - 1]] {
+            let receipt = reopened.reconcile(operation_id, principal).unwrap().receipt;
+            assert_eq!(receipt.state, BaseOperationStateV1::Canceled);
+            assert!(!receipt.reconcile_required);
+        }
+        let receipt = reopened.reconcile(committed, principal).unwrap().receipt;
+        assert_eq!(receipt.state, BaseOperationStateV1::Committed);
+        assert_eq!(receipt.result, b"saved result");
+        assert_eq!(receipt.idempotency_key, Some(key));
+        let replay = reopened
+            .begin_confirm(committed, key, principal)
+            .unwrap()
+            .expect("terminal receipt replays for the same idempotency key");
+        assert_eq!(replay, receipt);
+        assert_eq!(
+            reopened
+                .reconcile(BaseOperationId(pending.0), principal)
+                .unwrap()
+                .receipt
+                .state,
+            BaseOperationStateV1::UnknownOutcome
+        );
+        assert_eq!(operation_entries(&root, "records"), vec![hex(&pending.0)]);
+        reserve_and_cancel(&reopened, principal);
+    }
+
+    #[test]
+    fn open_migrates_legacy_terminal_revisions_and_removes_compaction_leftovers() {
+        let temp = tempfile::tempdir().unwrap();
+        let resolver = BootstrapDatasetPathResolver::new(temp.path()).unwrap();
+        let principal = [9; 32];
+        let process = ProcessGenerationId([7; 32]);
+        let store = BaseOperationStore::open(&resolver, process).unwrap();
+        let root = store.root.clone();
+
+        // Legacy layout: a terminal revision inside the revision directory.
+        let legacy = store
+            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, principal)
+            .unwrap();
+        let mut legacy_record = store.records.lock().unwrap()[&legacy.0].clone();
+        legacy_record.revision = 1;
+        legacy_record.state = BaseOperationStateV1::Canceled;
+        let legacy_directory = root.join("records").join(hex(&legacy.0));
+        write_new_synced(
+            &legacy_directory.join(format!("{:020}.json", 1)),
+            &envelope(legacy_record).unwrap(),
+        )
+        .unwrap();
+
+        // Interrupted compaction: the terminal envelope committed but the
+        // superseded revision directory and a staged file remain.
+        let interrupted = store
+            .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, principal)
+            .unwrap();
+        let interrupted_directory = root.join("records").join(hex(&interrupted.0));
+        let stale_revision = interrupted_directory.join(format!("{:020}.json", 0));
+        let stale_bytes = std::fs::read(&stale_revision).unwrap();
+        store
+            .cancel(BaseOperationId(interrupted.0), principal)
+            .unwrap();
+        std::fs::create_dir_all(&interrupted_directory).unwrap();
+        std::fs::write(&stale_revision, stale_bytes).unwrap();
+        let staged = root
+            .join(TERMINAL_DIRECTORY)
+            .join(format!("{}{TERMINAL_STAGING_SUFFIX}", hex(&[3; 32])));
+        std::fs::write(&staged, b"partial").unwrap();
+        drop(store);
+
+        let reopened = BaseOperationStore::open(&resolver, process).unwrap();
+        for operation in [legacy.0, interrupted.0] {
+            assert_eq!(
+                reopened
+                    .reconcile(BaseOperationId(operation), principal)
+                    .unwrap()
+                    .receipt
+                    .state,
+                BaseOperationStateV1::Canceled
+            );
+        }
+        assert!(operation_entries(&root, "records").is_empty());
+        let mut expected = vec![
+            format!("{}.json", hex(&legacy.0)),
+            format!("{}.json", hex(&interrupted.0)),
+        ];
+        expected.sort();
+        assert_eq!(operation_entries(&root, TERMINAL_DIRECTORY), expected);
+        drop(reopened);
+        let again = BaseOperationStore::open(&resolver, process).unwrap();
+        assert_eq!(again.records.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn terminal_commit_failpoints_never_observe_a_partial_compaction() {
+        for (phase, committed) in [
+            ("after_mutation_before_commit", false),
+            ("after_commit_before_next_side_effect", true),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let resolver = BootstrapDatasetPathResolver::new(temp.path()).unwrap();
+            let process = ProcessGenerationId([7; 32]);
+            let store = BaseOperationStore::open(&resolver, process).unwrap();
+            let reservation = store
+                .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, [9; 32])
+                .unwrap();
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(Some(phase)));
+            assert!(store
+                .cancel(BaseOperationId(reservation.0), [9; 32])
+                .is_err());
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(None));
+            drop(store);
+            let reopened = BaseOperationStore::open(&resolver, process).unwrap();
+            let state = reopened
+                .reconcile(BaseOperationId(reservation.0), [9; 32])
+                .unwrap()
+                .receipt
+                .state;
+            let expected = if committed {
+                BaseOperationStateV1::Canceled
+            } else {
+                BaseOperationStateV1::Reserved
+            };
+            assert_eq!(state, expected, "phase {phase}");
+        }
+    }
+
+    #[test]
+    fn reservation_admission_bounds_active_and_terminal_receipts() {
+        assert!(capacity_admits_reservation(0, 0, 0));
+        assert!(capacity_admits_reservation(
+            MAX_OPERATION_RECORDS - 1,
+            MAX_TERMINAL_OPERATION_RECORDS - 1,
+            MAX_TERMINAL_OPERATION_BYTES - 1
+        ));
+        assert!(!capacity_admits_reservation(
+            MAX_OPERATION_RECORDS,
+            MAX_OPERATION_RECORDS,
+            0
+        ));
+        assert!(!capacity_admits_reservation(
+            0,
+            MAX_TERMINAL_OPERATION_RECORDS,
+            0
+        ));
+        assert!(!capacity_admits_reservation(
+            0,
+            1,
+            MAX_TERMINAL_OPERATION_BYTES
         ));
     }
 }
