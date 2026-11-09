@@ -602,7 +602,7 @@
       "evidence": [
         {
           "path": "src/ku-core/src/foundation/dr_m5_failpoint.rs",
-          "needle": "file.sync_all()"
+          "needle": "marker_is_fsynced_after_write_and_sync_failure_is_not_armed"
         },
         {
           "path": "src/onebrain-node/src/vnext_crash_harness.rs",

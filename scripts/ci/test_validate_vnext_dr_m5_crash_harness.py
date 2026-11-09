@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_dr_m5
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     DR_M5_CRASH_HARNESS_PROFILE,
@@ -82,6 +84,21 @@ class VNextDrM5CrashHarnessTests(unittest.TestCase):
         profile["report"]["expected_sha256"] = "0" * 64
         with self.assertRaisesRegex(ContractError, "report"):
             validate_vnext_dr_m5_crash_harness(profile)
+
+    def test_failpoint_rust_tests_must_run_in_ci(self) -> None:
+        real_read = validate_vnext_dr_m5.read
+
+        def read_without_failpoint_step(path):
+            text = real_read(path)
+            if path == validate_vnext_dr_m5.VNEXT_FOUNDATION_WORKFLOW:
+                text = text.replace("--lib foundation::dr_m5_failpoint", "")
+            return text
+
+        with mock.patch.object(
+            validate_vnext_dr_m5, "read", side_effect=read_without_failpoint_step
+        ):
+            with self.assertRaisesRegex(ContractError, "CI acceptance gate"):
+                validate_vnext_dr_m5_crash_harness(frozen_profile())
 
 
 if __name__ == "__main__":

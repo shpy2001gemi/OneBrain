@@ -820,6 +820,9 @@ jobs:
           --features vnext-crash-harness
           --lib vnext_crash_harness::tests
           -- --test-threads=1
+          && cargo test --locked -p ku-core
+          --features dr-m5-crash-harness
+          --lib foundation::dr_m5_failpoint
       - name: M5.4 real-QUIC chaos and adversarial flood
         run: >-
           cargo test --locked -p ku-net

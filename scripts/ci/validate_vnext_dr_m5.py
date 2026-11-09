@@ -48,6 +48,13 @@ DR_M5_MIXED_ROLLBACK_PROFILE = (
 DR_M5_SOAK_RELEASE_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-soak-release-v1.json"
 )
+# ARCH-13 slice 2: behavior of the authenticated failpoint is proven by these
+# Rust tests (exact kill switch, per-case token, create_new marker fsynced
+# before arming, env names bound to the frozen profile) instead of needles.
+DR_M5_FAILPOINT_TEST_COMMAND = re.compile(
+    r"cargo test --locked -p ku-core\s+--features dr-m5-crash-harness"
+    r"\s+--lib foundation::dr_m5_failpoint\b"
+)
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -796,15 +803,6 @@ def validate_vnext_dr_m5_crash_harness(
             if phase not in source:
                 raise ContractError(f"M5-03 phase hook missing: {relative}: {phase}")
 
-    failpoint_source = read(ROOT / "src/ku-core/src/foundation/dr_m5_failpoint.rs")
-    for needle in (
-        "file.sync_all()",
-        ".create_new(true)",
-        "ONEBRAIN_DR_M5_FAILPOINTS_ENABLED",
-        "ONEBRAIN_DR_M5_TOKEN",
-    ):
-        if needle not in failpoint_source:
-            raise ContractError(f"M5-03 authenticated failpoint evidence missing: {needle}")
     harness_source = read(ROOT / "src/onebrain-node/src/vnext_crash_harness.rs")
     for needle in (
         "child.kill()",
@@ -840,6 +838,7 @@ def validate_vnext_dr_m5_crash_harness(
         or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness"
         not in workflow
         or "--features vnext-crash-harness" not in workflow
+        or not DR_M5_FAILPOINT_TEST_COMMAND.search(workflow)
     ):
         raise ContractError("M5-03 CI acceptance gate missing")
 
