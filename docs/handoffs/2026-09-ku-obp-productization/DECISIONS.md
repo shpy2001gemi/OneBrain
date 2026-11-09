@@ -1,5 +1,16 @@
 # Decisions and claim boundary
 
+## D-055 — Mechanical mobile authority repin for the ARCH-11 blob-store move
+
+On 2026-11-09 ARCH-11 slice 3 (`2149c8f`) moved `blob_storage.rs`/`blob_layout.rs`
+from `ku-kql` into the new `onebrain-blob-store` crate. The hash-pinned mobile
+technical architecture linked `../../src/ku-kql/src/blob_storage.rs`, so the mobile
+validator failed on a broken local link. The owner chose the recommended option:
+change only that link to `../../src/onebrain-blob-store/src/blob_storage.rs` and
+repin the document sha256 plus `authority_set_sha256` in
+`mobile_build_contract_v1.json` and `mobile_build_evidence_v1.json`. No mobile
+architecture semantics, guard, work package or evidence claim changed.
+
 ## D-054 — ARCH-10 pauses after the boundary map; MVP Web follow-up resumes
 
 On 2026-11-08 the agent mapped what keeps `ku_product`/`base_runtime` out of a
