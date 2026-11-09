@@ -10,7 +10,9 @@
 //! - **storage**: redb-backed persistent KU storage
 //! - **experimental** feature: library-only typed KQL modules with no production
 //!   consumer (OBKG projection, assembly search, relational alignment, structural
-//!   signatures; ARCH-11). Not in the default build.
+//!   signatures; ARCH-11 slice 1) and the private multipath island used only by
+//!   the node M5 benchmark companion (multipath, query view, exploration, route
+//!   packet, disclosure capsule; slice 2). Not in the default build.
 
 pub mod ast;
 #[cfg(feature = "storage")]
@@ -27,9 +29,12 @@ pub mod storage;
 #[cfg(feature = "experimental")]
 pub mod vnext_assembly_search;
 pub mod vnext_disclosure;
+#[cfg(feature = "experimental")]
 pub mod vnext_disclosure_capsule;
+#[cfg(feature = "experimental")]
 pub mod vnext_exploration;
 pub mod vnext_matcher;
+#[cfg(feature = "experimental")]
 pub mod vnext_multipath;
 #[cfg(feature = "experimental")]
 pub mod vnext_obkg_projection;
@@ -37,10 +42,12 @@ pub mod vnext_planner;
 pub mod vnext_private_need;
 pub mod vnext_proposal;
 pub mod vnext_query;
+#[cfg(feature = "experimental")]
 pub mod vnext_query_view;
 #[cfg(feature = "experimental")]
 pub mod vnext_relational_alignment;
 pub mod vnext_reunion;
+#[cfg(feature = "experimental")]
 pub mod vnext_route_packet;
 pub mod vnext_semantic_index;
 pub mod vnext_standing_need;

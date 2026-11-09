@@ -51,6 +51,7 @@ pub mod verifier_service;
 pub mod vnext_bootstrap_client;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_canary_operations;
+#[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_companion;
 pub mod vnext_config;
 #[cfg(feature = "vnext-outbound-first")]
@@ -250,6 +251,7 @@ pub use vnext_canary_operations::{
     run_p5_canary_preflight, P5CanaryPreflightError, P5CanaryPreflightReport, P5_CANARY_NODE_COUNT,
     P5_CANARY_PREFLIGHT_PROFILE, P5_CANARY_RING_DELIVERIES, P5_CANARY_ROUTE_OBSERVATIONS,
 };
+#[cfg(feature = "vnext-sim-harness")]
 pub use vnext_companion::{
     companion_disclosure_scope, CompanionContext, CompanionDisclosureGrants, CompanionError,
     CompanionMaterializationCandidate, CompanionMultipathRequest, CompanionNetworkStatus,

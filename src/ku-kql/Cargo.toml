@@ -12,7 +12,10 @@ storage = ["dep:redb", "dep:fs2", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
 # Library-only typed KQL research modules with no production consumer (ARCH-11,
 # D-051): OBKG projection, assembly search, relational alignment and structural
-# signatures. Excluded from the default build; their tests run with this feature.
+# signatures (slice 1) plus the private multipath island - multipath, query view,
+# exploration, route packet, disclosure capsule - consumed only by the node M5
+# benchmark companion (slice 2). Excluded from the default build; their tests run
+# with this feature.
 experimental = []
 
 [dependencies]

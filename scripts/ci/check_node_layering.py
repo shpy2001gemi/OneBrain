@@ -72,6 +72,8 @@ HARNESS_MODULES = {
     "vnext_soak_release",
     "vnext_canary_operations",
     "vnext_p5_operations",
+    # ARCH-11 slice 2: AI-004 companion, consumed only by the M5 benchmark.
+    "vnext_companion",
 }
 MOD_LINE = re.compile(r"^\s*pub\s+mod\s+([A-Za-z0-9_]+)\s*;")
 GATE_LINE = re.compile(r"^\s*#\[cfg\((feature\s*=|test\))")

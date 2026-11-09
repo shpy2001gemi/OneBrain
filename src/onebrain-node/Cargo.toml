@@ -115,7 +115,9 @@ vnext-canary-harness = ["vnext-network-runtime"]
 vnext-production-canary-harness = ["vnext-canary-harness", "vnext-outbound-first"]
 # ARCH-09: deterministic offline simulation/benchmark harnesses (M5 benchmark,
 # M6 bounded models, QA-007 logical-node scale). Not part of the default core.
-vnext-sim-harness = []
+# ARCH-11 slice 2: also carries the AI-004 local companion (only the M5
+# benchmark consumes it) and the `ku-kql` experimental multipath island.
+vnext-sim-harness = ["ku-kql/experimental"]
 
 [dependencies]
 ku-core = { path = "../ku-core", features = ["legacy-read"] }

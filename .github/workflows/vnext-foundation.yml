@@ -521,10 +521,10 @@ jobs:
         run: cargo test --locked -p ku-kql vnext_disclosure
 
       - name: Test padded replay-protected route packets
-        run: cargo test --locked -p ku-kql vnext_route_packet
+        run: cargo test --locked -p ku-kql --features experimental vnext_route_packet
 
       - name: Test permit-bound progressive disclosure capsules
-        run: cargo test --locked -p ku-kql vnext_disclosure_capsule
+        run: cargo test --locked -p ku-kql --features experimental vnext_disclosure_capsule
 
       - name: Test crash-safe validated persistence
         run: cargo test --locked -p ku-core --features persist foundation::storage
@@ -575,13 +575,13 @@ jobs:
         run: cargo test --locked -p ku-kql --features experimental vnext_assembly_search
 
       - name: Test private debt-backed exploration scheduler
-        run: cargo test --locked -p ku-kql vnext_exploration
+        run: cargo test --locked -p ku-kql --features experimental vnext_exploration
 
       - name: Test late-safe QueryView and propensity-aware learning
-        run: cargo test --locked -p ku-kql vnext_query_view
+        run: cargo test --locked -p ku-kql --features experimental vnext_query_view
 
       - name: Test private multipath union and encrypted StandingNeed mailbox
-        run: cargo test --locked -p ku-kql vnext_multipath
+        run: cargo test --locked -p ku-kql --features experimental vnext_multipath
 
       - name: Test disposable version-bound OBKG projections
         run: cargo test --locked -p ku-kql --features experimental vnext_obkg_projection
@@ -638,7 +638,7 @@ jobs:
         run: cargo test --locked -p onebrain-node vnext_local_runtime
 
       - name: Test offline policy-gated Local Knowledge Companion
-        run: cargo test --locked -p onebrain-node vnext_companion
+        run: cargo test --locked -p onebrain-node --features vnext-sim-harness --lib vnext_companion
 
       - name: Test reproducible M5 multi-objective benchmark and ablation
         run: cargo test --locked -p onebrain-node --features vnext-sim-harness --lib vnext_m5_benchmark
