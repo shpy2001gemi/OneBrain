@@ -121,7 +121,7 @@ sequenceDiagram
 | `ku-net` | `replication.rs` | R=7 tier-aware replication manager |
 | `ku-net` | `constants.rs` | All OBS-related protocol constants |
 | `onebrain-legacy-ku-store` | `storage.rs` | KuStorage (4 tables: kus, epigenetics, index_trust, index_concept) |
-| `ku-kql` | `graph_storage.rs` | GraphStorage (6 edge index tables) |
+| `onebrain-legacy-ku-store` | `graph_storage.rs` | GraphStorage (6 edge index tables) |
 | `ku-core` | `persistent_concept_dict.rs` | PersistentConceptDict (3 tables) |
 
 ---
@@ -501,6 +501,52 @@ redb is the optimal choice for OneBrain's workload: read-heavy (~10-100 reads/se
 ### 7.3 CID Integrity Verification
 
 `CID = BLAKE3(wire_bytes)` serves as a cryptographic commitment. On every `get()` from the warm tier, the caller can verify integrity by recomputing `BLAKE3(wire_bytes)` and comparing with the stored CID. Any mismatch indicates data corruption or tampering. This is also the basis for OBT's Proof-of-Storage-KU (PoS-KU) challenges.
+
+### 7.4 Store inventory and recovery units (ARCH-12, 2026-11-09)
+
+Static scan of every non-test Rust file that opens a redb database
+(`git grep -l -E "redb::Database|Database::(create|open|builder)" -- 'src/*.rs'`,
+29 database files). It documents where each store lives and how it is recovered;
+it is not a crash or restore test and does not change any on-disk format.
+
+**Recovery unit.** On a node, the unit is the Base storage owner directory of the
+active dataset generation:
+`<data_dir>/base/datasets/generations/<hex>/owners/<owner>/` (closed owner table
+in [BASE_V1_STORAGE_INTEGRITY_PROFILE §6](vnext/BASE_V1_STORAGE_INTEGRITY_PROFILE.md#6-closed-storagearchive-owner-table);
+resolver `src/onebrain-node/src/dataset_path.rs`, generations
+`src/onebrain-node/src/dataset_generation.rs`). A generation is published as a
+whole; inside one owner each redb file commits on its own, and two files are not
+atomic with each other unless their owner code says so. Older flat layouts
+(`<data_dir>/vnext_*.redb`) are moved into owner directories by
+`adopt_pre_generation_vnext`; `VNextProductStoragePaths::legacy` still resolves the
+flat layout for compatibility.
+
+| Recovery unit (owner / location) | redb files | Owner code | Class | Recovery |
+|---|---|---|---|---|
+| `canonical` | `vnext_verified.redb` | `ku-core` `foundation/storage.rs` (`RedbVerifiedBackend`) | Source of record | Archive adapter (canonical + quarantine); derived stores rebuild from it |
+| `vault` | `ku-product-v1/objects.redb`, `ku-product-v1/journal.redb` | node `ku_product.rs` (`KuStore`) | Private KU product (encrypted objects + prepare/commit journal and terminal records) | Vault archive adapter exists; its binding to `ku-product-v1` and journal coverage are not verified by this scan |
+| `blob` | `ku.blob.redb` + `blobs/` | `onebrain-blob-store` `blob_storage.rs` | Source of record for blob bytes (`TX-BLOB-001`) | Owned-blob archive adapter; reopen reconciles spill intents |
+| `reconciliation` | `vnext_reconciliation.redb` | `ku-net` `vnext_reconciliation_journal.rs` | Network state | Archive adapter |
+| `inventory` | `vnext_inventory.redb` | `ku-net` `vnext_inventory_forest.rs` | Network state | Archive adapter |
+| `outbox` | `vnext_outbox.redb` | node `vnext_outbox.rs` | Outbound intents/checkpoints | Logical-row archive adapter |
+| `provenance` | `vnext_record_provenance.redb` | node `vnext_record_provenance.rs` | Record provenance | Logical-row archive adapter |
+| `private_kql` | `vnext_private_need_vault.redb`, `vnext_distributed_kql.redb`, `vnext_standing_needs.redb` | `ku-kql` `vnext_private_need.rs`, `vnext_standing_need.rs`; node `vnext_distributed_kql.rs` | Private needs (encrypted) + match cursors | Generation-scoped; no archive adapter found |
+| `private_pomv` | `vnext_public_use_sender.redb`, `vnext_distributed_pomv.redb` | node `vnext_distributed_pomv.rs` | Use-evidence publication/receipt | Generation-scoped; no archive adapter found |
+| `rollout` | `vnext_runtime_rollout.redb` | node `vnext_runtime_rollout.rs` | Runtime lane state | Generation-scoped; no archive adapter found |
+| `operational` | `vnext_obp_commands.redb` (`vnext-outbound-first`), `vnext_operational_compaction.redb` | node `vnext_product_runtime/obp/store.rs`, `vnext_operational_compaction.rs` (opened by P5 operations/examples) | Operational | Generation-scoped; no archive adapter found |
+| `optional_network` | `vnext_route_journal.redb`, `vnext_reachability_replay.redb` (`vnext-outbound-first`) | node `vnext_route_journal.rs`, `vnext_reachability_replay_store.rs` | Admission/replay state | Generation-scoped; no archive adapter found |
+| `derived_index`, `retriever_projection` | none (not redb) | node `derived_index.rs`, retriever projection | Disposable projection | Rebuilt from `canonical`; excluded from archive payloads |
+| Legacy, `<data_dir>/` (outside generations) | `ku.redb` + `ku.graph.redb` | `onebrain-legacy-ku-store` `storage.rs`, `graph_storage.rs` | Legacy Core DNA KU, read-only base / migration evidence | Never Base authority; read by `vnext_legacy_migration.rs` |
+| Relay process, `<relay data_root>/` | `relay-state.redb` | `onebrain-relay` `state.rs` | Relay floors, nonces, reservations | Separate binary; own lifecycle |
+| Mobile app root | `bootstrap.redb`, `private-vault.redb`, `private-drafts.redb`, `private-media-staging.redb` | `onebrain-mobile-core` `services.rs`, `bootstrap.rs`, `security.rs`, `draft.rs`, `media_staging.rs` | Mobile-owned | Governed by the mobile build contract, not node generations |
+| Feature `legacy` only | caller-chosen path | `ku-core` `persistent_concept_dict.rs`, `ku-net` `dht_store.rs` | Legacy | Not opened by the default product |
+| Library / harness only | caller-chosen path | `ku-core` `foundation/migration.rs` (`RedbMigrationBackend`, no production caller), node `vnext_crash_harness.rs` (`vnext-crash-harness`) | Test/harness | Not product data |
+
+Developer-run sample files under `src/onebrain_data/` are runtime data, not
+fixtures: no test or fixture reads them, and `.gitignore` (`onebrain_data/`,
+`*.redb`) keeps them out of Git (removed from the index in ARCH-12).
+Not done: consolidating stores, archive coverage for the generation-scoped
+owners without an adapter, and a restore drill per unit.
 
 ---
 
