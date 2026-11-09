@@ -7,8 +7,9 @@
 //! - **parser**: nom-based KQL parser
 //! - **read_only**: local read-only gate for user-facing textual KQL (ARCH-04)
 //! - **executor**: Local query execution engine (operates on KuRuntime)
-//! - **storage**: redb-backed persistent KU storage (blob storage moved to the
-//!   `onebrain-blob-store` crate in ARCH-11 slice 3)
+//! - **storage** feature: redb persistence for the private/standing need stores.
+//!   Blob storage moved to the `onebrain-blob-store` crate (ARCH-11 slice 3) and
+//!   legacy `KuStorage`/`GraphStorage` to `onebrain-legacy-ku-store` (slice 4).
 //! - **experimental** feature: library-only typed KQL modules with no production
 //!   consumer (OBKG projection, assembly search, relational alignment, structural
 //!   signatures; ARCH-11 slice 1) and the private multipath island used only by
@@ -17,12 +18,8 @@
 
 pub mod ast;
 pub mod executor;
-#[cfg(feature = "storage")]
-pub mod graph_storage;
 pub mod parser;
 pub mod read_only;
-#[cfg(feature = "storage")]
-pub mod storage;
 #[cfg(feature = "experimental")]
 pub mod vnext_assembly_search;
 pub mod vnext_disclosure;
@@ -50,7 +47,3 @@ pub mod vnext_semantic_index;
 pub mod vnext_standing_need;
 #[cfg(feature = "experimental")]
 pub mod vnext_structural_signature;
-
-// Re-export graph types for convenience
-#[cfg(feature = "storage")]
-pub use graph_storage::GraphStorage;

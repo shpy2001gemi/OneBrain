@@ -214,8 +214,8 @@ cargo build --features persist
 | `ast` | [ast.rs](../src/ku-kql/src/ast.rs) | [KQL Spec](specs/KQL_SPEC.md) | `Query`, `FindQuery`, `CreateQuery`, `Condition`, `Pattern` |
 | `parser` | [parser.rs](../src/ku-kql/src/parser.rs) | [KQL Spec](specs/KQL_SPEC.md) | nom-based KQL parser |
 | `executor` | [executor.rs](../src/ku-kql/src/executor.rs) | [KQL Spec](specs/KQL_SPEC.md) | Local query execution engine |
-| `storage` | [storage.rs](../src/ku-kql/src/storage.rs) | [KQL Spec](specs/KQL_SPEC.md) | redb-backed persistent KU storage |
-| `graph_storage` | [graph_storage.rs](../src/ku-kql/src/graph_storage.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Graph-aware KU storage and retrieval |
+| `storage` | [storage.rs](../src/onebrain-legacy-ku-store/src/storage.rs) | [KQL Spec](specs/KQL_SPEC.md) | redb-backed persistent legacy KU storage (crate `onebrain-legacy-ku-store`) |
+| `graph_storage` | [graph_storage.rs](../src/onebrain-legacy-ku-store/src/graph_storage.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Graph-aware KU storage and retrieval |
 
 ### P4: OBP Network Modules
 

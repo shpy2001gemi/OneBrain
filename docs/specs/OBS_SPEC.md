@@ -120,7 +120,7 @@ sequenceDiagram
 | `ku-net` | `dht_store.rs` | DHT entry and replica metadata persistence |
 | `ku-net` | `replication.rs` | R=7 tier-aware replication manager |
 | `ku-net` | `constants.rs` | All OBS-related protocol constants |
-| `ku-kql` | `storage.rs` | KuStorage (4 tables: kus, epigenetics, index_trust, index_concept) |
+| `onebrain-legacy-ku-store` | `storage.rs` | KuStorage (4 tables: kus, epigenetics, index_trust, index_concept) |
 | `ku-kql` | `graph_storage.rs` | GraphStorage (6 edge index tables) |
 | `ku-core` | `persistent_concept_dict.rs` | PersistentConceptDict (3 tables) |
 

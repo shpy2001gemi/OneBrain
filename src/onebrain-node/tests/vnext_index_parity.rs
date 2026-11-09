@@ -4,7 +4,7 @@ use ku_core::foundation::{
     ObjectReference, ReservedDomain, ResourceProfile, SchemaVersion, StoredRecordKind,
 };
 use ku_core::{Epigenetics, KuRuntime};
-use ku_kql::storage::{KuStorage, StorageError};
+use onebrain_legacy_ku_store::storage::{KuStorage, StorageError};
 use onebrain_node::{
     AcceptedRecordScan, DerivedIndexError, DerivedIndexOpenState, VNextDerivedIndexManager,
 };

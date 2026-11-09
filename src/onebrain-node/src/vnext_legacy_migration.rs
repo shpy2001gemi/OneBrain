@@ -24,7 +24,7 @@ pub const LEGACY_PROVIDER_HINT_MAX_LOCAL_TICKS: u64 = 3_600;
 /// returned KUs are migration evidence only and never enter a Base authority
 /// or derived-index write path directly.
 pub fn scan_legacy_ku_migration_evidence(path: &Path) -> Result<Vec<ku_core::KuRuntime>, String> {
-    ku_kql::storage::KuStorage::open_migration_evidence(path)
+    onebrain_legacy_ku_store::storage::KuStorage::open_migration_evidence(path)
         .map_err(|error| error.to_string())?
         .scan_migration_evidence()
         .map_err(|error| error.to_string())

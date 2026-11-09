@@ -3659,6 +3659,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-legacy-ku-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ku-core",
+ "redb",
+ "serde_json",
+]
+
+[[package]]
 name = "onebrain-mobile-bridge"
 version = "0.1.0"
 dependencies = [
@@ -3712,6 +3722,7 @@ dependencies = [
  "onebrain-archive",
  "onebrain-base-contract",
  "onebrain-blob-store",
+ "onebrain-legacy-ku-store",
  "onebrain-protocol",
  "onebrain-relay",
  "rand 0.8.6",

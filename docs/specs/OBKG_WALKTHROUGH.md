@@ -29,7 +29,7 @@
 - **decay_rate_to_lambda()** — Converts human-readable rates to exponential λ
 - **suggested_decay_rate()** — Returns recommended decay rate per `RelationType`
 
-#### 4. [`graph_storage.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/graph_storage.rs) — 6 edge index tables
+#### 4. [`graph_storage.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-legacy-ku-store/src/graph_storage.rs) — 6 edge index tables
 - **GraphStorage** — Full CRUD: `insert_bond()`, `remove_bond()`, `update_bond_state()`, `query` methods
 - **6 redb tables**:
   | Table | Key | Purpose |
@@ -47,7 +47,7 @@
 
 ### Modified Files (2)
 
-#### 5. [`storage.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs) — KuStorage integration
+#### 5. [`storage.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-legacy-ku-store/src/storage.rs) — KuStorage integration
 - Added `GraphStorage` field to `KuStorage`
 - Auto-indexes bonds on `put()` operations
 - `graph()` accessor for direct graph queries
@@ -277,7 +277,7 @@ FIND HISTORY (k:KU) WHERE k.trust_score > 5000     -- event log
 |------|-------|
 | [types.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/types.rs) | +`matches_name()`, +`from_name()`, +`Display` impl |
 | [executor.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/executor.rs) | H1 + H2 + M1 + M2 + L4 |
-| [graph_storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/graph_storage.rs) | H3 + M4 |
+| [graph_storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-legacy-ku-store/src/graph_storage.rs) | H3 + M4 |
 | [parser.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/parser.rs) | M3 |
 | [graph_events.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/graph_events.rs) | L1 |
 | [graph_dream.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/graph_dream.rs) | L2 |

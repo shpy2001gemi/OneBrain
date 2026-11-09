@@ -14,7 +14,7 @@
    lane: the primary write fails before that point. The correct next step is
    to connect a canonical service, not remove the legacy fence.
    [node](../../../../src/onebrain-node/src/node.rs) (`new`,
-   `encode_and_store_with_progress`), [storage](../../../../src/ku-kql/src/storage.rs)
+   `encode_and_store_with_progress`), [storage](../../../../src/onebrain-legacy-ku-store/src/storage.rs)
    (`open_base_read_only`, `put`, `ensure_writable`).
 2. **A shared Base facade exists, but generic KU query/mutation adapters are
    missing in the inspected normal hosts.** `compiled_base_runtime_config`

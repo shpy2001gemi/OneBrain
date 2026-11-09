@@ -14,7 +14,6 @@
 
 pub type TimedBond = ([u8; 32], [u8; 32], u32);
 
-#[cfg(feature = "storage")]
 mod impl_ {
     use super::TimedBond;
     use redb::{Database, ReadableTable, TableDefinition};
@@ -1838,5 +1837,4 @@ mod impl_ {
     }
 }
 
-#[cfg(feature = "storage")]
 pub use impl_::*;

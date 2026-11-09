@@ -3,7 +3,7 @@ members = [
     # ── Core Libraries ──
     "ku-core",          # vNext foundation (canonical objects, semantic frames, vault) + legacy Core DNA/OBT
     "ku-net",           # vNext QUIC session/reconciliation (feature-gated) + legacy DHT/SWIM/gossip
-    "ku-kql",           # Legacy text KQL (local read-only surface) + typed vNext KQL library; KU storage
+    "ku-kql",           # Legacy text KQL (local read-only surface) + typed vNext KQL library
     "ku-ai",            # AI backend (Ollama integration)
     "ku-encoder",       # Text → KU encoding pipeline
     "ku-mediator",      # User intent → AI → response pipeline
@@ -23,6 +23,7 @@ members = [
     "onebrain-mobile-bridge", # Narrow C ABI/JNI feasibility bridge for Flutter NativeHost
     "onebrain-archive",   # Shared encrypted Base archive container and verified spool
     "onebrain-blob-store", # Persistent hybrid redb + filesystem Base blob storage (TX-BLOB-001)
+    "onebrain-legacy-ku-store", # Legacy Core DNA KuStorage + OBKG GraphStorage (redb)
     "onebrain-base-contract", # Generated product-neutral Base v1 semantic contract
     "onebrain-base-abi",      # Stable C ABI projection of the Base v1 facade
 

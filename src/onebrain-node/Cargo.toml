@@ -126,6 +126,7 @@ ku-core = { path = "../ku-core", features = ["legacy-read"] }
 ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
 onebrain-blob-store = { path = "../onebrain-blob-store" }
+onebrain-legacy-ku-store = { path = "../onebrain-legacy-ku-store" }
 ku-ai = { path = "../ku-ai", default-features = false }
 ku-encoder = { path = "../ku-encoder", default-features = false }
 regex = "1"

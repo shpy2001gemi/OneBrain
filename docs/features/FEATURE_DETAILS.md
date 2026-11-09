@@ -1083,7 +1083,7 @@ ON CREATE NOTIFY "ws://localhost:8080"
 - [ast.rs](../../src/ku-kql/src/ast.rs) — `Query`, `FindQuery`, `CreateQuery`, `CreateFromTextQuery`, `Condition`, `Pattern`
 - [parser.rs](../../src/ku-kql/src/parser.rs) — nom-based parser
 - [executor.rs](../../src/ku-kql/src/executor.rs) — Local execution
-- [storage.rs](../../src/ku-kql/src/storage.rs) — redb persistence
+- [storage.rs](../../src/onebrain-legacy-ku-store/src/storage.rs) — redb persistence
 
 ---
 

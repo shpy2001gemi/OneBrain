@@ -2,12 +2,14 @@
 name = "ku-kql"
 version = "0.1.0"
 edition = "2021"
-description = "KQL (Knowledge Query Language) parser, executor, and storage for OneBrain Protocol"
+description = "KQL (Knowledge Query Language) parser, executor, and typed vNext query library for OneBrain Protocol"
 license = "MIT"
 
 [features]
 default = []
-# Enable persistent storage (requires complete toolchain for getrandom)
+# Enable redb persistence for the private/standing need stores (requires complete
+# toolchain for getrandom). Legacy KuStorage/GraphStorage moved to the
+# onebrain-legacy-ku-store crate in ARCH-11 slice 4.
 storage = ["dep:redb", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
 # Library-only typed KQL research modules with no production consumer (ARCH-11,

@@ -80,7 +80,7 @@ KQL hoạt động trên **KuRuntime** — cấu trúc composite 3 lớp của k
 | `nom` 7 | Parser combinator |
 | `blake3` 1 | Hash concept names → CCID |
 | `serde` + `serde_json` | Serialization |
-| `redb` 2 *(optional, feature `storage`)* | Persistent ACID storage |
+| `redb` 2 *(optional, feature `storage`)* | Persistent private/standing need stores |
 
 ### 1.5 Module Structure
 
@@ -89,13 +89,14 @@ ku-kql/src/
 ├── lib.rs           // Module declarations
 ├── ast.rs           // Query AST types (§3)
 ├── parser.rs        // nom-based parser
-├── executor.rs      // LocalExecutor (§4) — wired to OneBrainNode
-├── storage.rs       // redb storage: kus, epigenetics, index_trust, index_concept, index_ccid
-└── graph_storage.rs // redb-backed graph edge persistence (6 tables), adjacency queries
+└── executor.rs      // LocalExecutor (§4) — wired to OneBrainNode
 ```
 
 Blob media storage (OB-CID based, `blob_storage.rs`/`blob_layout.rs`) moved to
 the `onebrain-blob-store` crate in ARCH-11 slice 3 (2026-11-09); it has no KQL code.
+Legacy KU storage (`storage.rs`: kus, epigenetics, index_trust, index_concept,
+index_ccid) and its graph edge index (`graph_storage.rs`: 6 tables, adjacency
+queries) moved to the `onebrain-legacy-ku-store` crate in ARCH-11 slice 4.
 
 > [!NOTE]
 > **v7.1 updates**: `index_ccid` table added for O(1) CCID→KU lookup. `FIND HISTORY` wired to `EventAccumulator`. `LocalExecutor` wired to `OneBrainNode::execute_kql()`. 86 tests, all passing.
@@ -1002,7 +1003,7 @@ flowchart TD
 | Read-only gate (`read_only.rs`) | **Default-build** | Cửa duy nhất cho `/api/kql`, CLI `kql`, Web Explorer |
 | AST (`ast.rs`) | Library | 7 query types, 14 create clauses |
 | Executor (`executor.rs`) | Library + default-build (chỉ FIND/EXPLAIN) | In-memory; nạp KU vào executor tạm mỗi lần gọi |
-| Storage (`storage.rs`) | Library, feature `storage` | Node dùng cho lưu trữ legacy/archive; không phải index của KQL |
+| Storage (`storage.rs`) | Đã chuyển sang crate `onebrain-legacy-ku-store` (ARCH-11 slice 4) | Node dùng cho lưu trữ legacy/archive; không phải index của KQL |
 | Tests | `cargo test -p ku-kql --lib` 190/190 (2026-10-19) | Unit + fuzz tất định 5.000 ca |
 
 ### 5.2 Query Support Matrix
@@ -1028,7 +1029,7 @@ flowchart TD
 | Đóng băng (D-051) | Sửa lỗi được, không thêm tính năng; đầu tư mới đi vào KQL vNext |
 | ConceptDict bridge | `text_parser` dùng dict riêng, chưa bridge với v6 ConceptDict |
 | WATCH notification | Bị từ chối ở bề mặt sản phẩm; executor thư viện không push notification |
-| Graph edge persistence | `graph_storage.rs` là library-only, chưa có consumer (D-051: chuyển sau feature `experimental`) |
+| Graph edge persistence | `graph_storage.rs` nằm trong `onebrain-legacy-ku-store` cùng `KuStorage`; node chỉ đọc quan hệ qua `KuStorage::graph()`, KQL không dùng |
 
 ---
 

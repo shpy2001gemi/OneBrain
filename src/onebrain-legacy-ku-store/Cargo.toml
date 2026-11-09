@@ -1,0 +1,15 @@
+[package]
+name = "onebrain-legacy-ku-store"
+version = "0.1.0"
+edition = "2021"
+description = "Legacy Core DNA KU storage (KuStorage) and its OBKG graph edge index (GraphStorage), redb-backed"
+license = "MIT"
+publish = false
+
+[dependencies]
+# Core DNA/KuRuntime, graph and relation types, schema registry (legacy-read)
+# and its redb backend (persist).
+ku-core = { path = "../ku-core", features = ["legacy-read", "persist"] }
+redb = "2"
+serde_json = "1"
+blake3 = "1"

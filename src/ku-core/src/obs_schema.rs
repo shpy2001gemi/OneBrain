@@ -324,7 +324,7 @@ pub mod redb_schema {
 // Standard registries for each storage module
 // ============================================================================
 
-/// Schema registry for KuStorage (ku-kql/storage.rs).
+/// Schema registry for KuStorage (onebrain-legacy-ku-store/storage.rs).
 pub fn ku_storage_registry() -> MigrationRegistry {
     MigrationRegistry::new("ku_storage", 1).with_migration(Migration::new(
         0,
@@ -332,7 +332,7 @@ pub fn ku_storage_registry() -> MigrationRegistry {
     ))
 }
 
-/// Schema registry for GraphStorage (ku-kql/graph_storage.rs).
+/// Schema registry for GraphStorage (onebrain-legacy-ku-store/graph_storage.rs).
 pub fn graph_storage_registry() -> MigrationRegistry {
     MigrationRegistry::new("graph_storage", 1).with_migration(Migration::new(
         0,
