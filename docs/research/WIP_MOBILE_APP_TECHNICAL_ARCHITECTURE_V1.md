@@ -3676,7 +3676,7 @@ separate rollout authority.
 - [Media/blob storage research](./storage/05_media_blob_storage_research.md)
 - [IPFS integration research](./storage/06_ipfs_integration_research.md)
 - [`ku-core` blob types](../../src/ku-core/src/blob_store.rs)
-- [`ku-kql` blob storage](../../src/ku-kql/src/blob_storage.rs)
+- [`onebrain-blob-store` blob storage](../../src/onebrain-blob-store/src/blob_storage.rs)
 - [Validated foundation storage](../../src/ku-core/src/foundation/storage.rs)
 - [Provider leases](../../src/ku-core/src/foundation/provider.rs)
 - [Provider discovery view](../../src/ku-net/src/vnext_provider_view.rs)

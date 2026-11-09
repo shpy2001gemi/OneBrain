@@ -93,6 +93,7 @@ vnext-crash-harness = [
     "ku-core/dr-m5-crash-harness",
     "ku-net/dr-m5-crash-harness",
     "ku-kql/dr-m5-crash-harness",
+    "onebrain-blob-store/dr-m5-crash-harness",
     "dep:sha2",
 ]
 vnext-chaos-harness = [
@@ -105,6 +106,7 @@ vnext-compaction-harness = [
     "ku-core/dr-m5-crash-harness",
     "ku-net/dr-m5-crash-harness",
     "ku-kql/dr-m5-crash-harness",
+    "onebrain-blob-store/dr-m5-crash-harness",
     "dep:sha2",
 ]
 vnext-soak-harness = [
@@ -123,6 +125,7 @@ vnext-sim-harness = ["ku-kql/experimental"]
 ku-core = { path = "../ku-core", features = ["legacy-read"] }
 ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
+onebrain-blob-store = { path = "../onebrain-blob-store" }
 ku-ai = { path = "../ku-ai", default-features = false }
 ku-encoder = { path = "../ku-encoder", default-features = false }
 regex = "1"

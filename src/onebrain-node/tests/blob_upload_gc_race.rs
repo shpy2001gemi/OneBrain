@@ -8,7 +8,7 @@ use ku_core::foundation::{
     KnowledgeObjectEnvelope, ObjectKind, ObjectReference, OwnedBlobReferenceV1, OwnedBlobRole,
     ReservedDomain, ResourceProfile, SchemaVersion,
 };
-use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig, BlobStorageError};
+use onebrain_blob_store::blob_storage::{BlobStorage, BlobStorageConfig, BlobStorageError};
 use onebrain_node::archive::{OwnedBlobArchiveBackend, SnapshotVerifiedBackend};
 use onebrain_node::{
     BaseStorageOwnerId, BlobAuthority, BlobAuthorityError, DatasetGenerationId,

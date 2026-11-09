@@ -1,11 +1,9 @@
-#![cfg(feature = "storage")]
-
 use std::sync::Arc;
 
 use ku_core::blob_store::{BlobCid, BlobType, BLOB_CHUNK_SIZE};
 use ku_core::foundation::ObjectReference;
-use ku_kql::blob_layout::blob_relative_dir;
-use ku_kql::blob_storage::{
+use onebrain_blob_store::blob_layout::blob_relative_dir;
+use onebrain_blob_store::blob_storage::{
     BlobReferenceOracle, BlobStorage, BlobStorageConfig, BlobStorageError, BLOB_META_VERSION,
 };
 use redb::{Database, TableDefinition};

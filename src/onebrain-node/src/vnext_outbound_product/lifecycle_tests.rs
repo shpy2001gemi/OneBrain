@@ -261,7 +261,7 @@ async fn preflight_rejects_missing_grant_and_feature_before_files() {
         fn owner_path(
             &self,
             _: BaseStorageOwnerId,
-        ) -> Result<PathBuf, ku_kql::blob_storage::BlobStorageError> {
+        ) -> Result<PathBuf, onebrain_blob_store::blob_storage::BlobStorageError> {
             panic!("invalid request must be rejected before resolving/creating owner paths")
         }
     }

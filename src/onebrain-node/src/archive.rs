@@ -25,7 +25,7 @@ use ku_core::foundation::{
     StoredRecordKind, ValidatedMigrationRestorePort, ValidatedVaultRestorePort,
     VaultQuarantineRecord,
 };
-use ku_kql::blob_storage::{BlobReferenceOracle as _, BlobStorage};
+use onebrain_blob_store::blob_storage::{BlobReferenceOracle as _, BlobStorage};
 
 use crate::activation_journal::ActivationOperationContext;
 use crate::archive_capabilities::{

@@ -447,13 +447,13 @@ jobs:
       - name: Check foundation crates
         run: >-
           cargo check --locked
-          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-protocol -p ku-net -p onebrain-node
+          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-blob-store -p onebrain-protocol -p ku-net -p onebrain-node
           -p onebrain-api -p onebrain-cli
 
       - name: Lint foundation crates
         run: >-
           cargo clippy --locked
-          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-protocol -p onebrain-node
+          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-blob-store -p onebrain-protocol -p onebrain-node
           --lib --tests --examples
           -- --cap-lints warn
 

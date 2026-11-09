@@ -12,7 +12,7 @@ use ku_core::foundation::{
     CanonicalValue, EventCid, KnownObjectKind, ObjectKind, ObjectReference, ObjectSemantics,
     OwnedBlobReferenceV1, ReservedDomain, ResourceProfile,
 };
-use ku_kql::blob_storage::{BlobReferenceOracle, BlobStorageError};
+use onebrain_blob_store::blob_storage::{BlobReferenceOracle, BlobStorageError};
 use serde::{Deserialize, Serialize};
 
 use crate::archive::{PortableArchiveRow, PortableArchiveRows};

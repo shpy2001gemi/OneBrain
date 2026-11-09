@@ -91,9 +91,11 @@ ku-kql/src/
 ├── parser.rs        // nom-based parser
 ├── executor.rs      // LocalExecutor (§4) — wired to OneBrainNode
 ├── storage.rs       // redb storage: kus, epigenetics, index_trust, index_concept, index_ccid
-├── graph_storage.rs // redb-backed graph edge persistence (6 tables), adjacency queries
-└── blob_storage.rs  // Blob media storage (OB-CID based)
+└── graph_storage.rs // redb-backed graph edge persistence (6 tables), adjacency queries
 ```
+
+Blob media storage (OB-CID based, `blob_storage.rs`/`blob_layout.rs`) moved to
+the `onebrain-blob-store` crate in ARCH-11 slice 3 (2026-11-09); it has no KQL code.
 
 > [!NOTE]
 > **v7.1 updates**: `index_ccid` table added for O(1) CCID→KU lookup. `FIND HISTORY` wired to `EventAccumulator`. `LocalExecutor` wired to `OneBrainNode::execute_kql()`. 86 tests, all passing.

@@ -1,12 +1,12 @@
-#![cfg(feature = "storage")]
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use ku_core::blob_store::{BlobCid, BlobMeta, BlobType};
-use ku_kql::blob_layout::{blob_relative_dir, migrate_blob_layout_v2, BLOB_LAYOUT_VERSION};
-use ku_kql::blob_storage::{BlobStorage, BlobStorageError};
+use onebrain_blob_store::blob_layout::{
+    blob_relative_dir, migrate_blob_layout_v2, BLOB_LAYOUT_VERSION,
+};
+use onebrain_blob_store::blob_storage::{BlobStorage, BlobStorageError};
 
 #[test]
 fn full_cid_paths_separate_legacy_prefix_collisions() {
@@ -253,7 +253,9 @@ fn read_chunks(dir: &Path, chunk_count: u32) -> Vec<u8> {
     data
 }
 
-fn blocked_report(error: BlobStorageError) -> ku_kql::blob_layout::BlobLayoutMigrationReport {
+fn blocked_report(
+    error: BlobStorageError,
+) -> onebrain_blob_store::blob_layout::BlobLayoutMigrationReport {
     match error {
         BlobStorageError::MigrationBlocked(report) => report,
         other => panic!("expected MigrationBlocked, got {other}"),

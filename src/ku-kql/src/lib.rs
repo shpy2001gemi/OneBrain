@@ -7,7 +7,8 @@
 //! - **parser**: nom-based KQL parser
 //! - **read_only**: local read-only gate for user-facing textual KQL (ARCH-04)
 //! - **executor**: Local query execution engine (operates on KuRuntime)
-//! - **storage**: redb-backed persistent KU storage
+//! - **storage**: redb-backed persistent KU storage (blob storage moved to the
+//!   `onebrain-blob-store` crate in ARCH-11 slice 3)
 //! - **experimental** feature: library-only typed KQL modules with no production
 //!   consumer (OBKG projection, assembly search, relational alignment, structural
 //!   signatures; ARCH-11 slice 1) and the private multipath island used only by
@@ -15,10 +16,6 @@
 //!   packet, disclosure capsule; slice 2). Not in the default build.
 
 pub mod ast;
-#[cfg(feature = "storage")]
-pub mod blob_layout;
-#[cfg(feature = "storage")]
-pub mod blob_storage;
 pub mod executor;
 #[cfg(feature = "storage")]
 pub mod graph_storage;

@@ -8,7 +8,7 @@ license = "MIT"
 [features]
 default = []
 # Enable persistent storage (requires complete toolchain for getrandom)
-storage = ["dep:redb", "dep:fs2", "ku-core/persist"]
+storage = ["dep:redb", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
 # Library-only typed KQL research modules with no production consumer (ARCH-11,
 # D-051): OBKG projection, assembly search, relational alignment and structural
@@ -27,7 +27,6 @@ nom = "7"
 
 # Storage (pure Rust, ACID) — behind 'storage' feature
 redb = { version = "2", optional = true }
-fs2 = { version = "0.4", optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

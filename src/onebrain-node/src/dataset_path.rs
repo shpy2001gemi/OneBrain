@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use ku_kql::blob_storage::BlobStorageError;
+use onebrain_blob_store::blob_storage::BlobStorageError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -1,0 +1,26 @@
+[package]
+name = "onebrain-blob-store"
+version = "0.1.0"
+edition = "2021"
+description = "Persistent hybrid redb + filesystem blob storage for the OneBrain Base runtime (TX-BLOB-001)"
+license = "MIT"
+publish = false
+
+[features]
+default = []
+# Authenticated DR-M5 failpoints at the TX-BLOB-001 phases (crash/compaction
+# harnesses only; forwarded to ku-core).
+dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
+
+[dependencies]
+# Blob CID/metadata types, schema registry (legacy-read) and its redb backend
+# (persist), DR-M5 failpoints and canonical object references.
+ku-core = { path = "../ku-core", features = ["legacy-read", "persist"] }
+redb = "2"
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = "1"
+
+[dev-dependencies]
+tempfile = "3"

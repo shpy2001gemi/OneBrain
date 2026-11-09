@@ -1,12 +1,10 @@
-#![cfg(feature = "storage")]
-
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use ku_core::blob_store::{BlobCid, BlobType, BLOB_MAX_PER_KU};
 use ku_core::foundation::ObjectReference;
-use ku_kql::blob_layout::blob_relative_dir;
-use ku_kql::blob_storage::{
+use onebrain_blob_store::blob_layout::blob_relative_dir;
+use onebrain_blob_store::blob_storage::{
     BlobReadError, BlobReferenceOracle, BlobStorage, BlobStorageConfig, BlobStorageError,
 };
 use redb::{Database, ReadableTable, TableDefinition};

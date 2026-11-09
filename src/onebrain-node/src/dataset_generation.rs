@@ -9,7 +9,7 @@ use ku_core::foundation::{
     AcceptedRecordEntry, FeedEventSigner, LocalSourceTextRecordV1, ObjectCid, ReservedDomain,
     SourceTextError, StoredRecordKind, VaultSourceSnapshotRecord,
 };
-use ku_kql::blob_storage::BlobStorageError;
+use onebrain_blob_store::blob_storage::BlobStorageError;
 use onebrain_archive::{
     materialize_verified_dataset, ArchiveEntryId, ArchiveEntryKind, ArchiveEntryV1, ArchiveError,
     ArchiveRestorePolicyV1, DatasetManifestV1, SignerRecoveryDisposition, VerifiedDatasetArchiveV2,

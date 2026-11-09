@@ -56,7 +56,7 @@ use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
 #[cfg(feature = "legacy")]
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
-use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig};
+use onebrain_blob_store::blob_storage::{BlobStorage, BlobStorageConfig};
 use ku_kql::storage::KuStorage;
 use ku_mediator::input::UserInput;
 use ku_mediator::mediator::{Mediator, MediatorConfig};

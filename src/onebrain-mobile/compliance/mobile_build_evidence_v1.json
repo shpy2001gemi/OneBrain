@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "6e2627f4360d0d6a05f939c619ace7a52f035173f5967c486c69fb2e3390b5af",
+  "authority_set_sha256": "a5031fa3ab26c420fda88f96ecf6a9d5bdfbed19cef3510f5e1b4085a01cc0f2",
   "phase": "feature",
   "work_package": "MOB-03",
   "acknowledged_required_read_set": [
