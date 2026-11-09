@@ -30,6 +30,10 @@ const MAX_PAGE_LIMIT: usize = 500;
 const DEFAULT_PAGE_LIMIT: usize = 100;
 const MAX_PREPARED_API_CAPABILITIES: usize = 4_096;
 const NEED_PREPARE_TTL_SECONDS: u64 = 15 * 60;
+/// ARCH-11 (D-051): `/api/vnext/kql/needs/prepare` derives its private bundle from
+/// a hash of the request, not from a compiled FIND->NeedIR mapping.
+#[cfg(feature = "vnext-network-runtime")]
+const HASH_DERIVED_NEED_LIMITATION: &str = "semantic_mapping_is_hash_derived_not_compiled";
 const CONTINUATION_PREFIX: &str = "obc1.";
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -1086,6 +1090,10 @@ fn build_private_need(
     request.budget.validate()?;
     validate_idempotency_key(&request.idempotency_key)?;
 
+    // ARCH-11 (D-051): there is no bounded FIND->NeedIR compiler yet. The query
+    // is only syntax-checked by `adapt_local_intent`; role, types, selector and
+    // policies below are derived from the request fingerprint and the goal frames
+    // stay empty, so the response carries `HASH_DERIVED_NEED_LIMITATION`.
     let fingerprint = need_prepare_fingerprint(request);
     let selector = onebrain_node::foundation::SelectorCid::from_bytes(digest32(
         b"onebrain:vnext:rest-private-need-selector:1\0",
@@ -1188,6 +1196,7 @@ fn build_private_need(
             "raw_query_remains_local_and_is_not_retained".into(),
             "prepared_intent_is_not_an_active_need".into(),
             "one_hop_results_are_path_limited_and_never_network_global".into(),
+            HASH_DERIVED_NEED_LIMITATION.into(),
         ],
     };
     Ok((intent_cid, prepared, bundle))
@@ -2683,6 +2692,11 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(first["profile"], VNEXT_PRODUCT_PROFILE);
         assert_eq!(first["data"]["intent_cid"].as_str().unwrap().len(), 64);
+        assert!(first["data"]["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == HASH_DERIVED_NEED_LIMITATION));
         assert!(!first.to_string().contains("UniquePrivateMarker"));
 
         let (status, replay) = call(

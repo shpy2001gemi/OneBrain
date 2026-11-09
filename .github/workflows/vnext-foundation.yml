@@ -457,6 +457,9 @@ jobs:
           --lib --tests --examples
           -- --cap-lints warn
 
+      - name: Lint experimental KQL modules (ARCH-11)
+        run: cargo clippy --locked -p ku-kql --features experimental --lib --tests -- --cap-lints warn
+
       - name: Lint vNext network library
         run: cargo clippy --locked -p ku-net --lib -- --cap-lints warn
 
@@ -563,13 +566,13 @@ jobs:
         run: cargo test --locked -p ku-kql --features storage vnext_private_need
 
       - name: Test deterministic vocabulary-neutral structural signatures
-        run: cargo test --locked -p ku-kql vnext_structural_signature
+        run: cargo test --locked -p ku-kql --features experimental vnext_structural_signature
 
       - name: Test bounded explainable typed relational alignment
-        run: cargo test --locked -p ku-kql vnext_relational_alignment
+        run: cargo test --locked -p ku-kql --features experimental vnext_relational_alignment
 
       - name: Test bounded Pareto Assembly search
-        run: cargo test --locked -p ku-kql vnext_assembly_search
+        run: cargo test --locked -p ku-kql --features experimental vnext_assembly_search
 
       - name: Test private debt-backed exploration scheduler
         run: cargo test --locked -p ku-kql vnext_exploration
@@ -581,7 +584,7 @@ jobs:
         run: cargo test --locked -p ku-kql vnext_multipath
 
       - name: Test disposable version-bound OBKG projections
-        run: cargo test --locked -p ku-kql vnext_obkg_projection
+        run: cargo test --locked -p ku-kql --features experimental vnext_obkg_projection
 
       - name: Test frontier-delta reunion joins
         run: cargo test --locked -p ku-kql vnext_reunion

@@ -8,6 +8,9 @@
 //! - **read_only**: local read-only gate for user-facing textual KQL (ARCH-04)
 //! - **executor**: Local query execution engine (operates on KuRuntime)
 //! - **storage**: redb-backed persistent KU storage
+//! - **experimental** feature: library-only typed KQL modules with no production
+//!   consumer (OBKG projection, assembly search, relational alignment, structural
+//!   signatures; ARCH-11). Not in the default build.
 
 pub mod ast;
 #[cfg(feature = "storage")]
@@ -21,23 +24,27 @@ pub mod parser;
 pub mod read_only;
 #[cfg(feature = "storage")]
 pub mod storage;
+#[cfg(feature = "experimental")]
 pub mod vnext_assembly_search;
 pub mod vnext_disclosure;
 pub mod vnext_disclosure_capsule;
 pub mod vnext_exploration;
 pub mod vnext_matcher;
 pub mod vnext_multipath;
+#[cfg(feature = "experimental")]
 pub mod vnext_obkg_projection;
 pub mod vnext_planner;
 pub mod vnext_private_need;
 pub mod vnext_proposal;
 pub mod vnext_query;
 pub mod vnext_query_view;
+#[cfg(feature = "experimental")]
 pub mod vnext_relational_alignment;
 pub mod vnext_reunion;
 pub mod vnext_route_packet;
 pub mod vnext_semantic_index;
 pub mod vnext_standing_need;
+#[cfg(feature = "experimental")]
 pub mod vnext_structural_signature;
 
 // Re-export graph types for convenience
