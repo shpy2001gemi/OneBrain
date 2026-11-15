@@ -100,6 +100,41 @@ class VNextDrM5CrashHarnessTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "CI acceptance gate"):
                 validate_vnext_dr_m5_crash_harness(frozen_profile())
 
+    def assert_workflow_mutation_rejected(self, mutate) -> None:
+        real_read = validate_vnext_dr_m5.read
+
+        def read_mutated(path):
+            text = real_read(path)
+            if path == validate_vnext_dr_m5.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = mutate(text)
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_dr_m5, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, "CI acceptance gate"):
+                validate_vnext_dr_m5_crash_harness(frozen_profile())
+
+    def test_owner_hook_trace_tests_must_run_in_ci_for_every_owner_crate(self) -> None:
+        for crate in ("ku-core", "ku-net", "ku-kql", "onebrain-node"):
+            with self.subTest(crate=crate):
+                command = validate_vnext_dr_m5.dr_m5_owner_hook_test_command(crate)
+                self.assert_workflow_mutation_rejected(lambda text: command.sub("", text))
+
+    def test_harness_rust_tests_must_run_in_ci(self) -> None:
+        self.assert_workflow_mutation_rejected(
+            lambda text: text.replace("--lib vnext_crash_harness::tests", "")
+        )
+
+    def test_owner_hook_crate_without_trace_command_is_rejected(self) -> None:
+        features = dict(validate_vnext_dr_m5.DR_M5_OWNER_HOOK_TEST_FEATURES)
+        del features["ku-kql"]
+        with mock.patch.object(
+            validate_vnext_dr_m5, "DR_M5_OWNER_HOOK_TEST_FEATURES", features
+        ):
+            with self.assertRaisesRegex(ContractError, "hook-trace test command"):
+                validate_vnext_dr_m5_crash_harness(frozen_profile())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1344,4 +1344,28 @@ mod tests {
         assert_eq!(retired.lifecycle, PrivateNeedLifecycle::Retired);
         assert!(retired.bundle.is_none());
     }
+
+    /// DR-M5 owner hook: the real encrypted Redb vault write traverses all
+    /// five TX-KQL-000 failpoint phases in order.
+    #[cfg(feature = "dr-m5-crash-harness")]
+    #[test]
+    fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_vault_put() {
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let directory = tempfile::tempdir().unwrap();
+        let vault = RedbPrivateNeedVault::open(
+            &directory.path().join("needs.redb"),
+            LocalNeedVaultKey::from_bytes([0xA5; 32]),
+        )
+        .unwrap();
+        let original = bundle(RAW_KQL);
+        let id = original.validate().unwrap();
+        let (outcome, hits) = record_hits(|| vault.put(original));
+        assert_eq!(outcome.unwrap(), (id, StandingNeedWriteOutcome::Stored));
+        assert_eq!(
+            completed_boundaries(&hits),
+            std::collections::BTreeSet::from(["TX-KQL-000"]),
+            "{hits:?}"
+        );
+    }
 }

@@ -610,7 +610,7 @@
         },
         {
           "path": "src/onebrain-node/src/vnext_crash_harness.rs",
-          "needle": "Database::open(path)"
+          "needle": "restart_open_never_creates_a_missing_store"
         },
         {
           "path": "src/onebrain-node/src/vnext_crash_harness.rs",

@@ -970,4 +970,31 @@ mod tests {
             1
         );
     }
+
+    /// DR-M5 owner hook: the real Redb insert traverses all five TX-INV-001
+    /// failpoint phases in order, both when adding and on exact replay.
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    #[test]
+    fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_insert() {
+        use std::collections::BTreeSet;
+
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let directory = tempfile::tempdir().unwrap();
+        let backend =
+            RedbInventoryForestBackend::open(&directory.path().join("inventory.redb")).unwrap();
+        let record = leaf(InventoryRecordKind::Object, 0x11);
+        for expected in [
+            InventoryInsertOutcome::Added,
+            InventoryInsertOutcome::ExactReplay,
+        ] {
+            let (outcome, hits) = record_hits(|| backend.insert_record(selector(1), record));
+            assert_eq!(outcome.unwrap(), expected);
+            assert_eq!(
+                completed_boundaries(&hits),
+                BTreeSet::from(["TX-INV-001"]),
+                "{hits:?}"
+            );
+        }
+    }
 }

@@ -1270,4 +1270,26 @@ mod tests {
             .join("vnext_private_need_vault.redb")
             .exists());
     }
+
+    /// DR-M5 owner hook: the real Redb match-index cursor write traverses all
+    /// five TX-KQL-001 failpoint phases in order. The match-row write in
+    /// `record` shares the boundary; it needs a derived `ProposalId` and is
+    /// exercised end to end by the two-peer test above, not traced here.
+    #[cfg(feature = "vnext-crash-harness")]
+    #[test]
+    fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_match_cursor() {
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let directory = tempfile::tempdir().unwrap();
+        let index = DurableMatchIndex::open(&directory.path().join("matches.redb")).unwrap();
+        let selector = SelectorCid::from_bytes([0x81; 32]);
+        let (stored, hits) = record_hits(|| index.set_cursor(selector, 7));
+        stored.unwrap();
+        assert_eq!(
+            completed_boundaries(&hits),
+            std::collections::BTreeSet::from(["TX-KQL-001"]),
+            "{hits:?}"
+        );
+        assert_eq!(index.cursor(selector).unwrap(), 7);
+    }
 }

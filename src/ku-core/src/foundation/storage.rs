@@ -1416,6 +1416,80 @@ mod persistent {
             drop(reopened);
             std::fs::remove_file(path).unwrap();
         }
+
+        /// DR-M5 owner hooks: every accept path of the real Redb backend
+        /// traverses all five failpoint phases of its boundary in order.
+        #[cfg(feature = "dr-m5-crash-harness")]
+        #[test]
+        fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_accept_paths() {
+            use std::collections::BTreeSet;
+
+            use crate::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+            let path = test_path("dr-m5-owner-hooks");
+            let backend = RedbVerifiedBackend::open(&path).unwrap();
+            let collision =
+                |kind, cid| QuarantineRecord::new(kind, cid, "SAME_CID_DIFFERENT_BYTES", &[0xa1]);
+            let accept_object = |kind, cid| {
+                let key = AcceptedKey::new(kind, cid).0;
+                backend
+                    .accept_or_quarantine_collision(&key, &[0xa0], &collision(kind, cid))
+                    .unwrap()
+            };
+            type Accept<'a> = Box<dyn Fn() -> BackendAcceptOutcome + 'a>;
+            let cases: [(&str, Accept<'_>); 4] = [
+                (
+                    "TX-VAL-001",
+                    Box::new(|| accept_object(StoredRecordKind::Object, [1; 32])),
+                ),
+                (
+                    "TX-VAL-001",
+                    Box::new(|| {
+                        let kind = StoredRecordKind::FeedInception;
+                        let key = AcceptedKey::new(kind, [2; 32]).0;
+                        backend
+                            .accept_feed_inception(
+                                &key,
+                                &[3; 32],
+                                &[0xa0],
+                                &collision(kind, [2; 32]),
+                            )
+                            .unwrap()
+                    }),
+                ),
+                (
+                    "TX-AUTH-001",
+                    Box::new(|| accept_object(StoredRecordKind::AuthorityEvent, [4; 32])),
+                ),
+                (
+                    "TX-AUTH-001",
+                    Box::new(|| {
+                        let kind = StoredRecordKind::AuthorityEvent;
+                        let key = AcceptedKey::new(kind, [5; 32]).0;
+                        backend
+                            .accept_authority_event(
+                                &key,
+                                &[6; 32],
+                                &[0xa0],
+                                &collision(kind, [5; 32]),
+                            )
+                            .unwrap()
+                    }),
+                ),
+            ];
+            for (boundary, accept) in &cases {
+                let (outcome, hits) = record_hits(accept);
+                assert_eq!(outcome, BackendAcceptOutcome::Stored, "{boundary}");
+                assert_eq!(
+                    completed_boundaries(&hits),
+                    BTreeSet::from([*boundary]),
+                    "{boundary}: {hits:?}"
+                );
+            }
+            drop(cases);
+            drop(backend);
+            std::fs::remove_file(path).unwrap();
+        }
     }
 }
 

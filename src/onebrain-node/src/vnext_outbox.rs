@@ -2295,4 +2295,45 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
     }
+
+    /// DR-M5 owner hooks: the real Redb outbox enqueue/attempt/retry writes
+    /// traverse all five TX-OUT-001 phases and the receipt write all five
+    /// TX-OUT-002 phases, each in order.
+    #[cfg(feature = "vnext-crash-harness")]
+    #[test]
+    fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_outbox_writes() {
+        use std::collections::BTreeSet;
+
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let directory = tempfile::tempdir().unwrap();
+        let outbox = OutboundOutbox::open(&directory.path().join("outbox.redb")).unwrap();
+        let acknowledged = intent_with(1, "127.0.0.1:5001".parse().unwrap());
+        let exhausted = intent_with(2, "127.0.0.1:5002".parse().unwrap());
+        let only = |boundary: &'static str, hits: &[(&'static str, &'static str)]| {
+            assert_eq!(
+                completed_boundaries(hits),
+                BTreeSet::from([boundary]),
+                "{boundary}: {hits:?}"
+            );
+        };
+
+        for intent in [&acknowledged, &exhausted] {
+            let (outcome, hits) = record_hits(|| outbox.enqueue(intent));
+            assert_eq!(outcome.unwrap(), OutboxEnqueueOutcome::Added);
+            only("TX-OUT-001", &hits);
+        }
+        let (attempts, hits) = record_hits(|| outbox.record_transport_attempt(&exhausted.id));
+        assert_eq!(attempts.unwrap(), 1);
+        only("TX-OUT-001", &hits);
+        let (state, hits) = record_hits(|| outbox.mark_retry_exhausted(&exhausted.id, 1));
+        assert_eq!(state.unwrap(), OutboundIntentState::RetryExhausted);
+        only("TX-OUT-001", &hits);
+
+        let (state, hits) = record_hits(|| {
+            outbox.apply_receipt(&acknowledged.id, ReconcileReceiptStatus::ValidatedStored, 3)
+        });
+        assert_eq!(state.unwrap(), OutboundIntentState::Acknowledged);
+        only("TX-OUT-002", &hits);
+    }
 }

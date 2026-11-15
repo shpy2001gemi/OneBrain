@@ -823,6 +823,19 @@ jobs:
           && cargo test --locked -p ku-core
           --features dr-m5-crash-harness
           --lib foundation::dr_m5_failpoint
+          && cargo test --locked -p ku-core
+          --features dr-m5-crash-harness,persist
+          --lib dr_m5_owner_hooks
+          && cargo test --locked -p ku-net
+          --features dr-m5-crash-harness,persist
+          --lib dr_m5_owner_hooks
+          && cargo test --locked -p ku-kql
+          --features dr-m5-crash-harness,storage
+          --lib dr_m5_owner_hooks
+          && cargo test --locked -p onebrain-node
+          --features vnext-crash-harness
+          --lib dr_m5_owner_hooks
+          -- --test-threads=1
       - name: M5.4 real-QUIC chaos and adversarial flood
         run: >-
           cargo test --locked -p ku-net

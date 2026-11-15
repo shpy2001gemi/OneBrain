@@ -55,6 +55,27 @@ DR_M5_FAILPOINT_TEST_COMMAND = re.compile(
     r"cargo test --locked -p ku-core\s+--features dr-m5-crash-harness"
     r"\s+--lib foundation::dr_m5_failpoint\b"
 )
+DR_M5_HARNESS_TEST_COMMAND = re.compile(
+    r"cargo test --locked -p onebrain-node\s+--features vnext-crash-harness"
+    r"\s+--lib vnext_crash_harness::tests\b"
+)
+# Feature set that compiles each owner crate's real Redb backend with the
+# failpoint trace, for its `dr_m5_owner_hooks` tests.
+DR_M5_OWNER_HOOK_TEST_FEATURES = {
+    "ku-core": "dr-m5-crash-harness,persist",
+    "ku-net": "dr-m5-crash-harness,persist",
+    "ku-kql": "dr-m5-crash-harness,storage",
+    "onebrain-node": "vnext-crash-harness",
+}
+
+
+def dr_m5_owner_hook_test_command(crate: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"cargo test --locked -p {re.escape(crate)}\s+--features "
+        rf"{re.escape(DR_M5_OWNER_HOOK_TEST_FEATURES[crate])}\s+--lib dr_m5_owner_hooks\b"
+    )
+
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -795,26 +816,12 @@ def validate_vnext_dr_m5_crash_harness(
         observed_hooks[boundary] = path
     if observed_hooks != expected_hook_paths:
         raise ContractError("M5-03 owner-hook path binding drift")
-    for boundary, relative in observed_hooks.items():
-        source = read(ROOT / relative)
-        if boundary not in source:
-            raise ContractError(f"M5-03 owner hook missing: {relative}: {boundary}")
-        for phase in expected_phases:
-            if phase not in source:
-                raise ContractError(f"M5-03 phase hook missing: {relative}: {phase}")
-
-    harness_source = read(ROOT / "src/onebrain-node/src/vnext_crash_harness.rs")
-    for needle in (
-        "child.kill()",
-        "Database::open(path)",
-        "child_process_kill_matrix_recovers_exactly_once_with_stable_oracle",
-        "disk_full_and_read_only_faults_are_explicit_and_non_mutating",
-        "corrupt_and_truncated_store_fail_explicitly_without_recreation",
-        "DR_M5_CRASH_REPORT_SHA256",
-        "claims_network_completion: false",
-    ):
-        if needle not in harness_source:
-            raise ContractError(f"M5-03 harness implementation evidence missing: {needle}")
+    # Hook placement is proven by Rust tests that trace each owner's real Redb
+    # write path (dr_m5_failpoint::trace); harness behavior and its binding to
+    # this profile by vnext_crash_harness::tests. Both must run in CI below.
+    owner_crates = sorted({relative.split("/")[1] for relative in observed_hooks.values()})
+    if not set(owner_crates) <= DR_M5_OWNER_HOOK_TEST_FEATURES.keys():
+        raise ContractError("M5-03 owner-hook crate has no hook-trace test command")
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
@@ -837,8 +844,12 @@ def validate_vnext_dr_m5_crash_harness(
         "- name: M5.3 real Redb process-kill crash matrix" not in workflow
         or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness"
         not in workflow
-        or "--features vnext-crash-harness" not in workflow
+        or not DR_M5_HARNESS_TEST_COMMAND.search(workflow)
         or not DR_M5_FAILPOINT_TEST_COMMAND.search(workflow)
+        or any(
+            not dr_m5_owner_hook_test_command(crate).search(workflow)
+            for crate in owner_crates
+        )
     ):
         raise ContractError("M5-03 CI acceptance gate missing")
 

@@ -22,11 +22,161 @@ pub const TOKEN_ENV: &str = "ONEBRAIN_DR_M5_TOKEN";
 #[inline]
 pub fn hit(boundary: &'static str, phase: &'static str) {
     #[cfg(feature = "dr-m5-crash-harness")]
-    armed::hit(boundary, phase);
+    {
+        trace::push(boundary, phase);
+        armed::hit(boundary, phase);
+    }
 
     #[cfg(not(feature = "dr-m5-crash-harness"))]
     {
         let _ = (boundary, phase);
+    }
+}
+
+/// Harness-only record of hook hits on the current thread.
+///
+/// Owner-module tests run a real storage operation inside [`trace::record_hits`]
+/// and use [`trace::completed_boundaries`] to prove that every phase hook of a
+/// boundary is on the executed path in the frozen order. This replaces source
+/// substring checks for hook placement. Recording never arms a failpoint.
+#[cfg(feature = "dr-m5-crash-harness")]
+pub mod trace {
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::FAILPOINT_PHASES;
+
+    /// One observed `(boundary, phase)` hook hit.
+    pub type Hit = (&'static str, &'static str);
+
+    thread_local! {
+        static ACTIVE: RefCell<Option<Vec<Hit>>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn push(boundary: &'static str, phase: &'static str) {
+        ACTIVE.with(|active| {
+            if let Some(hits) = active.borrow_mut().as_mut() {
+                hits.push((boundary, phase));
+            }
+        });
+    }
+
+    /// Runs `operation` and returns the hook hits it made on this thread.
+    /// Hits made by other threads, or by a nested `record_hits`, are not
+    /// included; the previous recording state is restored even on panic.
+    pub fn record_hits<R>(operation: impl FnOnce() -> R) -> (R, Vec<Hit>) {
+        struct Restore(Option<Option<Vec<Hit>>>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                if let Some(previous) = self.0.take() {
+                    ACTIVE.with(|active| *active.borrow_mut() = previous);
+                }
+            }
+        }
+
+        let previous = ACTIVE.with(|active| active.borrow_mut().replace(Vec::new()));
+        let restore = Restore(Some(previous));
+        let result = operation();
+        let hits = ACTIVE.with(|active| active.borrow_mut().take().unwrap_or_default());
+        drop(restore);
+        (result, hits)
+    }
+
+    /// Boundaries whose own hits contain all [`FAILPOINT_PHASES`] as one
+    /// uninterrupted run in the frozen order. A phase may repeat immediately
+    /// (a per-item hook inside a loop); a skipped, earlier or later phase
+    /// restarts that boundary's run.
+    pub fn completed_boundaries(hits: &[Hit]) -> BTreeSet<&'static str> {
+        let mut progress: BTreeMap<&'static str, usize> = BTreeMap::new();
+        let mut complete = BTreeSet::new();
+        for &(boundary, phase) in hits {
+            let matched = progress.entry(boundary).or_insert(0);
+            if *matched > 0 && phase == FAILPOINT_PHASES[*matched - 1] {
+                continue;
+            }
+            if phase == FAILPOINT_PHASES[*matched] {
+                *matched += 1;
+                if *matched == FAILPOINT_PHASES.len() {
+                    complete.insert(boundary);
+                    *matched = 0;
+                }
+            } else {
+                *matched = usize::from(phase == FAILPOINT_PHASES[0]);
+            }
+        }
+        complete
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::super::hit;
+        use super::*;
+
+        #[test]
+        fn records_only_hits_inside_the_operation_on_this_thread() {
+            hit("TX-VAL-001", FAILPOINT_PHASES[0]);
+            let ((), hits) = record_hits(|| {
+                for phase in FAILPOINT_PHASES {
+                    hit("TX-VAL-001", phase);
+                }
+                std::thread::spawn(|| hit("TX-AUTH-001", FAILPOINT_PHASES[0]))
+                    .join()
+                    .unwrap();
+            });
+            let expected: Vec<Hit> = FAILPOINT_PHASES
+                .iter()
+                .map(|phase| ("TX-VAL-001", *phase))
+                .collect();
+            assert_eq!(hits, expected);
+            let ((), after) = record_hits(|| ());
+            assert!(after.is_empty());
+        }
+
+        #[test]
+        fn recording_state_is_restored_after_a_panicking_operation() {
+            let panicked = std::panic::catch_unwind(|| {
+                record_hits(|| {
+                    hit("TX-VAL-001", FAILPOINT_PHASES[0]);
+                    panic!("operation failed");
+                })
+            });
+            assert!(panicked.is_err());
+            ACTIVE.with(|active| assert!(active.borrow().is_none()));
+        }
+
+        #[test]
+        fn only_an_uninterrupted_ordered_run_completes_a_boundary() {
+            let ordered: Vec<Hit> = FAILPOINT_PHASES.iter().map(|p| ("A", *p)).collect();
+            assert_eq!(completed_boundaries(&ordered), BTreeSet::from(["A"]));
+
+            let mut interleaved = Vec::new();
+            for phase in FAILPOINT_PHASES {
+                interleaved.push(("A", phase));
+                interleaved.push(("B", FAILPOINT_PHASES[0]));
+            }
+            assert_eq!(completed_boundaries(&interleaved), BTreeSet::from(["A"]));
+
+            let mut skipped = ordered.clone();
+            skipped.remove(2);
+            assert!(completed_boundaries(&skipped).is_empty());
+
+            let mut swapped = ordered.clone();
+            swapped.swap(1, 2);
+            assert!(completed_boundaries(&swapped).is_empty());
+
+            let mut repeated = ordered.clone();
+            repeated.insert(3, ordered[2]);
+            repeated.insert(3, ordered[2]);
+            assert_eq!(completed_boundaries(&repeated), BTreeSet::from(["A"]));
+
+            let mut backwards = ordered.clone();
+            backwards.insert(3, ordered[1]);
+            assert!(completed_boundaries(&backwards).is_empty());
+
+            let mut restarted = vec![("A", FAILPOINT_PHASES[0]), ("A", FAILPOINT_PHASES[1])];
+            restarted.extend(ordered.iter().copied());
+            assert_eq!(completed_boundaries(&restarted), BTreeSet::from(["A"]));
+        }
     }
 }
 

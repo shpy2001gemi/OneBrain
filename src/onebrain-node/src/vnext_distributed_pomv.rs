@@ -3380,4 +3380,93 @@ mod tests {
         control_sender.shutdown().await;
         restarted.shutdown().await;
     }
+
+    /// DR-M5 owner hooks: the real publisher (prepare, publish, flush to the
+    /// network outbox) and received identity/view-lineage Redb paths traverse
+    /// all five phases of TX-PUSE-000/001/002 and TX-POMV-001/002 in order.
+    #[cfg(feature = "vnext-crash-harness")]
+    #[tokio::test]
+    async fn dr_m5_owner_hooks_fire_in_phase_order_on_public_use_and_view_paths() {
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let completed = |boundary: &str, hits: &[(&'static str, &'static str)]| {
+            assert!(
+                completed_boundaries(hits).contains(boundary),
+                "{boundary}: {hits:?}"
+            );
+        };
+        let sender_dir = tempfile::tempdir().unwrap();
+        let receiver_dir = tempfile::tempdir().unwrap();
+        let mut sender = VNextNetworkRuntime::start(
+            sender_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            VNextNetworkPolicy::default(),
+        )
+        .await
+        .unwrap();
+        let mut receiver = VNextNetworkRuntime::start(
+            receiver_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            VNextNetworkPolicy::default(),
+        )
+        .await
+        .unwrap();
+        let fixture = authorized_feed();
+        let selector = SelectorCid::from_bytes([0x71; 32]);
+        let namespace = NamespaceCommitment::derive(b"dr-m5-owner-hooks", [0x72; 32]).unwrap();
+        let root_intents = enqueue_records(
+            &sender,
+            &receiver,
+            selector,
+            namespace,
+            [(
+                ReconcileManifestKind::AuthorityEvent,
+                fixture.root_bytes.clone(),
+            )],
+        );
+        wait_acknowledged(&sender, &root_intents).await;
+
+        let publisher = PublicUseEvidencePublisher::open(sender_dir.path()).unwrap();
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 600;
+        let preparation = prepare_request(
+            &receiver,
+            selector,
+            namespace,
+            reference(0x73),
+            reference(0x74),
+            [0x75; 32],
+            expires_at,
+        );
+        let (prepared, hits) =
+            record_hits(|| publisher.prepare_public_use(&preparation, &fixture.feed));
+        let confirmation = prepared.unwrap().confirm();
+        completed("TX-PUSE-000", &hits);
+        let (published, hits) = record_hits(|| {
+            publisher.publish_confirmed(&confirmation, &fixture.feed, &fixture.feed_key)
+        });
+        assert_eq!(published.unwrap().1, PublicUsePublishOutcome::Stored);
+        completed("TX-PUSE-001", &hits);
+        let (flush, hits) = record_hits(|| publisher.flush_pending(&sender, 8));
+        assert_eq!(flush.unwrap().exported_publications, 1);
+        completed("TX-PUSE-002", &hits);
+        sender.shutdown().await;
+        receiver.shutdown().await;
+
+        let index_dir = tempfile::tempdir().unwrap();
+        let index =
+            DurableUseIdentityIndex::open(&index_dir.path().join("identities.redb")).unwrap();
+        let identity = use_identity(FeedId::from_bytes([1; 32]), [2; 32]);
+        let (observed, hits) =
+            record_hits(|| index.observe(identity, EventCid::from_bytes([3; 32])));
+        assert_eq!(observed.unwrap(), IdentityObserveOutcome::Added);
+        completed("TX-POMV-001", &hits);
+        let (lineage, hits) =
+            record_hits(|| index.apply_view_lineage(&reference(0x76), &reference(0x77), [8; 32]));
+        assert_eq!(lineage.unwrap(), (1, None));
+        completed("TX-POMV-002", &hits);
+    }
 }

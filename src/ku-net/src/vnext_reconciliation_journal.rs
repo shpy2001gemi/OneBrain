@@ -1979,4 +1979,27 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
     }
+
+    /// DR-M5 owner hook: the real Redb journal write traverses all five
+    /// TX-JRN-001 failpoint phases in order, for a new and a replaced binding.
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    #[test]
+    fn dr_m5_owner_hooks_fire_in_phase_order_on_redb_store() {
+        use ku_core::foundation::dr_m5_failpoint::trace::{completed_boundaries, record_hits};
+
+        let directory = tempfile::tempdir().unwrap();
+        let backend =
+            persistent::RedbReconciliationJournalBackend::open(directory.path().join("j.redb"))
+                .unwrap();
+        for bytes in [&b"first"[..], &b"second"[..]] {
+            let (stored, hits) = record_hits(|| backend.store_atomically(&[7; 32], bytes));
+            stored.unwrap();
+            assert_eq!(
+                completed_boundaries(&hits),
+                std::collections::BTreeSet::from(["TX-JRN-001"]),
+                "{hits:?}"
+            );
+            assert_eq!(backend.load(&[7; 32]).unwrap().as_deref(), Some(bytes));
+        }
+    }
 }

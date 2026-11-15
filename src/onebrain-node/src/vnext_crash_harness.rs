@@ -503,6 +503,7 @@ mod tests {
     const DATABASE_ENV: &str = "ONEBRAIN_DR_M5_DATABASE";
     const BOUNDARY_ENV: &str = "ONEBRAIN_DR_M5_BOUNDARY";
     const CHILD_TEST: &str = "vnext_crash_harness::tests::dr_m5_process_kill_worker";
+    const MARKER_TIMEOUT_SECONDS: u64 = 10;
 
     #[test]
     fn dr_m5_process_kill_worker() {
@@ -701,6 +702,92 @@ mod tests {
         assert!(original_len > 16);
     }
 
+    #[test]
+    fn harness_constants_match_frozen_crash_harness_profile() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../test-vectors/vnext/dr-m5-crash-harness-v1.json"
+        );
+        let profile: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        let keys = |value: serde_json::Value| -> BTreeSet<String> {
+            value.as_object().unwrap().keys().cloned().collect()
+        };
+        let strings = |value: &serde_json::Value| -> BTreeSet<String> {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item.as_str().unwrap().to_owned())
+                .collect()
+        };
+
+        assert_eq!(profile["boundaries"], serde_json::json!(DR_M5_BOUNDARIES));
+        assert_eq!(
+            profile["phases"],
+            serde_json::json!(dr_m5_failpoint::FAILPOINT_PHASES)
+        );
+        assert_eq!(
+            profile["required_process_kill_cases"],
+            DR_M5_BOUNDARIES.len() * dr_m5_failpoint::FAILPOINT_PHASES.len()
+        );
+        assert_eq!(profile["process_kill"]["worker"], CHILD_TEST);
+        assert_eq!(
+            profile["process_kill"]["marker_timeout_seconds"],
+            MARKER_TIMEOUT_SECONDS
+        );
+
+        assert_eq!(profile["oracle"]["format"], DR_M5_ORACLE_FORMAT);
+        let mut oracle_fields = keys(serde_json::to_value(empty_oracle()).unwrap());
+        oracle_fields.remove("format");
+        oracle_fields.remove("version");
+        assert_eq!(oracle_fields, strings(&profile["oracle"]["fields"]));
+
+        assert_eq!(profile["report"]["format"], DR_M5_CRASH_REPORT_FORMAT);
+        assert_eq!(
+            profile["report"]["expected_sha256"],
+            DR_M5_CRASH_REPORT_SHA256
+        );
+        assert_eq!(profile["report"]["claims_network_completion"], false);
+        let case = DrM5CrashRunArtifact {
+            boundary: String::new(),
+            phase: String::new(),
+            child_exit: String::new(),
+            restart_result: String::new(),
+            oracle_sha256: String::new(),
+            canonical_rows: 0,
+            side_effect_rows: 0,
+            ack_rows: 0,
+            exact_replay_digest: String::new(),
+        };
+        assert_eq!(
+            keys(serde_json::to_value(case).unwrap()),
+            strings(&profile["report"]["required_case_fields"])
+        );
+
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("complete.redb");
+        DrM5CrashFixture::initialize_complete(&database).unwrap();
+        let oracle = DrM5CrashFixture::open_existing(&database)
+            .unwrap()
+            .oracle()
+            .unwrap();
+        assert_eq!(
+            profile["oracle"]["expected_complete_fixture_sha256"],
+            oracle_sha256(&oracle).unwrap()
+        );
+    }
+
+    #[test]
+    fn restart_open_never_creates_a_missing_store() {
+        let directory = tempfile::tempdir().unwrap();
+        let missing = directory.path().join("missing.redb");
+        assert!(matches!(
+            DrM5CrashFixture::open_existing(&missing),
+            Err(DrM5CrashHarnessError::Open(_))
+        ));
+        assert!(!missing.exists());
+    }
+
     fn wait_for_marker(
         child: &mut std::process::Child,
         marker: &Path,
@@ -708,7 +795,7 @@ mod tests {
         boundary: &str,
         phase: &str,
     ) {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(MARKER_TIMEOUT_SECONDS);
         loop {
             if marker.is_file() {
                 let mut body = String::new();
