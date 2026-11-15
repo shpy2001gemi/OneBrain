@@ -2193,7 +2193,7 @@ fn same_delivery_batch(left: &OutboundTransferIntent, right: &OutboundTransferIn
         && left.disclosure == right.disclosure
 }
 
-fn admission_limits(policy: VNextNetworkPolicy) -> RuntimeAdmissionLimits {
+pub(crate) fn admission_limits(policy: VNextNetworkPolicy) -> RuntimeAdmissionLimits {
     let per_peer_window = ResourceUsage {
         records: policy.max_records_per_peer_window,
         bytes: policy.max_bytes_per_peer_window,

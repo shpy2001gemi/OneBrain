@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_dr_m5
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     DR_M5_RESOURCE_PROFILE,
@@ -62,7 +64,65 @@ class VNextDrM5ResourceAdmissionTests(unittest.TestCase):
         profile["claims_network_completion"] = True
         with self.assertRaisesRegex(ContractError, "profile"):
             validate_vnext_dr_m5_resource_admission(profile)
+    def assert_workflow_mutation_rejected(self, mutate) -> None:
+        real_read = validate_vnext_dr_m5.read
 
+        def read_mutated(path):
+            text = real_read(path)
+            if path == validate_vnext_dr_m5.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = mutate(text)
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_dr_m5, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, "CI acceptance gate"):
+                validate_vnext_dr_m5_resource_admission(frozen_profile())
+
+    def test_every_m5_01_rust_test_command_must_run_in_ci(self) -> None:
+        commands = validate_vnext_dr_m5.DR_M5_RESOURCE_TEST_COMMANDS
+        self.assertEqual(len(commands), 6)
+        for command in commands:
+            with self.subTest(command=command.pattern):
+                self.assert_workflow_mutation_rejected(
+                    lambda text, command=command: command.sub("", text)
+                )
+
+    def test_m5_01_commands_must_stay_inside_the_m5_1_step(self) -> None:
+        def move_profile_tests_to_m5_2(text: str) -> str:
+            command = validate_vnext_dr_m5.DR_M5_RESOURCE_TEST_COMMANDS[-1]
+            match = command.search(text)
+            self.assertIsNotNone(match)
+            text = text[: match.start()] + "true" + text[match.end() :]
+            moved = text.replace(
+                "- name: M5.2 typed observability and operator snapshot\n        run: >-\n",
+                "- name: M5.2 typed observability and operator snapshot\n        run: >-\n"
+                f"          {match.group(0)} &&\n",
+            )
+            self.assertNotEqual(moved, text)
+            self.assertIsNotNone(command.search(moved))
+            return moved
+
+        self.assert_workflow_mutation_rejected(move_profile_tests_to_m5_2)
+
+    def test_m5_1_step_cannot_disappear(self) -> None:
+        self.assert_workflow_mutation_rejected(
+            lambda text: text.replace(
+                "- name: M5.1 unified resource admission and fair outbox",
+                "- name: M5.1 renamed",
+            )
+        )
+
+    def test_profile_binding_test_command_matches_the_rust_module(self) -> None:
+        source = (
+            validate_vnext_dr_m5.ROOT
+            / "src/onebrain-node/src/vnext_resource_profile_tests.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("fn m5_01_resource_profile_", source)
+        transport = (validate_vnext_dr_m5.ROOT / "src/ku-net/src/transport.rs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("async fn length_prefixed_uni_checks_prefix_before_reading_payload", transport)
 
 if __name__ == "__main__":
     unittest.main()

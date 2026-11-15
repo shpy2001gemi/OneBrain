@@ -76,6 +76,34 @@ def dr_m5_owner_hook_test_command(crate: str) -> re.Pattern[str]:
     )
 
 
+# ARCH-13 slice 4: M5-01 implementation evidence. Each command must appear in
+# the M5.1 workflow step; the tests behind them replace the former source
+# needles (resource gate, carrier prefix, session replay cap, fair outbox,
+# typed provenance, verified-store bounds).
+DR_M5_RESOURCE_TEST_COMMANDS = (
+    re.compile(r"cargo test --locked -p ku-net\s+vnext_resource_gate --lib\b"),
+    re.compile(
+        r"cargo test --locked -p ku-net\s+--features quic vnext_quic_session --lib\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib vnext_outbox\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib vnext_record_provenance\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p ku-net\s+--features quic"
+        r" --lib transport::tests::length_prefixed_uni\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib vnext_resource_profile_tests\b"
+    ),
+)
+
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -388,56 +416,30 @@ def validate_vnext_dr_m5_resource_admission(
     if profile.get("exit_oracles") != expected_oracles:
         raise ContractError("M5-01 exit oracle drift")
 
-    source_contract = {
-        "src/ku-net/src/vnext_resource_gate.rs": (
-            "pub fn admit_length_prefix",
-            "pub struct RuntimeAdmissionController",
-            "pub fn try_begin_handshake",
-            "pub fn begin_record",
-            "fn rejected_flood_does_not_grow_identity_maps",
-        ),
-        "src/ku-net/src/transport.rs": ("recv_length_prefixed_uni", "read_exact(&mut prefix)"),
-        "src/ku-net/src/vnext_session.rs": (
-            "DEFAULT_SESSION_REPLAY_ENTRIES",
-            "pub fn with_capacity",
-        ),
-        "src/onebrain-node/src/vnext_outbox.rs": (
-            "DeadLetter",
-            "RetryExhausted",
-            "pending_fair",
-            "transport_attempts",
-            "validation_retries",
-            "compact_terminal",
-            "exhausted_first_page_cannot_starve_healthy_pending_work",
-        ),
-        "src/onebrain-node/src/vnext_record_provenance.rs": (
-            "MAX_TYPED_DELTA_PAGE_RECORDS",
-            "MAX_SOURCE_PEERS_PER_RECORD",
-            "typed_delta",
-        ),
-        "src/ku-core/src/foundation/storage.rs": (
-            "MAX_VERIFIED_ACCEPTED_RECORDS",
-            "MAX_VERIFIED_QUARANTINE_RECORDS",
-        ),
-    }
-    for relative, needles in source_contract.items():
-        text = read(ROOT / relative)
-        for needle in needles:
-            if needle not in text:
-                raise ContractError(
-                    f"M5-01 implementation evidence missing: {relative}: {needle}"
-                )
-
     spec = read(VNEXT / "UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1.md")
     if "dr-m5-resource-admission-v1.json" not in spec:
         raise ContractError("M5-01 normative profile is not linked to machine contract")
+    # ARCH-13 slice 4: implementation evidence is the M5.1 Rust tests (lane
+    # caps, ordered pipeline, quotas, durable bounds and outbox states bound to
+    # this profile; carrier prefix checked before reading the payload), not
+    # source needles. Every command must run inside the M5.1 step.
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    step = re.search(
+        r"(?ms)^\s+- name: M5\.1 unified resource admission and fair outbox\s*$"
+        r"(?P<body>.*?)(?=^\s+- name: |\Z)",
+        workflow,
+    )
     if (
-        "- name: M5.1 unified resource admission and fair outbox" not in workflow
+        not step
         or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission"
         not in workflow
     ):
         raise ContractError("M5-01 CI acceptance gate missing")
+    for command in DR_M5_RESOURCE_TEST_COMMANDS:
+        if not command.search(step.group("body")):
+            raise ContractError(
+                f"M5-01 CI acceptance gate missing Rust test command: {command.pattern}"
+            )
 
     return len(expected_lanes), len(expected_state_bounds), len(expected_oracles)
 

@@ -38,7 +38,7 @@ const CURSORS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_cursors_v1");
 const MATCH_KEY_BYTES: usize = 64;
 const MATCH_VALUE_BYTES: usize = 96;
-const MAX_DURABLE_KQL_MATCHES: u64 = 65_536;
+pub(crate) const MAX_DURABLE_KQL_MATCHES: u64 = 65_536;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DistributedKqlBudget {

@@ -111,6 +111,8 @@ pub mod vnext_reachability_replay_store;
 pub mod vnext_record_provenance;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_rendezvous_publisher;
+#[cfg(all(test, feature = "vnext-network-runtime"))]
+mod vnext_resource_profile_tests;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
 #[cfg(feature = "vnext-network-runtime")]

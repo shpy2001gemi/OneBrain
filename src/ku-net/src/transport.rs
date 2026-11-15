@@ -707,4 +707,81 @@ mod tests {
         server_handle.await.unwrap();
         client.shutdown().await;
     }
+
+    fn rejected_before_allocation(result: Result<Vec<u8>, TransportError>) -> bool {
+        matches!(
+            result,
+            Err(TransportError::RecvFailed(ref message))
+                if message.contains("rejected before allocation")
+        )
+    }
+
+    /// ARCH-13 slice 4 (M5-01 carrier lane): the 4-byte length prefix is
+    /// checked against the caller's lane cap before any payload is read or
+    /// allocated; an over-lane prefix with no payload bytes at all is refused
+    /// by that check, not by a failed payload read.
+    #[tokio::test]
+    async fn length_prefixed_uni_checks_prefix_before_reading_payload() {
+        const LANE: usize = 1_024;
+        let loopback = || TransportConfig {
+            bind_addr: ([127, 0, 0, 1], 0).into(),
+            ..Default::default()
+        };
+        let server = QuicTransport::bind(loopback()).await.unwrap();
+        let server_addr = server.local_addr().unwrap();
+        let client = QuicTransport::bind(loopback()).await.unwrap();
+        let accept = tokio::spawn(async move {
+            let connection = server.accept().await.unwrap();
+            (server, connection)
+        });
+        let sender = client.connect(server_addr).await.unwrap();
+        let (server, receiver) = accept.await.unwrap();
+
+        let framed = |declared: u32, payload: &[u8]| {
+            let mut frame = declared.to_be_bytes().to_vec();
+            frame.extend_from_slice(payload);
+            frame
+        };
+
+        sender.send_uni(&u32::MAX.to_be_bytes()).await.unwrap();
+        assert!(rejected_before_allocation(
+            receiver.recv_length_prefixed_uni(LANE).await
+        ));
+
+        let over_lane = vec![7u8; LANE + 1];
+        sender
+            .send_uni(&framed((LANE + 1) as u32, &over_lane))
+            .await
+            .unwrap();
+        assert!(rejected_before_allocation(
+            receiver.recv_length_prefixed_uni(LANE).await
+        ));
+
+        sender.send_uni(&framed(0, b"")).await.unwrap();
+        assert!(rejected_before_allocation(
+            receiver.recv_length_prefixed_uni(LANE).await
+        ));
+
+        let exact = vec![9u8; LANE];
+        sender.send_uni(&framed(LANE as u32, &exact)).await.unwrap();
+        assert_eq!(
+            receiver.recv_length_prefixed_uni(LANE).await.unwrap(),
+            exact
+        );
+
+        sender.send_uni(&framed(2, b"abc")).await.unwrap();
+        assert!(matches!(
+            receiver.recv_length_prefixed_uni(LANE).await,
+            Err(TransportError::RecvFailed(ref message)) if message.contains("trailing bytes")
+        ));
+
+        sender.send_uni(&framed(5, b"hello")).await.unwrap();
+        assert_eq!(
+            receiver.recv_length_prefixed_uni(LANE).await.unwrap(),
+            b"hello"
+        );
+
+        client.shutdown().await;
+        server.shutdown().await;
+    }
 }

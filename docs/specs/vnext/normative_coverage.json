@@ -91,6 +91,10 @@
           "needle": "exhausted_first_page_cannot_starve_healthy_pending_work"
         },
         {
+          "path": "src/onebrain-node/src/vnext_resource_profile_tests.rs",
+          "needle": "m5_01_resource_profile_binds_default_quotas_to_the_runtime_controller"
+        },
+        {
           "path": "scripts/ci/validate_vnext_dr_m5.py",
           "needle": "validate_vnext_dr_m5_resource_admission"
         }

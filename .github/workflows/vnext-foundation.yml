@@ -804,6 +804,10 @@ jobs:
           --features vnext-network-runtime --lib vnext_outbox
           && cargo test --locked -p onebrain-node
           --features vnext-network-runtime --lib vnext_record_provenance
+          && cargo test --locked -p ku-net
+          --features quic --lib transport::tests::length_prefixed_uni
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib vnext_resource_profile_tests
       - name: M5.2 typed observability and operator snapshot
         run: >-
           cargo test --locked -p onebrain-node
