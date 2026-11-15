@@ -78,6 +78,8 @@ pub mod vnext_mixed_conformance;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_network_runtime;
 pub mod vnext_observability;
+#[cfg(all(test, feature = "vnext-network-runtime"))]
+mod vnext_observability_profile_tests;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_operational_compaction;
 #[cfg(feature = "vnext-outbound-first")]

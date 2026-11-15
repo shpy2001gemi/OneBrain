@@ -578,8 +578,8 @@
       "expected_statement_lines": 24,
       "evidence": [
         {
-          "path": "src/onebrain-node/src/vnext_observability.rs",
-          "needle": "pub const REASON_CODE_COUNT: usize = 22"
+          "path": "src/onebrain-node/src/vnext_observability_profile_tests.rs",
+          "needle": "fn m5_02_observability_profile_binds_reason_codes_and_typed_transitions"
         },
         {
           "path": "src/onebrain-node/src/vnext_observability.rs",

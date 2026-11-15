@@ -104,6 +104,47 @@ DR_M5_RESOURCE_TEST_COMMANDS = (
 )
 
 
+# ARCH-13 slice 5: M5-02 implementation evidence. Each command must appear in
+# the M5.2 workflow step; the tests behind them replace the former source
+# needles (profile-bound reason codes, buckets, snapshot fields and log fields;
+# product status wiring; outbox age decoding; typed runtime failure mapping;
+# authenticated operator status over real QUIC; REST operator snapshot).
+DR_M5_OBSERVABILITY_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib vnext_observability\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib vnext_observability_profile_tests\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib\s+vnext_network_runtime::tests::"
+        r"admission_and_payload_failures_map_to_stable_low_cardinality_reasons\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-api\s+--features vnext-network-runtime"
+        r" --lib\s+vnext_api::tests::"
+        r"runtime_status_and_disabled_lane_keep_the_vnext_envelope\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib\s+vnext_product_runtime::tests::"
+        r"product_operations_feed_the_status_observability_snapshot\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib\s+vnext_outbox::tests::"
+        r"legacy_v1_and_v2_intents_decode_with_unknown_age\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r" --lib\s+vnext_network_runtime::tests::"
+        r"two_runtime_listeners_authenticate_and_reject_unvalidated_payload_bytes\b"
+    ),
+)
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -605,57 +646,34 @@ def validate_vnext_dr_m5_observability(
     if profile.get("exit_oracles") != expected_oracles:
         raise ContractError("M5-02 exit oracle drift")
 
-    source_contract = {
-        "src/onebrain-node/src/vnext_observability.rs": (
-            "pub const REASON_CODE_COUNT: usize = 22",
-            "pub fn record_count",
-            "pub fn begin_journal",
-            "pub fn observe_outbox",
-            "pub fn observe_selector_coverage",
-            "serialized_snapshot_has_no_identity_selector_or_private_need_label_surface",
-        ),
-        "src/onebrain-node/src/vnext_outbox.rs": (
-            "const MAGIC_V3",
-            "pub fn stats",
-            "oldest_pending_age_seconds",
-            "legacy_v1_and_v2_intents_decode_with_unknown_age",
-        ),
-        "src/onebrain-node/src/vnext_network_runtime.rs": (
-            "observable_resource_admission_error",
-            "payload_reject_reason",
-            "admission_and_payload_failures_map_to_stable_low_cardinality_reasons",
-            "two_runtime_listeners_authenticate_and_reject_unvalidated_payload_bytes",
-        ),
-        "src/onebrain-node/src/vnext_product_runtime.rs": (
-            "observe_selector_coverage",
-            "observe_pomv",
-            "observe_registry_state",
-        ),
-        "src/onebrain-api/src/vnext_api.rs": (
-            "pub observability: onebrain_node::VNextObservabilitySnapshot",
-            'body["data"]["observability"]["contains_high_cardinality_labels"]',
-        ),
-    }
-    for relative, needles in source_contract.items():
-        text = read(ROOT / relative)
-        for needle in needles:
-            if needle not in text:
-                raise ContractError(
-                    f"M5-02 implementation evidence missing: {relative}: {needle}"
-                )
-
+    # ARCH-13 slice 5: implementation evidence is the M5.2 Rust tests (reason
+    # codes, typed transitions, snapshot fields, finite buckets, registry
+    # states and structured-log fields bound to this profile; product status
+    # wiring; REST operator snapshot), not source needles. Every command must
+    # run inside the M5.2 step. The `Err(_)` ban stays: it forbids a pattern
+    # instead of requiring a name, so it does not block refactors.
     if "Err(_)" in read(ROOT / "src/onebrain-node/src/vnext_network_runtime.rs"):
         raise ContractError("M5-02 network runtime still swallows an untyped error")
     spec = read(VNEXT / "STRUCTURED_OBSERVABILITY_PROFILE_V1.md")
     if "dr-m5-observability-v1.json" not in spec:
         raise ContractError("M5-02 normative profile is not linked to machine contract")
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    step = re.search(
+        r"(?ms)^\s+- name: M5\.2 typed observability and operator snapshot\s*$"
+        r"(?P<body>.*?)(?=^\s+- name: |\Z)",
+        workflow,
+    )
     if (
-        "- name: M5.2 typed observability and operator snapshot" not in workflow
+        not step
         or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability"
         not in workflow
     ):
         raise ContractError("M5-02 CI acceptance gate missing")
+    for command in DR_M5_OBSERVABILITY_TEST_COMMANDS:
+        if not command.search(step.group("body")):
+            raise ContractError(
+                f"M5-02 CI acceptance gate missing Rust test command: {command.pattern}"
+            )
 
     return len(expected_reasons), len(expected_gauges), len(expected_oracles)
 

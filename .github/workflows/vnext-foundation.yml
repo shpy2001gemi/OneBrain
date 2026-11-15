@@ -818,6 +818,17 @@ jobs:
           && cargo test --locked -p onebrain-api
           --features vnext-network-runtime --lib
           vnext_api::tests::runtime_status_and_disabled_lane_keep_the_vnext_envelope
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib vnext_observability_profile_tests
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib
+          vnext_product_runtime::tests::product_operations_feed_the_status_observability_snapshot
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib
+          vnext_outbox::tests::legacy_v1_and_v2_intents_decode_with_unknown_age
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib
+          vnext_network_runtime::tests::two_runtime_listeners_authenticate_and_reject_unvalidated_payload_bytes
       - name: M5.3 real Redb process-kill crash matrix
         run: >-
           cargo test --locked -p onebrain-node

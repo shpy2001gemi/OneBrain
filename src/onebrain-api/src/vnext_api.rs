@@ -2525,10 +2525,23 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let node = test_node(&directory).await;
         let router = ApiServer::new(node, "p3-test-token".into(), 0).build_router();
+        // ARCH-13 slice 5: the M5-02 operator snapshot route and field come
+        // from the frozen observability profile.
+        let observability_profile: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../test-vectors/vnext/dr-m5-observability-v1.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let operator_snapshot = &observability_profile["operator_snapshot"];
+        assert_eq!(operator_snapshot["rest_method"], "GET");
+        assert_eq!(operator_snapshot["authenticated_local"], true);
         let (status, body) = call(
             router.clone(),
             Method::GET,
-            "/api/vnext/runtime/status",
+            operator_snapshot["rest_path"].as_str().unwrap(),
             None,
         )
         .await;
@@ -2536,6 +2549,7 @@ mod tests {
         assert_eq!(body["ok"], true);
         assert_eq!(body["profile"], VNEXT_PRODUCT_PROFILE);
         assert!(body["data"]["limitations"].is_array());
+        assert!(body["data"][operator_snapshot["field"].as_str().unwrap()].is_object());
         assert_eq!(body["data"]["observability"]["profile_major"], 1);
         assert_eq!(
             body["data"]["observability"]["contains_high_cardinality_labels"],

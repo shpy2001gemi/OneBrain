@@ -2618,6 +2618,70 @@ mod tests {
         runtime.shutdown().await;
     }
 
+    /// ARCH-13 slice 5 (M5-02): the product operations feed the operator
+    /// snapshot returned by `status()`, not only the observability unit.
+    #[tokio::test]
+    async fn product_operations_feed_the_status_observability_snapshot() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
+        let mut runtime = VNextProductRuntime::start(
+            directory.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(45),
+            Some(Arc::new(SigningKey::from_bytes(&[0x45; 32]))),
+        )
+        .await
+        .unwrap();
+        let services = runtime.services();
+        let before = services.status().unwrap().observability;
+        assert_eq!(before.reconciliation.selector_scans, 0);
+        assert_eq!(before.registry_state, VNextRegistryTelemetryState::Unknown);
+
+        services
+            .process_one_hop_affordance_delta(
+                SelectorCid::from_bytes([0x46; 32]),
+                DistributedKqlBudget::default(),
+            )
+            .unwrap();
+        let after_scan = services.status().unwrap().observability;
+        assert_eq!(after_scan.reconciliation.selector_scans, 1);
+
+        let view = services
+            .materialize_public_use_view(
+                SelectorCid::from_bytes([0x47; 32]),
+                ObjectReference::new(0, [0x48; 32]),
+                LocalPolicyVersion::new(1).unwrap(),
+            )
+            .unwrap();
+        let after_view = services.status().unwrap().observability;
+        assert_eq!(after_view.reconciliation.selector_scans, 2);
+        assert_eq!(after_view.pomv.latest_view_revision, view.view.revision);
+        assert_eq!(
+            after_view.pomv.identity_conflicts,
+            view.idempotency_conflicts
+        );
+
+        services.observe_registry_state(VNextRegistryTelemetryState::FallbackV1);
+        let after_registry = services.status().unwrap().observability;
+        assert_eq!(
+            after_registry.registry_state,
+            VNextRegistryTelemetryState::FallbackV1
+        );
+        let count = |snapshot: &VNextObservabilitySnapshot, reason: VNextReasonCode| {
+            snapshot
+                .reasons
+                .iter()
+                .find(|entry| entry.reason == reason)
+                .unwrap()
+                .count
+        };
+        assert_eq!(count(&after_registry, VNextReasonCode::RegistryFallback), 1);
+        assert_eq!(count(&after_registry, VNextReasonCode::JournalFailure), 0);
+        assert!(!after_registry.claims_network_completion);
+        runtime.shutdown().await;
+    }
+
     #[tokio::test]
     async fn runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic() {
         let left_dir = tempfile::tempdir().unwrap();
