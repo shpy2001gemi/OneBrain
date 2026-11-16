@@ -2973,3 +2973,17 @@ fn corrupt_error() -> BaseServiceError {
 pub(crate) fn internal_error() -> BaseServiceError {
     BaseServiceError::new(BaseErrorCodeV1::InternalError, "base_internal_error")
 }
+
+#[cfg(test)]
+mod arch13_release_version_tests {
+    /// ARCH-13 slice 14: the compiled runtime compatibility tuple reports the
+    /// Base contract release constant.
+    #[test]
+    fn compiled_runtime_tuple_reports_the_base_release_version() {
+        let compiled = super::compiled_base_runtime_config().version_status;
+        assert_eq!(
+            compiled.compatibility.base_version,
+            onebrain_base_contract::BASE_V1_RELEASE_VERSION
+        );
+    }
+}

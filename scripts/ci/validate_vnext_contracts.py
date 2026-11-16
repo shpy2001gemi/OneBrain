@@ -859,6 +859,19 @@ BASE_NODE_LIBRARY_TEST_COMMAND = re.compile(
     r"cargo test --locked --manifest-path src/Cargo\.toml -p onebrain-node -p onebrain-api"
     r" -p onebrain-cli --features onebrain-node/vnext-network-runtime"
 )
+BASE_CONTRACT_LIBRARY_TEST_COMMAND = re.compile(
+    r"cargo test --locked --manifest-path src/Cargo\.toml -p onebrain-base-contract --lib\b"
+)
+# ARCH-13 slice 14: forbidden feature combinations are proven by the packaging
+# matrix failing to compile them, not by guard-string needles.
+BASE_FORBIDDEN_FEATURE_CHECKS = tuple(
+    re.compile(
+        rf"cargo check --locked --manifest-path src/Cargo\.toml -p {crate}"
+        r" --no-default-features --features legacy-read-compat\s*\n\s*"
+        r"if \(\$LASTEXITCODE -eq 0\) \{ throw"
+    )
+    for crate in ("onebrain-node", "onebrain-api", "onebrain-cli")
+)
 
 def validate_base_v1_archive() -> tuple[int, int]:
     try:
@@ -2791,8 +2804,6 @@ def validate_base_v1_freeze() -> int:
         }
     ):
         raise ContractError("Base v1 evidence approver vector policy drift")
-    source = read(ROOT / "src/onebrain-base-contract/src/compatibility.rs")
-    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
     qualifier = read(ROOT / "scripts/base/qualify_base.py")
     frozen_binding = None
     for statement in ast.parse(qualifier).body:
@@ -2898,10 +2909,19 @@ def validate_base_v1_freeze() -> int:
                         f"Base v1 {owner} SLSA builder ID is not target-frozen"
                     )
             names.add(name)
-    if "pub const BASE_V1_RELEASE_VERSION" not in source or not all(
-        needle in source for needle in ("major: 1", "minor: 2", "patch: 0", "prerelease: None")
-    ) or "base_version: BASE_V1_RELEASE_VERSION" not in runtime:
-        raise ContractError("compiled Base v1.2.0 candidate version drift")
+    # ARCH-13 slice 14: the compiled candidate version and its runtime tuple
+    # are pinned by `base_v1_release_version_is_the_frozen_1_2_0_candidate`
+    # (onebrain-base-contract) and
+    # `compiled_runtime_tuple_reports_the_base_release_version` (node), run by
+    # the integrated Base gate, not by source needles.
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    base_gate = workflow_step_body(workflow, "Run the Base v1 integrated root and tuple gate")
+    if (
+        base_gate is None
+        or not BASE_NODE_LIBRARY_TEST_COMMAND.search(base_gate)
+        or not BASE_CONTRACT_LIBRARY_TEST_COMMAND.search(base_gate)
+    ):
+        raise ContractError("compiled Base v1.2.0 candidate version test gate missing")
     for path in (
         BASE_V1_FREEZE_DOCUMENT,
         ROOT / "docs/security/BASE_V1_RELEASE_SIGNER_POLICY.md",
@@ -6539,14 +6559,17 @@ def validate_base_v1_packaging() -> int:
             raise ContractError(
                 f"{name} legacy-read-compat must not silently auto-enable base-v1"
             )
-    feature_guards = {
-        ROOT / "src/onebrain-node/src/lib.rs": "legacy-read-compat requires base-v1",
-        ROOT / "src/onebrain-api/src/lib.rs": "legacy-read-compat requires base-v1",
-        ROOT / "src/onebrain-cli/src/main.rs": "legacy-read-compat requires base-v1",
-    }
-    for path, guard in feature_guards.items():
-        if guard not in path.read_text(encoding="utf-8"):
-            raise ContractError(f"missing forbidden-combination guard in {path}")
+    packaging_workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    matrix = workflow_step_body(
+        packaging_workflow, "Run Base-default and optional-feature packaging matrix"
+    )
+    if matrix is None:
+        raise ContractError("Base packaging matrix step is missing")
+    for check in BASE_FORBIDDEN_FEATURE_CHECKS:
+        if not check.search(matrix):
+            raise ContractError(
+                f"Base packaging matrix does not prove a forbidden combination fails: {check.pattern}"
+            )
     cli_archive = (ROOT / "src/onebrain-cli/src/cli/data.rs").read_text(
         encoding="utf-8"
     )
@@ -6615,34 +6638,9 @@ def validate_base_v1_packaging() -> int:
         )
     if "--skip-tool-verification" in workflow:
         raise ContractError("Base ABI CI may not bypass the pinned executable hash")
-    integration_test = read(
-        ROOT / "src/onebrain-node/tests/base_gate_integration.rs"
-    )
-    for marker in (
-        "BaseIntegrationReceipt",
-        "canonical_root_before_restart",
-        "canonical_root_after_restart",
-        "archive_restore_root",
-        "registry_release_root",
-        "default_active_network_lanes",
-        "legacy_write_enabled",
-    ):
-        if marker not in integration_test:
-            raise ContractError(f"Base integration fixture is missing marker: {marker}")
-    cross_consumer = read(
-        ROOT / "src/onebrain-base-contract/tests/cross_consumer_tuple.rs"
-    )
-    for marker in (
-        "candidate_semantic_digest",
-        "artifact_tuple_digest",
-        "generated TypeScript",
-        "generated Dart",
-        "Axum API",
-        "CLI verbose version",
-        "C ABI",
-    ):
-        if marker not in cross_consumer:
-            raise ContractError(f"Base cross-consumer gate is missing marker: {marker}")
+    # ARCH-13 slice 14: the integration and cross-consumer tests are proven by
+    # running them in the integrated Base gate (commands checked above), not by
+    # marker needles inside the test sources.
     return len(packages) + 1
 
 

@@ -356,3 +356,18 @@ fn encode_toolchain_identity(identity: ToolchainIdentity) -> Vec<u8> {
         ToolchainIdentity::Unknown => vec![2],
     }
 }
+
+#[cfg(test)]
+mod arch13_release_version_tests {
+    use super::BASE_V1_RELEASE_VERSION;
+
+    /// ARCH-13 slice 14: the compiled Base candidate version is pinned by a
+    /// test instead of a source needle in the freeze validator.
+    #[test]
+    fn base_v1_release_version_is_the_frozen_1_2_0_candidate() {
+        assert_eq!(BASE_V1_RELEASE_VERSION.major, 1);
+        assert_eq!(BASE_V1_RELEASE_VERSION.minor, 2);
+        assert_eq!(BASE_V1_RELEASE_VERSION.patch, 0);
+        assert!(BASE_V1_RELEASE_VERSION.prerelease.is_none());
+    }
+}

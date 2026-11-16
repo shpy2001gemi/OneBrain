@@ -4,7 +4,12 @@ import unittest
 from unittest import mock
 
 from scripts.ci import validate_vnext_contracts
-from scripts.ci.validate_vnext_contracts import ContractError, validate_base_v1_archive
+from scripts.ci.validate_vnext_contracts import (
+    ContractError,
+    validate_base_v1_archive,
+    validate_base_v1_freeze,
+    validate_base_v1_packaging,
+)
 
 
 def mutate_workflow(test: unittest.TestCase, mutate):
@@ -39,6 +44,32 @@ class BaseV1RuntimeGateTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("fn tx_base_ops_001_hooks_every_frozen_failpoint_phase", source)
 
+
+    def test_freeze_and_packaging_validators_accept_the_current_tree(self) -> None:
+        validate_base_v1_freeze()
+        validate_base_v1_packaging()
+
+    def test_base_contract_library_tests_must_run_in_the_integrated_gate(self) -> None:
+        command = validate_vnext_contracts.BASE_CONTRACT_LIBRARY_TEST_COMMAND
+        with mutate_workflow(self, lambda text: command.sub("true", text)):
+            with self.assertRaisesRegex(ContractError, "candidate version test gate"):
+                validate_base_v1_freeze()
+
+    def test_packaging_matrix_must_prove_each_forbidden_combination_fails(self) -> None:
+        for check in validate_vnext_contracts.BASE_FORBIDDEN_FEATURE_CHECKS:
+            with self.subTest(check=check.pattern):
+                with mutate_workflow(self, lambda text, check=check: check.sub("true\n", text)):
+                    with self.assertRaisesRegex(ContractError, "forbidden combination"):
+                        validate_base_v1_packaging()
+
+    def test_release_version_tests_exist(self) -> None:
+        root = validate_vnext_contracts.ROOT
+        contract = (root / "src/onebrain-base-contract/src/compatibility.rs").read_text(
+            encoding="utf-8"
+        )
+        runtime = (root / "src/onebrain-node/src/base_runtime.rs").read_text(encoding="utf-8")
+        self.assertIn("fn base_v1_release_version_is_the_frozen_1_2_0_candidate", contract)
+        self.assertIn("fn compiled_runtime_tuple_reports_the_base_release_version", runtime)
 
 if __name__ == "__main__":
     unittest.main()
