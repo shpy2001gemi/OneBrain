@@ -239,6 +239,41 @@ mod tests {
 
     use super::*;
 
+    /// ARCH-13 slice 12: the Base v1 derived-projection profile maps exactly
+    /// the registered object kinds and event types, by id and name, in order.
+    #[test]
+    fn base_v1_derived_projection_profile_matches_the_schema_registry() {
+        let projection: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../test-vectors/vnext/base-v1-derived-projection-v1.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        for (key, registry) in [
+            ("object_mappings", OBJECT_KINDS_V1),
+            ("event_mappings", EVENT_TYPES_V1),
+        ] {
+            let rows: Vec<(u64, String)> = projection[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row["id"].as_u64().unwrap(),
+                        row["kind"].as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect();
+            let expected: Vec<(u64, String)> = registry
+                .iter()
+                .map(|entry| (entry.id, entry.name.to_owned()))
+                .collect();
+            assert_eq!(rows, expected, "{key}");
+        }
+    }
+
     #[test]
     fn registry_ids_and_names_are_unique() {
         for registry in [SCHEMAS_V1, OBJECT_KINDS_V1, EVENT_TYPES_V1] {

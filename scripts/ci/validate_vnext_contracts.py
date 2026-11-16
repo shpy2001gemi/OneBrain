@@ -771,45 +771,16 @@ def validate_base_v1_storage_integrity(
         "private-or-disclosure-scoped-content-only",
         "payload-needs-validated-event-for-exercise-view",
     ]
-    schema_registry = read(ROOT / "src/ku-core/src/foundation/schema_registry.rs")
-    object_registry_match = re.search(
-        r"(?s)pub const OBJECT_KINDS_V1:.*?= &\[(.*?)\];", schema_registry
-    )
-    event_registry_match = re.search(
-        r"(?s)pub const EVENT_TYPES_V1:.*?= &\[(.*?)\];", schema_registry
-    )
-    object_constants = {
-        name: int(value)
-        for name, value in re.findall(
-            r"pub const (OBJECT_KIND_[A-Z0-9_]+): u64 = (\d+);",
-            schema_registry,
-        )
-    }
-    event_constants = {
-        name: int(value)
-        for name, value in re.findall(
-            r"pub const (EVENT_TYPE_[A-Z0-9_]+): u64 = (\d+);",
-            schema_registry,
-        )
-    }
-    if not object_registry_match or not event_registry_match:
-        raise ContractError("Base v1 projection cannot read the schema registry")
-    source_object_rows = [
-        (object_constants.get(constant), name)
-        for constant, name in re.findall(
-            r'id:\s*(OBJECT_KIND_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
-            object_registry_match.group(1),
-        )
-    ]
-    source_event_rows = [
-        (event_constants.get(constant), name)
-        for constant, name in re.findall(
-            r'id:\s*(EVENT_TYPE_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
-            event_registry_match.group(1),
-        )
-    ]
-    if source_object_rows != list(enumerate(object_kinds, start=1)):
-        raise ContractError("Base v1 object mapping drifts from the schema registry")
+    # ARCH-13 slice 12: the projection-to-registry binding (ids and names of
+    # OBJECT_KINDS_V1/EVENT_TYPES_V1) is the ku-core test
+    # `base_v1_derived_projection_profile_matches_the_schema_registry`, run by
+    # the "Test canonical foundation" step, not a regex over Rust source.
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    foundation_step = workflow_step_body(workflow, "Test canonical foundation")
+    if foundation_step is None or not re.search(
+        r"cargo test --locked -p ku-core foundation[ \t]*$", foundation_step, re.M
+    ):
+        raise ContractError("Base v1 projection registry test gate missing")
     expected_object_rows = []
     for object_id, (kind, exclusion) in enumerate(
         zip(object_kinds, object_exclusions, strict=True), start=1
@@ -850,8 +821,6 @@ def validate_base_v1_storage_integrity(
         "conflicts-coexist-no-score-authority",
         "private-context-never-public-projection",
     ]
-    if source_event_rows != list(enumerate(event_kinds, start=1)):
-        raise ContractError("Base v1 event mapping drifts from the schema registry")
     expected_event_rows = []
     for event_id, (kind, exclusion) in enumerate(
         zip(event_kinds, event_exclusions, strict=True), start=1

@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_contracts
 from scripts.ci.validate_vnext_contracts import (
     BASE_V1_DERIVED_PROJECTION_PROFILE,
     BASE_V1_STORAGE_INTEGRITY_PROFILE,
@@ -142,6 +144,30 @@ class BaseV1StorageIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "owner table"):
             validate_base_v1_storage_integrity(profile, frozen_projection())
 
+
+    def test_projection_registry_test_gate_cannot_disappear(self) -> None:
+        real_read = validate_vnext_contracts.read
+
+        def read_mutated(candidate):
+            text = real_read(candidate)
+            if candidate == validate_vnext_contracts.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = text.replace(
+                    "run: cargo test --locked -p ku-core foundation\n",
+                    "run: cargo test --locked -p ku-core foundation::vault\n",
+                )
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_contracts, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, "projection registry test gate"):
+                validate_base_v1_storage_integrity(frozen_storage(), frozen_projection())
+
+    def test_projection_registry_rust_test_exists(self) -> None:
+        source = (
+            validate_vnext_contracts.ROOT / "src/ku-core/src/foundation/schema_registry.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("fn base_v1_derived_projection_profile_matches_the_schema_registry", source)
 
 if __name__ == "__main__":
     unittest.main()
