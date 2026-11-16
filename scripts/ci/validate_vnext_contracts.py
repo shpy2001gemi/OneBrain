@@ -851,6 +851,15 @@ def validate_base_v1_storage_integrity(
     return len(expected_boundaries), len(expected_negative_oracles)
 
 
+
+# ARCH-13 slice 13: the node/API/CLI library tests (including Base operation
+# store failpoints and runtime authority/signer/archive flows) must run in the
+# integrated Base gate.
+BASE_NODE_LIBRARY_TEST_COMMAND = re.compile(
+    r"cargo test --locked --manifest-path src/Cargo\.toml -p onebrain-node -p onebrain-api"
+    r" -p onebrain-cli --features onebrain-node/vnext-network-runtime"
+)
+
 def validate_base_v1_archive() -> tuple[int, int]:
     try:
         profile = json.loads(read(BASE_V1_ARCHIVE_PROFILE))
@@ -946,34 +955,14 @@ def validate_base_v1_archive() -> tuple[int, int]:
     inventory = read(DR_M5_TRANSACTION_INVENTORY)
     if "| `TX-BASE-OPS-001` |" not in inventory:
         raise ContractError("Base operation transaction boundary is absent")
-    operation_store = read(ROOT / "src/onebrain-node/src/base_operation_store.rs")
-    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
-    for phase in [
-        "before_begin_write",
-        "after_begin_write_before_mutation",
-        "after_mutation_before_commit",
-        "after_commit_before_next_side_effect",
-        "after_next_side_effect_before_ack",
-    ]:
-        if phase not in operation_store:
-            raise ContractError(f"Base operation failpoint phase is absent: {phase}")
-    for needle in [
-        "ProcessGenerationLease::allocate",
-        "reserve_operation",
-        "begin_confirm",
-        "mark_unknown",
-        "register_authority",
-        "transition_authority",
-        "BaseAuthorityStateV1::Revoked",
-        "register_signer_provision",
-        "complete_signer_reprovision",
-        "signer_request_matches",
-        "import_activation_receipt",
-        "restore_archive_for_base",
-        "MigrationVectorBindingV1",
-    ]:
-        if needle not in operation_store and needle not in runtime:
-            raise ContractError(f"Base runtime implementation evidence missing: {needle}")
+    # ARCH-13 slice 13: failpoint phases and runtime APIs are proven by the
+    # node library tests (`tx_base_ops_001_hooks_every_frozen_failpoint_phase`
+    # and the Base operation/runtime tests) that the integrated Base gate runs,
+    # not by source needles.
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    base_gate = workflow_step_body(workflow, "Run the Base v1 integrated root and tuple gate")
+    if base_gate is None or not BASE_NODE_LIBRARY_TEST_COMMAND.search(base_gate):
+        raise ContractError("Base runtime library test gate missing")
     return len(kinds), len(required)
 
 

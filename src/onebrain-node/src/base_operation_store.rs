@@ -2363,6 +2363,33 @@ mod tests {
         assert_eq!(again.records.lock().unwrap().len(), 2);
     }
 
+    /// ARCH-13 slice 13: TX-BASE-OPS-001 hooks every frozen failpoint phase
+    /// on the reserve/cancel write paths, and the store reopens afterwards.
+    #[test]
+    fn tx_base_ops_001_hooks_every_frozen_failpoint_phase() {
+        for phase in ku_core::foundation::dr_m5_failpoint::FAILPOINT_PHASES {
+            let temp = tempfile::tempdir().unwrap();
+            let resolver = BootstrapDatasetPathResolver::new(temp.path()).unwrap();
+            let process = ProcessGenerationId([7; 32]);
+            let store = BaseOperationStore::open(&resolver, process).unwrap();
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(Some(phase)));
+            let failed =
+                match store.reserve_operation(BaseOperationKindV1::ExistingLocalCommand, [9; 32]) {
+                    Err(_) => true,
+                    Ok(reservation) => store
+                        .cancel(BaseOperationId(reservation.0), [9; 32])
+                        .is_err(),
+                };
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(None));
+            assert!(
+                failed,
+                "phase {phase} is not hooked on the reserve/cancel path"
+            );
+            drop(store);
+            BaseOperationStore::open(&resolver, process).unwrap();
+        }
+    }
+
     #[test]
     fn terminal_commit_failpoints_never_observe_a_partial_compaction() {
         for (phase, committed) in [
