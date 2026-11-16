@@ -135,6 +135,8 @@ pub mod vnext_scale_simulation;
 pub mod vnext_security_suite;
 #[cfg(feature = "vnext-soak-harness")]
 pub mod vnext_soak_release;
+#[cfg(all(test, feature = "vnext-soak-harness"))]
+mod vnext_soak_profile_tests;
 pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;

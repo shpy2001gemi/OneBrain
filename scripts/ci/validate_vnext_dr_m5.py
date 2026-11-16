@@ -228,6 +228,26 @@ DR_M5_ROLLBACK_TEST_COMMANDS = (
     ),
 )
 
+
+# ARCH-13 slice 9: M5-07 implementation evidence. Each command must appear in
+# the M5.7 workflow step; the tests behind them replace the former source
+# needles (release smoke over real QUIC/fsync/fault cycles, fail-closed
+# budgets, qualification rules, profile-bound budgets).
+DR_M5_SOAK_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked --release -p onebrain-node\s+--features vnext-soak-harness"
+        r"\s+--lib vnext_soak_release\b"
+    ),
+    re.compile(
+        r"cargo run --locked --release -p onebrain-node\s+--features vnext-soak-harness"
+        r"\s+--example dr_m5_soak_release --\s+--profile smoke\b"
+    ),
+    re.compile(
+        r"cargo test --locked --release -p onebrain-node\s+--features vnext-soak-harness"
+        r"\s+--lib vnext_soak_profile_tests\b"
+    ),
+)
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -1837,26 +1857,11 @@ def validate_vnext_dr_m5_soak_release(
     if profile.get("exit_oracles") != expected_exit:
         raise ContractError("M5-07 exit oracle drift")
 
-    source = read(ROOT / "src/onebrain-node/src/vnext_soak_release.rs")
-    for needle in (
-        'pub const SOAK_RELEASE_PROFILE: &str = "onebrain/dr-m5-soak-release/1"',
-        "pub async fn run_soak_release(",
-        "measure_quic_connects(",
-        "measure_fsync(",
-        "measure_incremental_scans(",
-        "run_slow_peer_cycle(",
-        "run_bounded_flood_cycle(",
-        "run_partition_reunion_cycle(",
-        "DURATION_OR_CYCLE_EVIDENCE_INCOMPLETE",
-        "m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles",
-        "pub host_os: String",
-        "pub host_arch: String",
-        "proc_pidinfo(",
-        "m5_07_macos_proc_metrics_are_available",
-    ):
-        if needle not in source:
-            raise ContractError(f"M5-07 implementation evidence missing: {needle}")
-
+    # ARCH-13 slice 9: implementation evidence is the M5.7 Rust tests (release
+    # smoke, fail-closed budgets and qualification rules; budgets and run
+    # profiles bound to this profile by `vnext_soak_profile_tests`) and the
+    # hosted macOS lane checked by the macOS runner kit, not source needles.
+    # Cargo gates and the long-soak workflows stay as configuration lints.
     cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
     for needle in (
         'name = "dr_m5_soak_release"',
@@ -1868,15 +1873,18 @@ def validate_vnext_dr_m5_soak_release(
             raise ContractError(f"M5-07 Cargo gate missing: {needle}")
 
     foundation = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release",
-        "- name: M5.7 optimized real-QUIC soak and performance release smoke",
-        "cargo test --locked --release -p onebrain-node",
-        "--features vnext-soak-harness",
-        "--profile smoke",
-    ):
-        if needle not in foundation:
-            raise ContractError(f"M5-07 PR acceptance gate missing: {needle}")
+    if "python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release" not in foundation:
+        raise ContractError("M5-07 PR acceptance gate missing: Python regression")
+    step = workflow_step_body(
+        foundation, "M5.7 optimized real-QUIC soak and performance release smoke"
+    )
+    if step is None:
+        raise ContractError("M5-07 PR acceptance gate missing: M5.7 step")
+    for command in DR_M5_SOAK_TEST_COMMANDS:
+        if not command.search(step):
+            raise ContractError(
+                f"M5-07 PR acceptance gate missing Rust test command: {command.pattern}"
+            )
 
     soak_workflow = read(VNEXT_SOAK_WORKFLOW)
     for needle in (

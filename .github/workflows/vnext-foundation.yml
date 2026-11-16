@@ -937,6 +937,9 @@ jobs:
           --features vnext-soak-harness
           --lib vnext_soak_release
           -- --test-threads=1
+          && cargo test --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --lib vnext_soak_profile_tests
           && cargo run --locked --release -p onebrain-node
           --features vnext-soak-harness
           --example dr_m5_soak_release --
