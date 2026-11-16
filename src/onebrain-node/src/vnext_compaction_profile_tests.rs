@@ -63,10 +63,7 @@ fn m5_05_compaction_profile_binds_kill_switch_and_outbox_terminal_states() {
     );
 
     let outbox = &profile["outbox"];
-    assert_eq!(
-        u64_at(outbox, "max_tombstones"),
-        MAX_OUTBOX_TOMBSTONES as u64
-    );
+    assert_eq!(u64_at(outbox, "max_tombstones"), MAX_OUTBOX_TOMBSTONES);
     let all = [
         OutboundIntentState::Pending,
         OutboundIntentState::Acknowledged,
