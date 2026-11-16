@@ -7,6 +7,11 @@ import unittest
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     VNEXT_DESKTOP_WEB_UX_PROFILE,
+    VNEXT_FOUNDATION_WORKFLOW,
+    VNEXT_WEB_UX_RENDER_TEST,
+    VNEXT_WEB_UX_STEP,
+    VNEXT_WEB_UX_VITEST_CONFIG,
+    require_vnext_web_ux_render_tests,
     validate_vnext_desktop_web_ux_profile,
 )
 
@@ -48,6 +53,55 @@ class VNextDesktopWebUxProfileTests(unittest.TestCase):
         profile["desktop"]["tray_quit_bypasses_shutdown"] = True
         with self.assertRaisesRegex(ContractError, "lifecycle"):
             validate_vnext_desktop_web_ux_profile(profile)
+
+
+def web_ux_inputs() -> tuple[str, str, str]:
+    return (
+        VNEXT_FOUNDATION_WORKFLOW.read_text(encoding="utf-8"),
+        VNEXT_WEB_UX_VITEST_CONFIG.read_text(encoding="utf-8"),
+        VNEXT_WEB_UX_RENDER_TEST.read_text(encoding="utf-8"),
+    )
+
+
+class VNextWebUxRenderTestGateTests(unittest.TestCase):
+    """ARCH-13 slice 15: Web labels are proved by vitest render tests in CI."""
+
+    def test_current_workflow_config_and_tests_are_accepted(self) -> None:
+        require_vnext_web_ux_render_tests(*web_ux_inputs())
+
+    def test_step_must_run_vitest(self) -> None:
+        workflow, config, tests = web_ux_inputs()
+        step = workflow.index(f"- name: {VNEXT_WEB_UX_STEP}")
+        end = workflow.index("- name:", step + 1)
+        body = workflow[step:end]
+        self.assertIn("npm run test:ku", body)
+        mutated = workflow[:step] + body.replace("npm run test:ku", "") + workflow[end:]
+        with self.assertRaisesRegex(ContractError, "test:ku"):
+            require_vnext_web_ux_render_tests(mutated, config, tests)
+
+    def test_vitest_elsewhere_does_not_count(self) -> None:
+        workflow, config, tests = web_ux_inputs()
+        step = workflow.index(f"- name: {VNEXT_WEB_UX_STEP}")
+        end = workflow.index("- name:", step + 1)
+        body = workflow[step:end].replace("npm run test:ku", "")
+        mutated = (
+            workflow[:step] + body + workflow[end:]
+            + "\n      - name: Other\n        run: |\n          npm run test:ku\n"
+        )
+        with self.assertRaisesRegex(ContractError, "test:ku"):
+            require_vnext_web_ux_render_tests(mutated, config, tests)
+
+    def test_render_tests_must_be_included_by_vitest(self) -> None:
+        workflow, config, tests = web_ux_inputs()
+        mutated = config.replace('"tests/vnextUx.test.tsx"', "")
+        with self.assertRaisesRegex(ContractError, "include"):
+            require_vnext_web_ux_render_tests(workflow, mutated, tests)
+
+    def test_render_tests_must_read_the_frozen_profile(self) -> None:
+        workflow, config, tests = web_ux_inputs()
+        mutated = tests.replace(VNEXT_DESKTOP_WEB_UX_PROFILE.name, "other.json")
+        with self.assertRaisesRegex(ContractError, "frozen profile"):
+            require_vnext_web_ux_render_tests(workflow, config, mutated)
 
 
 if __name__ == "__main__":

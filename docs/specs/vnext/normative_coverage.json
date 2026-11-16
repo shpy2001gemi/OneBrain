@@ -539,20 +539,20 @@
       "expected_statement_lines": 18,
       "evidence": [
         {
-          "path": "src/onebrain-web/src/pages/OneHopDiscovery.tsx",
-          "needle": "quarantined proposal"
+          "path": "src/onebrain-web/tests/vnextUx.test.tsx",
+          "needle": "projects matches only as non-executable quarantined proposals"
         },
         {
-          "path": "src/onebrain-web/src/pages/VNextPomv.tsx",
-          "needle": "Type the exact intent CID to confirm"
+          "path": "src/onebrain-web/tests/vnextUx.test.tsx",
+          "needle": "exact payload review and the exact typed intent CID"
         },
         {
           "path": "src/onebrain-web/tests/vnextReceipt.test.ts",
           "needle": "frozen Rust/CLI BLAKE3 framing"
         },
         {
-          "path": "src/onebrain-web/src/api/client.ts",
-          "needle": "\"single_use_receipt\":\"[REDACTED]\""
+          "path": "src/onebrain-web/tests/vnextUx.test.tsx",
+          "needle": "redacts the single-use receipt and the private local query from debug logging"
         },
         {
           "path": "src/onebrain-desktop/src/commands.rs",

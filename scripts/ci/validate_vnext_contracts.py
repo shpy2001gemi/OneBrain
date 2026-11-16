@@ -123,6 +123,13 @@ VNEXT_CLI_PROFILE = ROOT / "src/test-vectors/vnext/vnext-cli-profile-v1.json"
 VNEXT_DESKTOP_WEB_UX_PROFILE = (
     ROOT / "src/test-vectors/vnext/vnext-desktop-web-ux-profile-v1.json"
 )
+VNEXT_WEB_UX_VITEST_CONFIG = ROOT / "src/onebrain-web/vitest.config.ts"
+VNEXT_WEB_UX_RENDER_TEST = ROOT / "src/onebrain-web/tests/vnextUx.test.tsx"
+VNEXT_WEB_UX_STEP = "P3.4 Web UX build, lint, and receipt contract"
+VNEXT_WEB_UX_STEP_COMMANDS = (
+    re.compile(r"(?m)^\s*working-directory:\s*src/onebrain-web\s*$"),
+    re.compile(r"(?m)^\s*npm run test:ku\s*$"),
+)
 P5_CANARY_PREFLIGHT_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-canary-preflight-v1.json"
 )
@@ -3583,6 +3590,31 @@ def validate_vnext_cli_profile(
     return len(commands)
 
 
+def require_vnext_web_ux_render_tests(
+    workflow: str | None = None,
+    vitest_config: str | None = None,
+    render_test: str | None = None,
+) -> None:
+    if workflow is None:
+        workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if vitest_config is None:
+        vitest_config = read(VNEXT_WEB_UX_VITEST_CONFIG)
+    if render_test is None:
+        render_test = read(VNEXT_WEB_UX_RENDER_TEST)
+    require_step_commands(
+        workflow, VNEXT_WEB_UX_STEP, VNEXT_WEB_UX_STEP_COMMANDS, "vNext Desktop/Web UX"
+    )
+    test_name = VNEXT_WEB_UX_RENDER_TEST.relative_to(ROOT / "src/onebrain-web").as_posix()
+    if f'"{test_name}"' not in vitest_config:
+        raise ContractError(
+            f"vNext Desktop/Web UX render tests are not in the vitest include list: {test_name}"
+        )
+    if VNEXT_DESKTOP_WEB_UX_PROFILE.name not in render_test:
+        raise ContractError(
+            "vNext Desktop/Web UX render tests are not bound to the frozen profile"
+        )
+
+
 def validate_vnext_desktop_web_ux_profile(
     profile: dict[str, object] | None = None,
 ) -> int:
@@ -3716,37 +3748,20 @@ def validate_vnext_desktop_web_ux_profile(
     ):
         raise ContractError("vNext Desktop/Web receipt vector drift")
 
+    # ARCH-13 slice 15: the Web labels, surface separation, exact-intent
+    # gating, outbox states, Settings status fields and debug-log redaction
+    # are proved by rendered vitest tests bound to this profile
+    # (src/onebrain-web/tests/vnextUx.test.tsx), run by `npm run test:ku` in
+    # the P3.4 CI step.
+    require_vnext_web_ux_render_tests()
+
+    # Lint, kept: the Desktop graceful-shutdown order. onebrain-desktop has
+    # `test = false` (an empty Tauri test harness cannot load its native
+    # WebView entrypoint on Windows GNU) and the sequence runs on a Tauri
+    # AppHandle, so it has no runnable test seam yet. These needles pin the
+    # quit/restart/tray paths to supervisor.shutdown() and its fence →
+    # sockets → network → Base close order until that seam exists.
     source_contract = {
-        "src/onebrain-web/src/pages/Discovery.tsx": (
-            "Local KQL",
-            "One-hop discovery",
-        ),
-        "src/onebrain-web/src/pages/OneHopDiscovery.tsx": (
-            "quarantined proposal",
-            "Responder scope",
-            "Assessed frontier",
-            "Coverage outside this assessed",
-        ),
-        "src/onebrain-web/src/pages/Pomv.tsx": (
-            "Legacy local scalar",
-            "vNext Evidence View / Public Use",
-        ),
-        "src/onebrain-web/src/pages/VNextPomv.tsx": (
-            "Exact canonical payload bytes",
-            "Type the exact intent CID to confirm",
-            "outbox /",
-            "UNRESOLVED CONFLICT — not Authorized",
-        ),
-        "src/onebrain-web/src/api/client.ts": (
-            '"single_use_receipt":"[REDACTED]"',
-        ),
-        "src/onebrain-web/src/pages/Settings.tsx": (
-            "Compiled",
-            "Requested",
-            "Active",
-            "Kill switch",
-            "Signer ready",
-        ),
         "src/onebrain-desktop/src/commands.rs": (
             "finish_exit(app, true).await;",
             "finish_exit(app, false).await;",

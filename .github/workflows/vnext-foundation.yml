@@ -271,6 +271,7 @@ jobs:
           npm run lint
           npm run build
           npm run test:vnext
+          npm run test:ku
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
