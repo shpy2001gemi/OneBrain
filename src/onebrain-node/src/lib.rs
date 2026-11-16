@@ -102,6 +102,8 @@ pub mod vnext_p5_multi_host;
 pub mod vnext_p5_multi_host_v2;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_p5_operations;
+#[cfg(all(test, feature = "vnext-canary-harness"))]
+mod vnext_p5_profile_tests;
 #[cfg(feature = "vnext-production-canary-harness")]
 pub mod vnext_p5_recovery_ops_v2;
 #[cfg(feature = "vnext-production-canary-harness")]

@@ -28,6 +28,7 @@ if __package__:
     )
     from .validate_vnext_dr_m5 import (
         DR_M5_BASELINE_PROFILE,
+        workflow_step_body,
         DR_M5_RESOURCE_PROFILE,
         DR_M5_OBSERVABILITY_PROFILE,
         DR_M5_CRASH_HARNESS_PROFILE,
@@ -69,6 +70,7 @@ else:
     )
     from validate_vnext_dr_m5 import (
         DR_M5_BASELINE_PROFILE,
+        workflow_step_body,
         DR_M5_RESOURCE_PROFILE,
         DR_M5_OBSERVABILITY_PROFILE,
         DR_M5_CRASH_HARNESS_PROFILE,
@@ -5381,6 +5383,50 @@ def validate_base_v1_exact_candidate_soak(
     return (len(expected_runners), len(expected_roles), 2, len(exit_oracles))
 
 
+
+# ARCH-13 slice 10: P5 canary/operations implementation evidence. Each command
+# must appear in its P5 workflow step; the tests behind them replace the former
+# source needles (three-node real-QUIC canary, fault/backup/rollback/dashboard
+# preflight, and profile-bound constants/vocabularies in
+# `vnext_p5_profile_tests`).
+P5_CANARY_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-canary-harness"
+        r"\s+--lib p5_01_"
+    ),
+    re.compile(
+        r"cargo run --locked --release -p onebrain-node\s+--features vnext-canary-harness"
+        r"\s+--example p5_canary_preflight\b"
+    ),
+)
+P5_OPERATIONS_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-canary-harness"
+        r"\s+--lib vnext_p5_operations\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-canary-harness"
+        r"\s+--lib vnext_p5_profile_tests\b"
+    ),
+    re.compile(
+        r"cargo run --locked --release -p onebrain-node\s+--features vnext-canary-harness"
+        r"\s+--example p5_operations_preflight\b"
+    ),
+)
+
+
+def require_step_commands(
+    workflow: str, step_name: str, commands: tuple[re.Pattern[str], ...], label: str
+) -> None:
+    step = workflow_step_body(workflow, step_name)
+    if step is None:
+        raise ContractError(f"{label} PR acceptance gate missing: {step_name}")
+    for command in commands:
+        if not command.search(step):
+            raise ContractError(
+                f"{label} PR acceptance gate missing Rust test command: {command.pattern}"
+            )
+
 def validate_vnext_p5_canary_preflight(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int, int]:
@@ -5444,24 +5490,9 @@ def validate_vnext_p5_canary_preflight(
     }:
         raise ContractError("P5-01 canary production gate drift")
 
-    source = read(ROOT / "src/onebrain-node/src/vnext_canary_operations.rs")
-    for needle in (
-        'pub const P5_CANARY_PREFLIGHT_PROFILE: &str = "onebrain/p5-canary-preflight/1"',
-        "pub async fn run_p5_canary_preflight(",
-        "P5_CANARY_NODE_COUNT: usize = 3",
-        "P5_CANARY_RING_DELIVERIES: usize = 3",
-        "P5_CANARY_ROUTE_OBSERVATIONS: usize = 6",
-        "partition_rejected_old_route",
-        "restarted_principal_stable",
-        "route_generation_advanced",
-        "durable_feed_branches_after_replay",
-        "production_canary_qualified: false",
-        "p5_01_three_node_real_quic_partition_restart_route_change_reunion",
-        "p5_01_nonempty_node_directory_fails_before_runtime_start",
-    ):
-        if needle not in source:
-            raise ContractError(f"P5-01 implementation evidence missing: {needle}")
-
+    # ARCH-13 slice 10: implementation evidence is the P5.1 Rust tests and
+    # example (constants bound by `vnext_p5_profile_tests`), not source
+    # needles. Cargo gates stay as configuration lints.
     cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
     for needle in (
         'name = "p5_canary_preflight"',
@@ -5472,14 +5503,14 @@ def validate_vnext_p5_canary_preflight(
             raise ContractError(f"P5-01 Cargo gate missing: {needle}")
 
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight",
-        "- name: P5.1 three-node authenticated QUIC canary preflight",
-        "--features vnext-canary-harness",
-        "--example p5_canary_preflight",
-    ):
-        if needle not in workflow:
-            raise ContractError(f"P5-01 PR acceptance gate missing: {needle}")
+    if "python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight" not in workflow:
+        raise ContractError("P5-01 PR acceptance gate missing: Python regression")
+    require_step_commands(
+        workflow,
+        "P5.1 three-node authenticated QUIC canary preflight",
+        P5_CANARY_TEST_COMMANDS,
+        "P5-01",
+    )
 
     spec = read(VNEXT / "P5_CANARY_PREFLIGHT_PROFILE_V1.md")
     if "p5-canary-preflight-v1.json" not in spec:
@@ -5672,30 +5703,10 @@ def validate_vnext_p5_operations_preflight(
     if profile.get("remaining_external_gates") != expected_external_gates:
         raise ContractError("P5-02..P5-06 external gate drift")
 
-    source = read(ROOT / "src/onebrain-node/src/vnext_p5_operations.rs")
-    for needle in (
-        'pub const P5_OPERATIONS_PREFLIGHT_PROFILE: &str = "onebrain/p5-operations-preflight/1"',
-        "pub async fn run_p5_operations_preflight(",
-        "start_canary_harness(",
-        "VNextReasonCode::RejectedStorage",
-        "create_offline_backup(",
-        "restore_offline_backup(",
-        "corrupt_archive_failed_before_restore",
-        "rollback_runtime()",
-        "local_kql_round_trip_with_network_off",
-        "pub fn build_operator_dashboard(",
-        "production_canary_qualified: false",
-        "p5_02_through_p5_06_operational_preflight_passes_without_72h",
-    ):
-        if needle not in source:
-            raise ContractError(
-                f"P5-02..P5-06 implementation evidence missing: {needle}"
-            )
-
-    network_source = read(ROOT / "src/onebrain-node/src/vnext_network_runtime.rs")
-    if "pub(crate) async fn start_canary_harness(" not in network_source:
-        raise ContractError("P5 operations gated network harness missing")
-
+    # ARCH-13 slice 10: implementation evidence is the P5.2-P5.6 Rust tests
+    # and example (backup files, lanes and incident codes bound by
+    # `vnext_p5_profile_tests`), not source needles. Cargo gates stay as
+    # configuration lints.
     cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
     for needle in (
         'name = "p5_operations_preflight"',
@@ -5706,13 +5717,17 @@ def validate_vnext_p5_operations_preflight(
             raise ContractError(f"P5 operations Cargo gate missing: {needle}")
 
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight",
-        "- name: P5.2-P5.6 operational fault backup rollback and dashboard preflight",
-        "--example p5_operations_preflight",
+    if (
+        "python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight"
+        not in workflow
     ):
-        if needle not in workflow:
-            raise ContractError(f"P5 operations PR acceptance gate missing: {needle}")
+        raise ContractError("P5 operations PR acceptance gate missing: Python regression")
+    require_step_commands(
+        workflow,
+        "P5.2-P5.6 operational fault backup rollback and dashboard preflight",
+        P5_OPERATIONS_TEST_COMMANDS,
+        "P5 operations",
+    )
 
     spec = read(VNEXT / "P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md")
     if "p5-operations-preflight-v1.json" not in spec:

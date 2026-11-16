@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_contracts
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     P5_OPERATIONS_PREFLIGHT_PROFILE,
@@ -104,6 +106,43 @@ class VNextP5OperationsPreflightTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "external gate"):
             validate_vnext_p5_operations_preflight(profile)
 
+
+    def assert_workflow_mutation_rejected_arch13(self, mutate) -> None:
+        real_read = validate_vnext_contracts.read
+
+        def read_mutated(candidate):
+            text = real_read(candidate)
+            if candidate == validate_vnext_contracts.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = mutate(text)
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_contracts, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, 'PR acceptance gate'):
+                validate_vnext_p5_operations_preflight(frozen_profile())
+
+    def test_every_p5_operations_test_commands_command_must_run_in_its_step(self) -> None:
+        commands = validate_vnext_contracts.P5_OPERATIONS_TEST_COMMANDS
+        self.assertEqual(len(commands), 3)
+        for command in commands:
+            with self.subTest(command=command.pattern):
+                self.assert_workflow_mutation_rejected_arch13(
+                    lambda text, command=command: command.sub("", text)
+                )
+
+    def test_arch13_step_0_cannot_disappear(self) -> None:
+        self.assert_workflow_mutation_rejected_arch13(
+            lambda text: text.replace('- name: P5.2-P5.6 operational fault backup rollback and dashboard preflight', '- name: renamed step')
+        )
+
+    def test_arch13_commands_match_the_rust_tests(self) -> None:
+        expected = {'src/onebrain-node/src/vnext_p5_profile_tests.rs': ['fn p5_operations_profile_binds_backup_lanes_and_incident_codes'], 'src/onebrain-node/src/vnext_p5_operations.rs': ['async fn p5_02_through_p5_06_operational_preflight_passes_without_72h']}
+        for relative, names in expected.items():
+            source = (validate_vnext_contracts.ROOT / relative).read_text(encoding="utf-8")
+            for name in names:
+                with self.subTest(path=relative, name=name):
+                    self.assertIn(name, source)
 
 if __name__ == "__main__":
     unittest.main()
