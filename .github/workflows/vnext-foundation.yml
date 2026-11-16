@@ -906,6 +906,11 @@ jobs:
           --features vnext-compaction-harness
           --lib vnext_operational_compaction
           -- --test-threads=1
+          && cargo test --locked -p ku-core
+          --lib foundation::operational_compaction
+          && cargo test --locked -p onebrain-node
+          --features vnext-compaction-harness
+          --lib vnext_compaction_profile_tests
       - name: M5.6 mixed-version runtime rollback and process-kill recovery
         run: >-
           cargo test --locked -p onebrain-node

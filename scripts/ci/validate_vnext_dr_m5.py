@@ -176,6 +176,33 @@ def workflow_step_body(workflow: str, name: str) -> str | None:
     )
     return step.group("body") if step else None
 
+
+# ARCH-13 slice 7: M5-05 implementation evidence. Each command must appear in
+# the M5.5 workflow step; the tests behind them replace the former source
+# needles (kill switch, journal/outbox/operational compaction and their
+# process-kill matrices, bounded evidence and derived snapshot roots).
+DR_M5_COMPACTION_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked -p ku-net\s+--features persist,dr-m5-crash-harness"
+        r"\s+--lib vnext_reconciliation_journal\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-compaction-harness"
+        r"\s+--lib vnext_outbox\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-compaction-harness"
+        r"\s+--lib vnext_operational_compaction\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p ku-core\s+--lib foundation::operational_compaction\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-compaction-harness"
+        r"\s+--lib vnext_compaction_profile_tests\b"
+    ),
+)
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -1277,73 +1304,12 @@ def validate_vnext_dr_m5_operational_compaction(
     if profile.get("exit_oracles") != expected_exit:
         raise ContractError("M5-05 exit oracle drift")
 
-    switch_source = read(
-        ROOT / "src/ku-core/src/foundation/operational_compaction.rs"
-    )
-    for needle in (
-        "pub struct OperationalCompactionSwitch",
-        "AtomicBool::new(false)",
-        ".fetch_add(1, Ordering::AcqRel)",
-        "pub struct OperationalCompactionPermit",
-        "pub fn run_if_current",
-        "switch_is_default_off_and_stale_permits_never_revive",
-    ):
-        if needle not in switch_source:
-            raise ContractError(
-                f"M5-05 kill-switch implementation evidence missing: {needle}"
-            )
-
-    journal_source = read(
-        ROOT / "src/ku-net/src/vnext_reconciliation_journal.rs"
-    )
-    for needle in (
-        "compact_completed_manifests",
-        "accepted.canonical_length == entry.canonical_length",
-        "next.compacted_manifests.insert(*digest)",
-        "store_compaction_atomically",
-        "m5_05_journal_process_kill_matrix_restores_exact_root",
-    ):
-        if needle not in journal_source:
-            raise ContractError(
-                f"M5-05 journal implementation evidence missing: {needle}"
-            )
-
-    outbox_source = read(ROOT / "src/onebrain-node/src/vnext_outbox.rs")
-    for needle in (
-        "pub struct OutboundAuditTombstone",
-        "if intent.state.is_terminal()",
-        "let mut tombstones",
-        "outbox.remove",
-        "physical_reclaim_reduces_disk_after_terminal_payload_compaction",
-        "m5_05_outbox_process_kill_matrix_restores_exact_root",
-    ):
-        if needle not in outbox_source:
-            raise ContractError(
-                f"M5-05 outbox implementation evidence missing: {needle}"
-            )
-
-    operational_source = read(
-        ROOT / "src/onebrain-node/src/vnext_operational_compaction.rs"
-    )
-    for needle in (
-        "MAX_OPERATIONAL_EVIDENCE_RECORDS: u64 = 4_096",
-        "MAX_OPERATIONAL_EVIDENCE_BYTES: usize = 1_048_576",
-        "previous.last_dropped_id == id",
-        "MAX_DERIVED_SNAPSHOT_ROWS: usize = 65_536",
-        "MAX_DERIVED_SNAPSHOT_BYTES: usize = 16 * 1_048_576",
-        "frozen_kql_and_pomv_snapshot_roots_match_profile",
-        "m5_05_operational_process_kill_matrix_restores_exact_root",
-    ):
-        if needle not in operational_source:
-            raise ContractError(
-                f"M5-05 operational implementation evidence missing: {needle}"
-            )
-    for boundary in expected_boundaries[2:]:
-        if boundary not in operational_source:
-            raise ContractError(
-                f"M5-05 operational boundary evidence missing: {boundary}"
-            )
-
+    # ARCH-13 slice 7: kill-switch, journal, outbox and operational evidence is
+    # the M5.5 Rust tests (process-kill matrices, fenced permits, bounds and
+    # fixture roots bound to this profile by `vnext_compaction_profile_tests`
+    # and `frozen_kql_and_pomv_snapshot_roots_match_profile`), not source
+    # needles. The feature firewall and transaction inventory stay as
+    # configuration/documentation lints.
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
         'default = ["base-v1"]' not in node_manifest
@@ -1363,14 +1329,21 @@ def validate_vnext_dr_m5_operational_compaction(
     if "dr-m5-operational-compaction-v1.json" not in spec:
         raise ContractError("M5-05 normative profile is not linked to machine contract")
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction",
-        "- name: M5.5 operational compaction and process-kill recovery",
-        "--features persist,dr-m5-crash-harness",
-        "--features vnext-compaction-harness",
+    if (
+        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction"
+        not in workflow
     ):
-        if needle not in workflow:
-            raise ContractError(f"M5-05 PR acceptance gate missing: {needle}")
+        raise ContractError("M5-05 PR acceptance gate missing: Python regression")
+    step = workflow_step_body(
+        workflow, "M5.5 operational compaction and process-kill recovery"
+    )
+    if step is None:
+        raise ContractError("M5-05 PR acceptance gate missing: M5.5 step")
+    for command in DR_M5_COMPACTION_TEST_COMMANDS:
+        if not command.search(step):
+            raise ContractError(
+                f"M5-05 PR acceptance gate missing Rust test command: {command.pattern}"
+            )
 
     return (
         len(expected_boundaries),

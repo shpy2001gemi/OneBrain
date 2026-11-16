@@ -70,14 +70,14 @@ pub enum BoundedEvidenceKind {
 }
 
 impl BoundedEvidenceKind {
-    const fn key(self) -> &'static [u8] {
+    pub(crate) const fn key(self) -> &'static [u8] {
         match self {
             Self::Quarantine => b"quarantine",
             Self::Provenance => b"provenance",
         }
     }
 
-    const fn boundary(self) -> &'static str {
+    pub(crate) const fn boundary(self) -> &'static str {
         match self {
             Self::Quarantine => "TX-CMP-QAR-001",
             Self::Provenance => "TX-CMP-PRV-001",
@@ -900,25 +900,39 @@ mod tests {
 
     #[test]
     fn frozen_kql_and_pomv_snapshot_roots_match_profile() {
-        let rows = vec![row(3, 96), row(1, 32), row(2, 64)];
-        let kql = DerivedIndexSnapshot::new(DerivedIndexLane::Kql, 1, rows.clone()).unwrap();
-        assert_eq!(
-            kql.source_root,
-            root("0ca08333f6db371de7674d19cb99db26df952b72a87ca6ee37226a9bf0872910")
-        );
+        // ARCH-13 slice 7: rows, reducer version and roots come from the
+        // frozen M5-05 profile fixture.
+        let profile: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../test-vectors/vnext/dr-m5-operational-compaction-v1.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let derived = &profile["derived_snapshots"];
+        let fixture = &derived["fixture"];
+        let reducer = derived["reducer_version"].as_u64().unwrap();
+        let mut rows = Vec::new();
+        for entry in fixture["rows"].as_array().unwrap().iter().rev() {
+            let key = u8::from_str_radix(entry["key_hex"].as_str().unwrap(), 16).unwrap();
+            assert_eq!(entry["value_byte"].as_u64(), Some(u64::from(key)));
+            rows.push(row(key, entry["value_length"].as_u64().unwrap() as usize));
+        }
+        let fixed_root = |name: &str| root(fixture[name].as_str().unwrap());
+
+        let kql = DerivedIndexSnapshot::new(DerivedIndexLane::Kql, reducer, rows.clone()).unwrap();
+        assert_eq!(kql.source_root, fixed_root("kql_source_root_blake3"));
         assert_eq!(
             kql.projection_root,
-            root("230a443d1bd69814e05fb2a2173c4d895556b262b39586204120fa48d8442194")
+            fixed_root("kql_projection_root_blake3")
         );
 
-        let pomv = DerivedIndexSnapshot::new(DerivedIndexLane::Pomv, 1, rows).unwrap();
-        assert_eq!(
-            pomv.source_root,
-            root("7fbcf8ee16d00a0c31391f45dcf0c424387c53dafa2ea77d0a4a37a5f799f689")
-        );
+        let pomv = DerivedIndexSnapshot::new(DerivedIndexLane::Pomv, reducer, rows).unwrap();
+        assert_eq!(pomv.source_root, fixed_root("pomv_source_root_blake3"));
         assert_eq!(
             pomv.projection_root,
-            root("73f25199ee54961a10dc3585ed28d8fc08e1be432ced37f1f0b3a92582ccc571")
+            fixed_root("pomv_projection_root_blake3")
         );
     }
 

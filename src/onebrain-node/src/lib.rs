@@ -84,6 +84,8 @@ pub mod vnext_observability;
 mod vnext_observability_profile_tests;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_operational_compaction;
+#[cfg(all(test, feature = "vnext-compaction-harness"))]
+mod vnext_compaction_profile_tests;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_outbound_product;
 #[cfg(feature = "vnext-network-runtime")]
