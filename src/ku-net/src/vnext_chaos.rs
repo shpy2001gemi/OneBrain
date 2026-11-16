@@ -24,6 +24,19 @@ pub const FLOOD_SCENARIOS: [&str; 5] = [
     "slowloris",
 ];
 
+// Frozen M5-04 bounds exercised by the tests below; onebrain-node
+// `vnext_chaos_profile_tests` binds them to `dr-m5-chaos-fuzz-v1.json`.
+pub const REAL_QUIC_TIMEOUT_SECONDS: u64 = 15;
+pub const FLOOD_PRE_AUTH_ATTEMPTS: usize = 20_000;
+pub const FLOOD_AUTHENTICATED_SESSION_ATTEMPTS: u64 = 1_024;
+pub const FLOOD_CONTEXT_MANIFEST_ATTEMPTS: u64 = 1_024;
+pub const FLOOD_CONTEXT_LIMIT: usize = 8;
+pub const FLOOD_UNIQUE_INVALID_CIDS: u64 = 4_096;
+pub const SLOWLORIS_DEADLINE_MS: u64 = 75;
+pub const TRACE_SEEDS: u64 = 64;
+pub const TRACE_STEPS_PER_SEED: usize = 4_096;
+pub const TRACE_RECORDS: usize = 64;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChaosTraceConfig {
     pub seed: u64,
@@ -249,17 +262,13 @@ mod tests {
     };
     use crate::vnext_session::AuthenticatedSession;
 
-    const TRACE_SEEDS: u64 = 64;
-    const TRACE_STEPS: usize = 4_096;
-    const TRACE_RECORDS: usize = 64;
-
     #[test]
     fn long_delivery_traces_converge_to_one_oracle_under_fair_redelivery() {
         let expected = expected_oracle_root(TRACE_RECORDS).unwrap();
         for seed in 0..TRACE_SEEDS {
             let report = run_delivery_trace(ChaosTraceConfig {
                 seed,
-                steps: TRACE_STEPS,
+                steps: TRACE_STEPS_PER_SEED,
                 record_count: TRACE_RECORDS,
             })
             .unwrap();
@@ -281,7 +290,7 @@ mod tests {
 
     #[tokio::test]
     async fn real_quic_drop_duplicate_delay_reorder_disconnect_and_reunion_converge() {
-        timeout(Duration::from_secs(15), async {
+        timeout(Duration::from_secs(REAL_QUIC_TIMEOUT_SECONDS), async {
             let server = bind_transport().await;
             let client = bind_transport().await;
             let old_server_addr = server.local_addr().unwrap();
@@ -377,7 +386,7 @@ mod tests {
         let second = controller
             .try_begin_handshake(IpAddr::V4(Ipv4Addr::LOCALHOST))
             .unwrap();
-        for _ in 0..20_000 {
+        for _ in 0..FLOOD_PRE_AUTH_ATTEMPTS {
             assert!(controller
                 .try_begin_handshake(IpAddr::V4(Ipv4Addr::LOCALHOST))
                 .is_err());
@@ -397,7 +406,7 @@ mod tests {
             .unwrap()
             .promote(NodeId::from_bytes([0x12; 32]))
             .unwrap();
-        for ordinal in 0..1_024u64 {
+        for ordinal in 0..FLOOD_AUTHENTICATED_SESSION_ATTEMPTS {
             let mut peer = [0x20; 32];
             peer[24..].copy_from_slice(&ordinal.to_be_bytes());
             assert!(controller
@@ -416,7 +425,7 @@ mod tests {
         let client = bind_transport().await;
         let (server_connection, client_connection) = connect_pair(&server, &client).await;
         let receive = timeout(
-            Duration::from_millis(75),
+            Duration::from_millis(SLOWLORIS_DEADLINE_MS),
             server_connection.recv_length_prefixed_uni(1_024),
         );
         let send = client_connection.send_length_prefixed_uni_chunks(
@@ -436,10 +445,11 @@ mod tests {
 
         let (server_connection, client_connection, accepted, initiated) =
             authenticated_pair(&server, &client).await;
-        let mut carrier = AuthenticatedCarrierSession::with_context_limit(accepted, 8).unwrap();
+        let mut carrier =
+            AuthenticatedCarrierSession::with_context_limit(accepted, FLOOD_CONTEXT_LIMIT).unwrap();
         let mut admitted = 0usize;
         let mut rejected = 0usize;
-        for ordinal in 0..1_024u64 {
+        for ordinal in 0..FLOOD_CONTEXT_MANIFEST_ATTEMPTS {
             let context = context(initiated.session_id, ordinal);
             let message = bind_reconciliation_message(
                 context,
@@ -460,16 +470,19 @@ mod tests {
                 Err(_) => rejected += 1,
             }
         }
-        assert_eq!(admitted, 8);
-        assert_eq!(rejected, 1_016);
-        assert_eq!(carrier.context_count(), 8);
+        assert_eq!(admitted, FLOOD_CONTEXT_LIMIT);
+        assert_eq!(
+            rejected as u64,
+            FLOOD_CONTEXT_MANIFEST_ATTEMPTS - FLOOD_CONTEXT_LIMIT as u64
+        );
+        assert_eq!(carrier.context_count(), FLOOD_CONTEXT_LIMIT);
 
-        for ordinal in 0..4_096u64 {
+        for ordinal in 0..FLOOD_UNIQUE_INVALID_CIDS {
             let mut invalid = ordinal.to_be_bytes().repeat(4);
             invalid[0] ^= 0xff;
             let _ = QuicRecordAdapter::decode_payload(&invalid);
         }
-        assert_eq!(carrier.context_count(), 8);
+        assert_eq!(carrier.context_count(), FLOOD_CONTEXT_LIMIT);
         assert!(!QuicRecordAdapter::grants_authority());
 
         server_connection.close("DR_M5_FLOOD_COMPLETE");

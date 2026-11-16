@@ -145,6 +145,37 @@ DR_M5_OBSERVABILITY_TEST_COMMANDS = (
     ),
 )
 
+
+# ARCH-13 slice 6: M5-04 implementation evidence. Each command must appear in
+# its M5.4 workflow step; the tests behind them replace the former source
+# needles (chaos/flood tests, trace oracle, parser target dispatch).
+DR_M5_CHAOS_TEST_COMMANDS = (
+    re.compile(
+        r"cargo test --locked -p ku-net\s+--features dr-m5-chaos-harness"
+        r"\s+--lib vnext_chaos\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-chaos-harness"
+        r"\s+--lib vnext_fuzz_targets\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-chaos-harness"
+        r"\s+--lib vnext_chaos_profile_tests\b"
+    ),
+)
+DR_M5_FUZZ_CORPUS_SMOKE_COMMAND = re.compile(
+    r"cargo run --locked -p onebrain-node\s+--features vnext-chaos-harness,vnext-outbound-first"
+    r"\s+--example dr_m5_fuzz_corpus_smoke\b"
+)
+
+
+def workflow_step_body(workflow: str, name: str) -> str | None:
+    step = re.search(
+        rf"(?ms)^\s+- name: {re.escape(name)}\s*$(?P<body>.*?)(?=^\s+- name: |\Z)",
+        workflow,
+    )
+    return step.group("body") if step else None
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -997,44 +1028,11 @@ def validate_vnext_dr_m5_chaos_fuzz(
     if profile.get("exit_oracles") != expected_exit:
         raise ContractError("M5-04 exit oracle drift")
 
-    chaos_source = read(ROOT / "src/ku-net/src/vnext_chaos.rs")
-    for needle in (
-        "real_quic_drop_duplicate_delay_reorder_disconnect_and_reunion_converge",
-        "floods_and_slowloris_remain_bounded_without_state_amplification",
-        "long_delivery_traces_converge_to_one_oracle_under_fair_redelivery",
-        "private-standing-need-must-not-cross-chaos-wire",
-        "accepted.extend(source)",
-        "claims_network_completion: false",
-    ):
-        if needle not in chaos_source:
-            raise ContractError(f"M5-04 chaos implementation evidence missing: {needle}")
-
-    shared_target_source = read(
-        ROOT / "src/onebrain-node/src/vnext_fuzz_targets.rs"
-    )
-    for needle in (
-        "decode_canonical",
-        "decode_session_message",
-        "decode_reconciliation_message",
-        "QuicRecordAdapter::decode",
-        "fuzz_decode_journal_token_and_snapshot",
-        "decode_knowledge_object",
-        "decode_knowledge_event",
-        "decode_feed_inception",
-        "decode_actor_delegation",
-        "decode_actor_revocation",
-        "UseEvidencePayload::from_validated_object",
-        "legacy::parse_peer_message",
-        "assert!(!adapter.grants_vnext_authority())",
-    ):
-        if needle not in shared_target_source:
-            raise ContractError(f"M5-04 parser target evidence missing: {needle}")
-    journal_source = read(
-        ROOT / "src/ku-net/src/vnext_reconciliation_journal.rs"
-    )
-    if "validate_token_against(&projection, &token, token_key)" not in journal_source:
-        raise ContractError("M5-04 journal token validator fuzz evidence missing")
-
+    # ARCH-13 slice 6: chaos, trace-oracle and parser-target evidence is the
+    # M5.4 Rust tests (scenarios, flood bounds, trace oracle and PR corpus bound
+    # to this profile by `vnext_chaos_profile_tests`), not source needles. The
+    # cargo-fuzz manifest/lock/wrappers, corpus digest, nightly workflow and
+    # feature firewall below are build-configuration lints and stay.
     fuzz_manifest = read(ROOT / "src/fuzz/Cargo.toml")
     if (
         'libfuzzer-sys = "=0.4.13"' not in fuzz_manifest
@@ -1114,14 +1112,19 @@ def validate_vnext_dr_m5_chaos_fuzz(
     if "dr-m5-chaos-fuzz-v1.json" not in spec:
         raise ContractError("M5-04 normative profile is not linked to machine contract")
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz",
-        "- name: M5.4 real-QUIC chaos and adversarial flood",
-        "- name: M5.4 deterministic parser corpus smoke",
-        "--features vnext-chaos-harness",
-    ):
-        if needle not in workflow:
-            raise ContractError(f"M5-04 PR acceptance gate missing: {needle}")
+    if "python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz" not in workflow:
+        raise ContractError("M5-04 PR acceptance gate missing: Python regression")
+    chaos_step = workflow_step_body(workflow, "M5.4 real-QUIC chaos and adversarial flood")
+    corpus_step = workflow_step_body(workflow, "M5.4 deterministic parser corpus smoke")
+    if chaos_step is None or corpus_step is None:
+        raise ContractError("M5-04 PR acceptance gate missing: M5.4 step")
+    for command in DR_M5_CHAOS_TEST_COMMANDS:
+        if not command.search(chaos_step):
+            raise ContractError(
+                f"M5-04 PR acceptance gate missing Rust test command: {command.pattern}"
+            )
+    if not DR_M5_FUZZ_CORPUS_SMOKE_COMMAND.search(corpus_step):
+        raise ContractError("M5-04 PR acceptance gate missing corpus smoke command")
 
     return (
         len(expected_chaos),

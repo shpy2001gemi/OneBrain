@@ -64,6 +64,8 @@ pub mod vnext_distributed_kql;
 pub mod vnext_distributed_pomv;
 #[cfg(feature = "vnext-chaos-harness")]
 pub mod vnext_fuzz_targets;
+#[cfg(all(test, feature = "vnext-chaos-harness"))]
+mod vnext_chaos_profile_tests;
 pub mod vnext_legacy_migration;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_linux_candidate_gatherer;
