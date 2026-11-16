@@ -20,7 +20,7 @@ use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
 
 const ROLLOUT: TableDefinition<&str, &[u8]> = TableDefinition::new("vnext_runtime_rollout_v1");
 const ROLLOUT_DATABASE: &str = "vnext_runtime_rollout.redb";
-const TX_RUNTIME_ROLLBACK: &str = "TX-ROL-001";
+pub(crate) const TX_RUNTIME_ROLLBACK: &str = "TX-ROL-001";
 const STORED_LANE_BYTES: usize = 9;
 
 pub const VNEXT_RUNTIME_ROLLOUT_PROFILE_MAJOR: u64 = 1;

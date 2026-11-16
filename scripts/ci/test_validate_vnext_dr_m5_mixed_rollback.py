@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_dr_m5
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     DR_M5_MIXED_ROLLBACK_PROFILE,
@@ -82,6 +84,43 @@ class VNextDrM5MixedRollbackTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "exit oracle"):
             validate_vnext_dr_m5_mixed_rollback(profile)
 
+
+    def assert_workflow_mutation_rejected_arch13(self, mutate) -> None:
+        real_read = validate_vnext_dr_m5.read
+
+        def read_mutated(candidate):
+            text = real_read(candidate)
+            if candidate == validate_vnext_dr_m5.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = mutate(text)
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_dr_m5, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, 'PR acceptance gate'):
+                validate_vnext_dr_m5_mixed_rollback(frozen_profile())
+
+    def test_every_dr_m5_rollback_test_commands_command_must_run_in_its_step(self) -> None:
+        commands = validate_vnext_dr_m5.DR_M5_ROLLBACK_TEST_COMMANDS
+        self.assertEqual(len(commands), 5)
+        for command in commands:
+            with self.subTest(command=command.pattern):
+                self.assert_workflow_mutation_rejected_arch13(
+                    lambda text, command=command: command.sub("", text)
+                )
+
+    def test_arch13_step_0_cannot_disappear(self) -> None:
+        self.assert_workflow_mutation_rejected_arch13(
+            lambda text: text.replace('- name: M5.6 mixed-version runtime rollback and process-kill recovery', '- name: renamed step')
+        )
+
+    def test_arch13_commands_match_the_rust_tests(self) -> None:
+        expected = {'src/onebrain-node/src/vnext_rollback_profile_tests.rs': ['fn m5_06_rollback_profile_'], 'src/onebrain-node/src/vnext_runtime_rollout.rs': ['fn m5_06_runtime_rollback_process_kill_matrix_recovers_exact_generation'], 'src/onebrain-node/src/vnext_product_runtime.rs': ['async fn runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic'], 'src/onebrain-node/src/vnext_mixed_conformance.rs': ['fn frozen_n_minus_one_tcp_json_corpus_is_byte_exact'], 'src/onebrain-node/tests/vnext_node_runtime.rs': ['legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback']}
+        for relative, names in expected.items():
+            source = (validate_vnext_dr_m5.ROOT / relative).read_text(encoding="utf-8")
+            for name in names:
+                with self.subTest(path=relative, name=name):
+                    self.assertIn(name, source)
 
 if __name__ == "__main__":
     unittest.main()

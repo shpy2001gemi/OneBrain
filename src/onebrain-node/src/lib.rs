@@ -127,6 +127,8 @@ pub mod vnext_route_authority;
 pub mod vnext_route_journal;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_runtime_rollout;
+#[cfg(all(test, feature = "vnext-network-runtime"))]
+mod vnext_rollback_profile_tests;
 #[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_scale_simulation;
 #[cfg(test)]

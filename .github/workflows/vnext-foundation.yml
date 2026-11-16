@@ -928,6 +928,9 @@ jobs:
           --features vnext-network-runtime
           --test vnext_node_runtime
           -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_rollback_profile_tests
       - name: M5.7 optimized real-QUIC soak and performance release smoke
         run: >-
           cargo test --locked --release -p onebrain-node

@@ -203,6 +203,31 @@ DR_M5_COMPACTION_TEST_COMMANDS = (
     ),
 )
 
+
+# ARCH-13 slice 8: M5-06 implementation evidence. Each command must appear in
+# the M5.6 workflow step; the tests behind them replace the former source
+# needles (rollout store, product lane fences, network generation fence,
+# frozen N-1 corpus, simultaneous legacy/vNext transports).
+DR_M5_ROLLBACK_TEST_COMMANDS = (
+    re.compile(r"cargo test --locked -p onebrain-node\s+--lib vnext_mixed_conformance\b"),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-crash-harness"
+        r"\s+--lib vnext_runtime_rollout\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r"\s+--lib vnext_product_runtime\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r"\s+--test vnext_node_runtime\b"
+    ),
+    re.compile(
+        r"cargo test --locked -p onebrain-node\s+--features vnext-network-runtime"
+        r"\s+--lib vnext_rollback_profile_tests\b"
+    ),
+)
+
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 VNEXT_MACOS_SOAK_WORKFLOW = (
     ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
@@ -1487,67 +1512,11 @@ def validate_vnext_dr_m5_mixed_rollback(
     if profile.get("exit_oracles") != expected_exit:
         raise ContractError("M5-06 exit oracle drift")
 
-    rollout_source = read(
-        ROOT / "src/onebrain-node/src/vnext_runtime_rollout.rs"
-    )
-    for needle in (
-        'TableDefinition::new("vnext_runtime_rollout_v1")',
-        'const TX_RUNTIME_ROLLBACK: &str = "TX-ROL-001"',
-        "Startup may apply a",
-        "pub fn kill(",
-        "pub fn reenable(",
-        "pub fn rollback(",
-        "m5_06_runtime_rollback_process_kill_matrix_recovers_exact_generation",
-    ):
-        if needle not in rollout_source:
-            raise ContractError(
-                f"M5-06 rollout implementation evidence missing: {needle}"
-            )
-
-    product_source = read(
-        ROOT / "src/onebrain-node/src/vnext_product_runtime.rs"
-    )
-    for needle in (
-        "kill_runtime_lane",
-        "reenable_runtime_lane",
-        "rollback_runtime",
-        "runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic",
-        "VNextRuntimeLane::DistributedKql",
-        "VNextRuntimeLane::PublicUseEvidencePublish",
-        "VNextRuntimeLane::DistributedPomvView",
-    ):
-        if needle not in product_source:
-            raise ContractError(
-                f"M5-06 product fence evidence missing: {needle}"
-            )
-
-    network_source = read(
-        ROOT / "src/onebrain-node/src/vnext_network_runtime.rs"
-    )
-    for needle in (
-        "network generation changed",
-        "generation.is_current()",
-        'connection.close("OBP-RP runtime generation fenced")',
-    ):
-        if needle not in network_source:
-            raise ContractError(
-                f"M5-06 network generation evidence missing: {needle}"
-            )
-
-    mixed_source = read(
-        ROOT / "src/onebrain-node/src/vnext_mixed_conformance.rs"
-    )
-    if "verify_frozen_n_minus_one_wire_corpus" not in mixed_source:
-        raise ContractError("M5-06 frozen N-1 executable evidence missing")
-    node_test = read(
-        ROOT / "src/onebrain-node/tests/vnext_node_runtime.rs"
-    )
-    if (
-        "legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback"
-        not in node_test
-    ):
-        raise ContractError("M5-06 simultaneous transport evidence missing")
-
+    # ARCH-13 slice 8: rollout, product-fence, network-generation, N-1 corpus
+    # and simultaneous-transport evidence is the M5.6 Rust tests (lanes,
+    # boundary, phases and fence/rollback rules bound to this profile by
+    # `vnext_rollback_profile_tests`), not source needles. The transaction
+    # inventory and spec link stay as documentation lints.
     inventory = read(DR_M5_TRANSACTION_INVENTORY)
     if "TX-ROL-001" not in inventory:
         raise ContractError("M5-06 transaction inventory missing TX-ROL-001")
@@ -1555,14 +1524,18 @@ def validate_vnext_dr_m5_mixed_rollback(
     if "dr-m5-mixed-rollback-v1.json" not in spec:
         raise ContractError("M5-06 normative profile is not linked to machine contract")
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in (
-        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback",
-        "- name: M5.6 mixed-version runtime rollback and process-kill recovery",
-        "--features vnext-crash-harness",
-        "--lib vnext_runtime_rollout",
-    ):
-        if needle not in workflow:
-            raise ContractError(f"M5-06 PR acceptance gate missing: {needle}")
+    if "python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback" not in workflow:
+        raise ContractError("M5-06 PR acceptance gate missing: Python regression")
+    step = workflow_step_body(
+        workflow, "M5.6 mixed-version runtime rollback and process-kill recovery"
+    )
+    if step is None:
+        raise ContractError("M5-06 PR acceptance gate missing: M5.6 step")
+    for command in DR_M5_ROLLBACK_TEST_COMMANDS:
+        if not command.search(step):
+            raise ContractError(
+                f"M5-06 PR acceptance gate missing Rust test command: {command.pattern}"
+            )
 
     return len(expected_lanes), len(corpus), len(expected_phases), len(expected_exit)
 
