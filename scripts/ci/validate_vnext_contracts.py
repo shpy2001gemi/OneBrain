@@ -6185,6 +6185,32 @@ def validate_concept_registry_production_qualification(
     )
 
 
+
+# ARCH-13 slice 11: Concept Registry implementation evidence. Each command must
+# appear in its workflow step; the Rust/Python tests behind them replace the
+# former source needles (signed release/activation tests, runtime tests, the
+# release-profile binding test, and the probe/failure examples driven by their
+# Python qualification tests).
+CONCEPT_REGISTRY_FIXTURE_COMMANDS = (
+    re.compile(r"python -m unittest scripts\.concept_registry\.test_ccid_stability_diff\b"),
+    re.compile(
+        r"cargo build --locked --manifest-path src/Cargo\.toml -p ku-core"
+        r"\s+--example registry_probe\b"
+    ),
+    re.compile(r"python -m unittest scripts\.concept_registry\.test_resource_qualification\b"),
+    re.compile(
+        r"cargo build --locked --manifest-path src/Cargo\.toml -p ku-core\s+\\?\s*"
+        r"--features concept-registry-failure-harness\s+\\?\s*"
+        r"--example concept_registry_failure_qualification\b"
+    ),
+    re.compile(r"python -m unittest scripts\.concept_registry\.test_failure_qualification\b"),
+)
+CONCEPT_REGISTRY_RELEASE_COMMANDS = (
+    re.compile(r"cargo check --locked -p ku-core --example concept_registry_release\b"),
+    re.compile(r"cargo test --locked -p ku-core concept_registry_release\b"),
+    re.compile(r"cargo test --locked -p onebrain-node concept_registry_runtime --lib\b"),
+)
+
 def validate_concept_registry_operations(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int]:
@@ -6419,118 +6445,27 @@ def validate_concept_registry_operations(
     if remaining != ["CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"]:
         raise ContractError("Concept Registry remaining qualification gates drift")
 
-    release_source = read(ROOT / "src/ku-core/src/concept_registry_release.rs")
-    for needle in [
-        'pub const CONCEPT_REGISTRY_RELEASE_PROFILE: &str = "onebrain/concept-registry-release/1"',
-        "pub fn package_concept_registry_release(",
-        "pub fn concept_registry_release_capacity(",
-        "pub fn verify_concept_registry_release(",
-        "pub fn activate_concept_registry_release(",
-        "pub fn rollback_concept_registry_release(",
-        'distribution: "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP".to_owned()',
-        "load_and_validate_manifest_uncached",
-        "ConceptRegistryReleaseError::InsufficientSpace",
-        "StagingDirectoryGuard::new",
-    ]:
-        if needle not in release_source:
-            raise ContractError(
-                f"Concept Registry release implementation evidence missing: {needle}"
-            )
-
-    runtime_source = read(ROOT / "src/onebrain-node/src/concept_registry_runtime.rs")
-    for needle in [
-        "resolve_active_concept_registry_release",
-        "pub release_id: Option<String>",
-        "pub release_generation: Option<u64>",
-        "required_mode_loads_only_the_verified_active_release_without_cache_mutation",
-        "required_release_mode_never_falls_back_when_activation_is_missing",
-    ]:
-        if needle not in runtime_source:
-            raise ContractError(
-                f"Concept Registry runtime evidence missing: {needle}"
-            )
-
-    failure_source = read(
-        ROOT / "src/ku-core/examples/concept_registry_failure_qualification.rs"
-    )
-    for needle in [
-        'const PROFILE: &str = "onebrain/concept-registry-failure-qualification/1"',
-        "package_concept_registry_release_with_capacity_for_drill",
-        '"concepts.obr.labels.idx"',
-        '"concepts.obr.ccids.idx"',
-        '"production_qualified": false',
-        "write_report_atomic",
-    ]:
-        if needle not in failure_source:
-            raise ContractError(
-                f"Concept Registry failure qualification evidence missing: {needle}"
-            )
-
-    ccid_diff_source = read(
-        ROOT / "scripts/concept_registry/ccid_stability_diff.py"
-    )
-    for needle in [
-        'PROFILE = "onebrain/ccid-stability-diff/1"',
-        'ALGORITHM = "actual-obr-ccid-by-stable-source-identity-v1"',
-        "def _ingest_pair(",
-        "sqlite3.connect(database_path)",
-        "WHERE old.ccid != new.ccid",
-        "stable_count > 0",
-    ]:
-        if needle not in ccid_diff_source:
-            raise ContractError(
-                f"Concept Registry CCID stability evidence missing: {needle}"
-            )
-
-    resource_source = read(
-        ROOT / "scripts/concept_registry/resource_qualification.py"
-    )
-    for needle in [
-        'PROFILE = "onebrain/concept-registry-resource-qualification/1"',
-        'PROBE_PROFILE = "onebrain/concept-registry-probe/1"',
-        '"cold-cache-production-v1"',
-        '"low-ram-production-v1"',
-        "os.posix_fadvise",
-        "resource.RLIMIT_AS",
-        "application_lookup_cache_is_disabled",
-        "targeted_cache_eviction_request_completed",
-        "hard_address_space_limit_applied",
-        "os.replace(temporary_path, path)",
-    ]:
-        if needle not in resource_source:
-            raise ContractError(
-                f"Concept Registry resource qualification evidence missing: {needle}"
-            )
-
-    probe_source = read(ROOT / "src/ku-core/examples/registry_probe.rs")
-    for needle in [
-        'const PROBE_PROFILE: &str = "onebrain/concept-registry-probe/1"',
-        "load_and_validate_manifest_uncached",
-        'value == "--labels-file"',
-        'value == "--cache-capacity"',
-        'value == "--verification-cache"',
-        "sampled_from_obr",
-    ]:
-        if needle not in probe_source:
-            raise ContractError(
-                f"Concept Registry resource probe evidence missing: {needle}"
-            )
-
+    # ARCH-13 slice 11: release, runtime, failure-qualification, CCID-diff,
+    # resource-qualification and probe evidence is the CI-run Rust and Python
+    # tests below (artifact set, stamp, sources, staging margin and
+    # distribution bound to this profile by
+    # `concept_registry_release_profile_binds_artifacts_sources_and_distribution`),
+    # not source needles.
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
-    for needle in [
-        "python -m unittest scripts.ci.test_validate_concept_registry_operations",
-        "python -m unittest scripts.concept_registry.test_ccid_stability_diff",
-        "python -m unittest scripts.concept_registry.test_resource_qualification",
-        "python -m unittest scripts.concept_registry.test_failure_qualification",
-        "--example registry_probe",
-        "--example concept_registry_failure_qualification",
-        "Concept Registry signed release and atomic activation",
-        "--example concept_registry_release",
-    ]:
-        if needle not in workflow:
-            raise ContractError(
-                f"Concept Registry CI acceptance gate missing: {needle}"
-            )
+    if "python -m unittest scripts.ci.test_validate_concept_registry_operations" not in workflow:
+        raise ContractError("Concept Registry CI acceptance gate missing: Python regression")
+    for step_name, commands in (
+        ("Build and verify a small Concept Registry fixture", CONCEPT_REGISTRY_FIXTURE_COMMANDS),
+        ("Concept Registry signed release and atomic activation", CONCEPT_REGISTRY_RELEASE_COMMANDS),
+    ):
+        step = workflow_step_body(workflow, step_name)
+        if step is None:
+            raise ContractError(f"Concept Registry CI acceptance gate missing: {step_name}")
+        for command in commands:
+            if not command.search(step):
+                raise ContractError(
+                    f"Concept Registry CI acceptance gate missing command: {command.pattern}"
+                )
 
     spec = read(VNEXT / "CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md")
     if "concept-registry-operations-v1.json" not in spec:

@@ -36,6 +36,7 @@ const SIGNATURE_DOMAIN: &[u8] = b"onebrain:concept-registry-release-stamp:1\0";
 const ARTIFACT_ROOT_DOMAIN: &[u8] = b"onebrain:concept-registry-artifacts:1\0";
 const SOURCE_ROOT_DOMAIN: &[u8] = b"onebrain:concept-registry-sources:1\0";
 const STATE_ROOT_DOMAIN: &[u8] = b"onebrain:concept-registry-state:1\0";
+const RELEASE_DISTRIBUTION: &str = "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP";
 const REQUIRED_SOURCES: [&str; 5] = ["chebi", "geonames", "ncbi", "wikidata", "wordnet"];
 const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("OBR", "concepts.obr"),
@@ -234,7 +235,7 @@ where
         artifacts,
         source_root: source_root(&input.sources),
         sources: input.sources,
-        distribution: "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP".to_owned(),
+        distribution: RELEASE_DISTRIBUTION.to_owned(),
         signer_public_key: encode_hex(signing_key.verifying_key().as_bytes()),
         signature: String::new(),
     };
@@ -286,7 +287,7 @@ fn verify_concept_registry_release_inner(
         });
     }
     if stamp.profile != CONCEPT_REGISTRY_RELEASE_PROFILE
-        || stamp.distribution != "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP"
+        || stamp.distribution != RELEASE_DISTRIBUTION
         || stamp.builder_version.trim().is_empty()
         || stamp.dedup_policy_version.trim().is_empty()
     {
@@ -1104,6 +1105,54 @@ fn qualification_failpoint(_phase: &str) -> Result<(), ConceptRegistryReleaseErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ARCH-13 slice 11: the frozen operations profile, not a source needle,
+    /// fixes the release artifact set, stamp, sources, staging margin and
+    /// distribution policy.
+    #[test]
+    fn concept_registry_release_profile_binds_artifacts_sources_and_distribution() {
+        let profile: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../test-vectors/vnext/concept-registry-operations-v1.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let release = &profile["release_package"];
+        let artifacts: Vec<(String, String)> = release["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| {
+                (
+                    pair[0].as_str().unwrap().to_owned(),
+                    pair[1].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = REQUIRED_ARTIFACTS
+            .iter()
+            .map(|(kind, file)| ((*kind).to_owned(), (*file).to_owned()))
+            .collect();
+        assert_eq!(artifacts, expected);
+        assert!(REQUIRED_ARTIFACTS.contains(&("OBR", RELEASE_OBR_FILE)));
+        assert!(REQUIRED_ARTIFACTS.contains(&("SPDX_SBOM", RELEASE_SBOM_FILE)));
+        assert_eq!(release["verification_stamp"], RELEASE_STAMP_FILE);
+        assert_eq!(
+            release["capacity_preflight"]["safety_margin_bytes"].as_u64(),
+            Some(RELEASE_STAGING_SAFETY_MARGIN_BYTES)
+        );
+        let sources: Vec<_> = profile["provenance"]["required_sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|source| source.as_str().unwrap())
+            .collect();
+        assert_eq!(sources, REQUIRED_SOURCES);
+        assert_eq!(profile["distribution"]["policy"], RELEASE_DISTRIBUTION);
+        assert_eq!(profile["distribution"]["obp_artifact_gossip"], false);
+    }
     use crate::concept_registry_manifest::{
         ConceptRegistryIndexManifest, ConceptRegistrySourceManifest,
     };

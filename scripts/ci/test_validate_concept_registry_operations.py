@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+from unittest import mock
 
+from scripts.ci import validate_vnext_contracts
 from scripts.ci.validate_vnext_contracts import (
     CONCEPT_REGISTRY_OPERATIONS_PROFILE,
     ContractError,
@@ -102,6 +104,57 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "production qualification"):
             validate_concept_registry_operations(profile)
 
+
+    def assert_workflow_mutation_rejected_arch13(self, mutate) -> None:
+        real_read = validate_vnext_contracts.read
+
+        def read_mutated(candidate):
+            text = real_read(candidate)
+            if candidate == validate_vnext_contracts.VNEXT_FOUNDATION_WORKFLOW:
+                mutated = mutate(text)
+                self.assertNotEqual(mutated, text)
+                return mutated
+            return text
+
+        with mock.patch.object(validate_vnext_contracts, "read", side_effect=read_mutated):
+            with self.assertRaisesRegex(ContractError, 'CI acceptance gate'):
+                validate_concept_registry_operations(frozen_profile())
+
+    def test_every_concept_registry_fixture_commands_command_must_run_in_its_step(self) -> None:
+        commands = validate_vnext_contracts.CONCEPT_REGISTRY_FIXTURE_COMMANDS
+        self.assertEqual(len(commands), 5)
+        for command in commands:
+            with self.subTest(command=command.pattern):
+                self.assert_workflow_mutation_rejected_arch13(
+                    lambda text, command=command: command.sub("", text)
+                )
+
+    def test_every_concept_registry_release_commands_command_must_run_in_its_step(self) -> None:
+        commands = validate_vnext_contracts.CONCEPT_REGISTRY_RELEASE_COMMANDS
+        self.assertEqual(len(commands), 3)
+        for command in commands:
+            with self.subTest(command=command.pattern):
+                self.assert_workflow_mutation_rejected_arch13(
+                    lambda text, command=command: command.sub("", text)
+                )
+
+    def test_arch13_step_0_cannot_disappear(self) -> None:
+        self.assert_workflow_mutation_rejected_arch13(
+            lambda text: text.replace('- name: Build and verify a small Concept Registry fixture', '- name: renamed step')
+        )
+
+    def test_arch13_step_1_cannot_disappear(self) -> None:
+        self.assert_workflow_mutation_rejected_arch13(
+            lambda text: text.replace('- name: Concept Registry signed release and atomic activation', '- name: renamed step')
+        )
+
+    def test_arch13_commands_match_the_rust_tests(self) -> None:
+        expected = {'src/ku-core/src/concept_registry_release.rs': ['fn concept_registry_release_profile_binds_artifacts_sources_and_distribution'], 'src/onebrain-node/src/concept_registry_runtime.rs': ['fn required_mode_loads_only_the_verified_active_release_without_cache_mutation', 'fn required_release_mode_never_falls_back_when_activation_is_missing']}
+        for relative, names in expected.items():
+            source = (validate_vnext_contracts.ROOT / relative).read_text(encoding="utf-8")
+            for name in names:
+                with self.subTest(path=relative, name=name):
+                    self.assertIn(name, source)
 
 if __name__ == "__main__":
     unittest.main()
