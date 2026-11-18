@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { canSave, type KuClient, type Prepared, type Receipt, type ReviewLowerInput, type ReviewLowering } from "../api/ku";
 
-const roles: Record<string, string> = { subject: "chủ thể", predicate: "vị từ", object: "đối tượng", unit: "đơn vị" };
+const roles: Record<string, string> = { subject: "subject", predicate: "predicate", object: "object", unit: "unit" };
 
 /** ARCH-07: explicit review → lowered canonical draft → prepare → explicit private save. */
 export function KuReviewLowering({client, review, window, statement}: {client: KuClient; review: string; window: number; statement: number}) {
@@ -14,7 +14,7 @@ export function KuReviewLowering({client, review, window, statement}: {client: K
   async function run(action: () => Promise<void>) {
     setBusy(true); setError("");
     try { await action(); }
-    catch (e) { setError(`Không hoàn tất (${e instanceof Error ? e.message : "lỗi"}). Chưa có KU nào được lưu từ thao tác này.`); }
+    catch (e) { setError(`Not completed (${e instanceof Error ? e.message : "error"}). No KU was saved by this action.`); }
     finally { setBusy(false); }
   }
   async function lower() {
@@ -36,17 +36,17 @@ export function KuReviewLowering({client, review, window, statement}: {client: K
     setReceipt(saved.data.payload);
   }
   return <div className="ku-review-lowering">
-    {!lowering && <button className="btn" disabled={busy} onClick={()=>void run(lower)}>Đã xem lại · chuyển mệnh đề {statement+1} thành bản nháp KU</button>}
+    {!lowering && <button className="btn" disabled={busy} onClick={()=>void run(lower)}>Reviewed · turn claim {statement+1} into a KU draft</button>}
     {lowering && !lowering.saveable && <div>
-      <p>Chưa thể lưu: mệnh đề còn thành phần chưa xác định được một CCID duy nhất trong Registry.</p>
-      <ul>{lowering.unresolved.map((u,i)=><li key={i}>{roles[u.role] ?? u.role} “{u.label}” · {u.candidates} ứng viên</li>)}</ul>
+      <p>Cannot save yet: the claim still has parts without a unique Registry CCID.</p>
+      <ul>{lowering.unresolved.map((u,i)=><li key={i}>{roles[u.role] ?? u.role} “{u.label}” · {u.candidates} candidate{u.candidates === 1 ? "" : "s"}</li>)}</ul>
     </div>}
     {prepared && !receipt && <div>
-      <p role="status">Bản nháp KU chuẩn đã chuẩn bị · {prepared.object_cids.length} đối tượng · chưa lưu · độ trung thực ngữ nghĩa chưa đánh giá</p>
-      {operation && <p>Mã thao tác: <code>{operation}</code></p>}
-      <button className="btn btn-primary" disabled={busy || !canSave(prepared, receipt)} onClick={()=>void run(save)}>Lưu KU riêng tư</button>
+      <p role="status">Canonical KU draft prepared · {prepared.object_cids.length} object{prepared.object_cids.length === 1 ? "" : "s"} · not saved · semantic fidelity unassessed</p>
+      {operation && <p>Operation ID: <code>{operation}</code></p>}
+      <button className="btn btn-primary" disabled={busy || !canSave(prepared, receipt)} onClick={()=>void run(save)}>Save private KU</button>
     </div>}
-    {receipt && <p role="status">Đã lưu KU riêng tư ({receipt.state}) · chưa công bố</p>}
+    {receipt && <p role="status">Private KU saved ({receipt.state}) · not published</p>}
     {error && <p role="alert">{error}</p>}
   </div>;
 }

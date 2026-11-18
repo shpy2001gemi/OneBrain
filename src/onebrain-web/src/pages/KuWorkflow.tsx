@@ -28,6 +28,11 @@ import {
   isStaleSharePreparationError,
 } from "./kuFeedback";
 import { KuReviewDraft } from "./KuReviewDraft";
+import {
+  refreshKuHeaderSummary,
+  setKuHeaderSummary,
+  useKuHeaderSummary,
+} from "./kuHeaderSummary";
 import { DesktopLifecycle } from "../components/DesktopLifecycle";
 
 const defaultClient = createKuClient(getPrivateApiConnection);
@@ -160,6 +165,7 @@ export function KuWorkflowPage({
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
   const [busy, setBusy] = useState(false);
+  const headerSummary = useKuHeaderSummary();
   const lock = useRef(false);
   const editorRef = useRef<HTMLHeadingElement>(null);
   const inspectRef = useRef<HTMLHeadingElement>(null);
@@ -209,6 +215,7 @@ export function KuWorkflowPage({
         setSession(result.data.session);
         setStatus(result.data.payload);
         setMetadata(result.meta);
+        void refreshKuHeaderSummary(client, result.data.session);
         // Separate read paths: unavailable intake/Registry must not hide saved work.
         const results = await Promise.allSettled([
           client.catalog(result.data.session),
@@ -248,6 +255,7 @@ export function KuWorkflowPage({
     })();
     return () => {
       live = false;
+      setKuHeaderSummary(undefined);
     };
   }, [client]);
   useEffect(() => {
@@ -346,6 +354,7 @@ export function KuWorkflowPage({
     setPage(result.data.payload);
     setActiveQuery(term);
     setMetadata(result.meta);
+    void refreshKuHeaderSummary(client, current);
     const text = await fetchSavedText(
       client,
       current,
@@ -479,6 +488,19 @@ export function KuWorkflowPage({
           {status?.registry_ready ? "ready" : "unavailable"} · Automatic encoder:{" "}
           {status?.local_encoder_ready ? "ready" : "unavailable"}
         </p>
+        {headerSummary &&
+          (headerSummary.network.enabled ? (
+            <p className="ku-id">
+              This host's loopback NodeID: {headerSummary.network.node_id} ·
+              listen {headerSummary.network.listen_addr}. Give this NodeID and
+              address to a sender for step 1 below.
+            </p>
+          ) : (
+            <p>
+              Peer network: off on this host (local only). Public KU share
+              needs the opt-in loopback network.
+            </p>
+          ))}
         {metadata && (
           <p>
             Coverage: {metadata.coverage} ·{" "}
@@ -496,6 +518,7 @@ export function KuWorkflowPage({
           onClick={() =>
             void run(async () => {
               const current = await refresh();
+              await refreshKuHeaderSummary(client, current);
               try {
                 setCatalog((await client.catalog(current)).data.payload);
                 setEditorError("");
@@ -584,7 +607,7 @@ export function KuWorkflowPage({
       {session && models?.limitations.includes("review_drafts_available") && <KuReviewDraft client={client} models={models} session={session}/>}
       <section className="glass-card" aria-labelledby="ku-editor-title">
         <details open={!models?.limitations.includes("review_drafts_available") || !!pending}>
-        <summary>Encode trực tiếp sang KU · luồng thử nghiệm cũ</summary>
+        <summary>Encode directly to a KU · earlier experimental flow</summary>
         <h2>Encode text with Ollama</h2>
         <p>
           Experimental · model quality unqualified. The host validates source
@@ -879,6 +902,7 @@ export function KuWorkflowPage({
                 });
                 setReceipt(result.data.payload);
                 setMetadata(result.meta);
+                void refreshKuHeaderSummary(client, result.data.session);
               }, true)
             }
           >

@@ -2,9 +2,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Settings, Coins } from 'lucide-react';
 import type { StatusResponse } from '../api/types';
 import { formatObt } from '../utils/format';
+import { useKuHeaderSummary } from '../pages/kuHeaderSummary';
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
+  '/ku': 'KU workspace',
   '/explorer': 'Knowledge Explorer',
   '/encode': 'Encode Knowledge',
   '/chat': 'Chat',
@@ -28,10 +30,40 @@ interface HeaderProps {
   nodeInfo?: StatusResponse | null;
 }
 
+/** `/ku` badges come from the KU workspace (owned private store and opt-in
+ *  loopback runtime), never from the legacy node counters. */
+function KuBadges() {
+  const summary = useKuHeaderSummary();
+  if (!summary) return null;
+  const n = summary.private_saved;
+  const network = summary.network;
+  return (
+    <>
+      <span className="badge badge-cyan">
+        {n} private KU{n === 1 ? '' : 's'} saved
+      </span>
+      {network.enabled ? (
+        <span
+          className="badge badge-green"
+          title={`Loopback NodeID ${network.node_id} · listen ${network.listen_addr}. Opt-in loopback only; not network completion.`}
+        >
+          Loopback peer network · {network.active_sessions} active session
+          {network.active_sessions === 1 ? '' : 's'}
+        </span>
+      ) : (
+        <span className="badge" title="Start the host with an opt-in loopback network to share Public KUs.">
+          Peer network off · local only
+        </span>
+      )}
+    </>
+  );
+}
+
 export function Header({ nodeInfo }: HeaderProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const title = pageTitles[location.pathname] || 'OneBrain';
+  const kuPage = location.pathname === '/ku';
 
   return (
     <header role="banner" aria-label="App header" style={{
@@ -47,7 +79,8 @@ export function Header({ nodeInfo }: HeaderProps) {
       <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{title}</h2>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {nodeInfo && (
+        {kuPage && <KuBadges />}
+        {!kuPage && nodeInfo && (
           <>
             <span className="badge badge-cyan">{nodeInfo.ku_count} KUs</span>
             <span className="badge badge-green">{nodeInfo.peer_count} peers</span>

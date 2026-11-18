@@ -32,6 +32,7 @@ a closed tagged union using `action` and `payload`:
 | share_inspect | `{object_cid,selector}` | `{event:"public_object",object_cid,canonical_base64,semantic,authenticated_source_peers,provenance,fidelity:"unassessed",authorizes_reward:false}` |
 | share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false,accepted_selectors?}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
 | saved_semantic | `{object_cids}` (1..64) | `{event:"saved_semantic",items:[{object_cid,semantic:{statements,statement_count}\|null}],scope,fidelity:"unassessed",authorizes_reward:false}` |
+| workspace_summary | `{}` | `{event:"workspace_summary",private_saved,network:{enabled:false}\|{enabled:true,node_id,listen_addr,active_sessions,authenticated_sessions,accepted_records},scope,claims_network_completion:false,authorizes_reward:false}` |
 
 Catalog returns only the authenticated principal's host-admitted sources (at most
 64, labels at most 128 UTF-8 bytes). Resolve accepts at most 256 UTF-8 bytes and
@@ -129,6 +130,12 @@ text literal arguments, at most 16 statements plus exact `statement_count`; `nul
 non-semantic objects) for 1..64 ObjectCIDs the session can already read through `get`; any
 unreadable CID fails the whole request with the same error as `get`, so it grants no new
 access, verification, fidelity or adoption;
+`workspace_summary` (not network-gated, recovery-admitted read) returns display-only header
+counts for the `/ku` Web: `private_saved` is the exact number of the principal's owned private
+artifacts (accepted Public KUs are not counted) and `network` is `{enabled:false}` without a live
+opt-in runtime, otherwise this host's loopback NodeID, listen address and session/record counters
+(transport observation only, `claims_network_completion: false`); the Web header on `/ku` shows
+these instead of legacy node counters and shows nothing when the action is unavailable;
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`
 `get` and `export` (`mode: "canonical_public_exchange"`). The `/ku` Web client
 (`createKuClient`) and workspace (`KuWorkflowPage`) project these four actions

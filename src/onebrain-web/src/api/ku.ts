@@ -230,6 +230,24 @@ export interface SavedSemanticView {
   fidelity: "unassessed";
   authorizes_reward: false;
 }
+/** Display-only `/ku` header counts; never network-gated. */
+export interface WorkspaceSummaryView {
+  event: "workspace_summary";
+  private_saved: number;
+  network:
+    | { enabled: false }
+    | {
+        enabled: true;
+        node_id: string;
+        listen_addr: string;
+        active_sessions: number;
+        authenticated_sessions: number;
+        accepted_records: number;
+      };
+  scope: string;
+  claims_network_completion: false;
+  authorizes_reward: false;
+}
 export class KuError extends Error {
   readonly failure?: Failure;
   readonly uncertain: boolean;
@@ -393,6 +411,12 @@ export function createKuClient(
         session,
         budget,
         request: { action: "saved_semantic", payload },
+      }),
+    workspaceSummary: (session: Session) =>
+      request<WorkspaceSummaryView>("editor", {
+        session,
+        budget,
+        request: { action: "workspace_summary", payload: {} },
       }),
     invoke: <K extends keyof Operations>(
       session: Session,

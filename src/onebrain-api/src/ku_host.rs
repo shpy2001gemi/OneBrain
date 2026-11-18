@@ -593,6 +593,19 @@ mod tests {
             local_only_share.reason,
             "ku_public_share_network_unavailable"
         );
+
+        // workspace_summary is never network-gated: it reports the private count
+        // (imported Public KU excluded) and `enabled: false` without a runtime.
+        let ManualEditorResponse::WorkspaceSummary(summary) = services
+            .editor(ManualEditorRequest::WorkspaceSummary {}, budget())
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(summary["private_saved"], 1);
+        assert_eq!(summary["network"], serde_json::json!({ "enabled": false }));
+        assert_eq!(summary["claims_network_completion"], false);
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -1193,6 +1206,35 @@ mod tests {
         .await;
         assert_ne!(status, StatusCode::OK, "{unknown_resp}");
         assert!(!unknown_resp.to_string().contains("Water is a liquid."));
+
+        // Display-only workspace_summary for the /ku header: owned private count
+        // (received Public KUs are not private) and this host's live loopback NodeID.
+        for (router, session, private_saved, node_id) in [
+            (sender_router.clone(), &sender_session, 1, &sender_peer_hex),
+            (
+                receiver_router.clone(),
+                &receiver_session,
+                0,
+                &receiver_peer_hex,
+            ),
+        ] {
+            let (status, summary_resp) = http_json(
+                router,
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(session, "workspace_summary", json!({}))),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{summary_resp}");
+            let payload = &summary_resp["data"]["payload"];
+            assert_eq!(payload["event"], "workspace_summary");
+            assert_eq!(payload["private_saved"], private_saved, "{payload}");
+            assert_eq!(payload["network"]["enabled"], true);
+            assert_eq!(payload["network"]["node_id"], node_id.as_str());
+            assert_eq!(payload["claims_network_completion"], false);
+            assert_eq!(payload["authorizes_reward"], false);
+        }
 
         // Receiver also serves the accepted Public KU through registered POST /api/vnext/ku/operations.
         let (status, get_resp) = http_json(

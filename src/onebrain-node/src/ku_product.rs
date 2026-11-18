@@ -571,6 +571,7 @@ impl KuStore {
             | Req::ShareList(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
             Req::SavedSemantic(input) => return self.saved_semantic(principal, input, budget),
+            Req::WorkspaceSummary {} => return self.workspace_summary(principal, budget),
             other => return self.inputs.editor(principal, other, budget),
         };
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
@@ -659,6 +660,53 @@ impl KuStore {
             return Err(resource());
         }
         Ok(crate::ku_manual::ManualEditorResponse::SavedSemantic(
+            result,
+        ))
+    }
+    /// Display-only header counts: this principal's owned private KU count and
+    /// the opt-in loopback runtime status when one is live. Read-only, never
+    /// network-gated, grants no access and claims no network completion.
+    fn workspace_summary(
+        &self,
+        principal: [u8; 32],
+        budget: &ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        let private_saved = self
+            .catalog
+            .lock()
+            .map_err(|_| corrupt())?
+            .items
+            .get(&principal)
+            .map_or(0, |owned| owned.len());
+        #[cfg(feature = "vnext-network-runtime")]
+        let network = match self.live_network_runtime() {
+            Ok(runtime) => {
+                let status = runtime.status();
+                serde_json::json!({
+                    "enabled": true,
+                    "node_id": hex(&status.principal),
+                    "listen_addr": status.listen_addr.to_string(),
+                    "active_sessions": status.active_sessions,
+                    "authenticated_sessions": status.authenticated_sessions,
+                    "accepted_records": status.accepted_records,
+                })
+            }
+            Err(_) => serde_json::json!({ "enabled": false }),
+        };
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        let network = serde_json::json!({ "enabled": false });
+        let result = serde_json::json!({
+            "event": "workspace_summary",
+            "private_saved": private_saved,
+            "network": network,
+            "scope": "header counts for this session: owned private store and opt-in loopback runtime only",
+            "claims_network_completion": false,
+            "authorizes_reward": false
+        });
+        if serde_json::to_vec(&result).map_err(|_| invalid())?.len() as u64 > budget.max_bytes {
+            return Err(resource());
+        }
+        Ok(crate::ku_manual::ManualEditorResponse::WorkspaceSummary(
             result,
         ))
     }

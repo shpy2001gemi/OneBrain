@@ -106,6 +106,8 @@ pub struct ReviewLowerInput {
     pub reviewed: bool,
 }
 #[derive(Deserialize)]
+// `workspace_summary {}`: display-only header counts (owned private KU count and
+// opt-in loopback network status, or `enabled: false`); never network-gated.
 #[serde(
     tag = "action",
     content = "payload",
@@ -130,6 +132,7 @@ pub enum ManualEditorRequest {
     ShareIntent(PublicShareIntent),
     ShareList(PublicShareList),
     SavedSemantic(SavedSemantic),
+    WorkspaceSummary {},
 }
 #[derive(Serialize)]
 pub struct ManualSource {
@@ -168,6 +171,7 @@ pub enum ManualEditorResponse {
     Draft(KuPrepareV1),
     PublicShare(serde_json::Value),
     SavedSemantic(serde_json::Value),
+    WorkspaceSummary(serde_json::Value),
 }
 struct Source {
     label: String,
@@ -312,7 +316,8 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ShareInspect(_)
             | ManualEditorRequest::ShareIntent(_)
             | ManualEditorRequest::ShareList(_)
-            | ManualEditorRequest::SavedSemantic(_) => Err(unavailable()),
+            | ManualEditorRequest::SavedSemantic(_)
+            | ManualEditorRequest::WorkspaceSummary {} => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

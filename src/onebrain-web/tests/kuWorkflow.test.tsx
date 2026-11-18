@@ -94,6 +94,8 @@ function fixture(
     savedSemantic?: boolean;
     /** `accepted_selectors` on the share_list candidate (live receiver). */
     shareListSelectors?: string[];
+    /** Host supports display-only `workspace_summary` (header counts). */
+    workspaceSummary?: "network_on" | "network_off";
   } = {},
 ) {
   let saved = false;
@@ -465,6 +467,29 @@ function fixture(
               authorizes_reward: false,
             };
             break;
+          case "workspace_summary":
+            if (!options.workspaceSummary)
+              return shareErrorResponse("unsupported_action");
+            payload = {
+              event: "workspace_summary",
+              private_saved: saved ? 1 : 0,
+              network:
+                options.workspaceSummary === "network_on"
+                  ? {
+                      enabled: true,
+                      node_id: "ab".repeat(32),
+                      listen_addr: "127.0.0.1:4442",
+                      active_sessions: 1,
+                      authenticated_sessions: 2,
+                      accepted_records: 0,
+                    }
+                  : { enabled: false },
+              scope:
+                "header counts for this session: owned private store and opt-in loopback runtime only",
+              claims_network_completion: false,
+              authorizes_reward: false,
+            };
+            break;
         }
       } else {
         switch (body.request.operation) {
@@ -791,7 +816,7 @@ describe("local KU component journey", () => {
       screen.getByRole("button", { name: "Refresh host status" }),
     );
     await user.tab();
-    expect(document.activeElement?.textContent).toBe("Encode trực tiếp sang KU · luồng thử nghiệm cũ");
+    expect(document.activeElement?.textContent).toBe("Encode directly to a KU · earlier experimental flow");
     await user.tab();
     expect(document.activeElement?.textContent).toBe("What happens to my sentence?");
     await user.tab();
@@ -802,6 +827,28 @@ describe("local KU component journey", () => {
       rules: { "color-contrast": { enabled: false } },
     });
     expect(result.violations).toEqual([]);
+  });
+  it("refreshes the display-only header summary after an explicit private save", async () => {
+    const f = fixture({ workspaceSummary: "network_off" });
+    render(<KuWorkflowPage client={f.client} />);
+    await fill();
+    await screen.findByText(/Peer network: off on this host/);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Look up Registry concepts" }),
+    );
+    await screen.findByRole("option", { name: ccid });
+    fireEvent.change(screen.getByLabelText("Explicit concept selection"), {
+      target: { value: ccid },
+    });
+    await preview();
+    const summaries = () =>
+      f.calls.filter((c) => c.body?.request?.action === "workspace_summary");
+    expect(summaries()).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save exact preview privately" }),
+    );
+    await waitFor(() => expect(summaries()).toHaveLength(2));
+    expect(summaries()[1].body.request.payload).toEqual({});
   });
   it("requires explicit preview/save, projects exact IDs and revisions with keyboard-labelled controls", async () => {
     const f = fixture();
