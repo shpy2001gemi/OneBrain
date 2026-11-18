@@ -33,6 +33,7 @@ pub const MAX_PROVENANCE_OBSERVATIONS: u64 = 262_144;
 pub const MAX_TYPED_PROVENANCE_RECORDS: u64 = 65_536;
 pub const MAX_TYPED_PROVENANCE_PREFIXES: u64 = 65_536;
 pub const MAX_SOURCE_PEERS_PER_RECORD: usize = 64;
+pub const MAX_SELECTORS_PER_RECORD_VIEW: usize = 16;
 pub const MAX_TYPED_DELTA_PAGE_RECORDS: usize = 4_096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -382,6 +383,45 @@ impl RedbRecordProvenance {
         peers.dedup();
         Ok(peers)
     }
+
+    /// Distinct selectors with at least one source observation for this
+    /// record, ascending, at most `MAX_SELECTORS_PER_RECORD_VIEW`.
+    pub fn selectors(
+        &self,
+        kind: ReconcileManifestKind,
+        cid: [u8; 32],
+    ) -> Result<Vec<SelectorCid>, String> {
+        let mut prefix = [0u8; 40];
+        prefix[..8].copy_from_slice(&(kind as u64).to_be_bytes());
+        prefix[8..40].copy_from_slice(&cid);
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|error| error.to_string())?;
+        let table = read
+            .open_table(OBSERVATIONS)
+            .map_err(|error| error.to_string())?;
+        let mut selectors: Vec<[u8; 32]> = Vec::new();
+        for entry in table
+            .range::<&[u8]>(prefix.as_slice()..)
+            .map_err(|error| error.to_string())?
+        {
+            let (key, _) = entry.map_err(|error| error.to_string())?;
+            let key = key.value();
+            if key.len() != KEY_BYTES || !key.starts_with(&prefix) {
+                break;
+            }
+            let mut selector = [0u8; 32];
+            selector.copy_from_slice(&key[40..72]);
+            if selectors.last() != Some(&selector) {
+                if selectors.len() >= MAX_SELECTORS_PER_RECORD_VIEW {
+                    break;
+                }
+                selectors.push(selector);
+            }
+        }
+        Ok(selectors.into_iter().map(SelectorCid::from_bytes).collect())
+    }
 }
 
 impl PortableArchiveRows for RedbRecordProvenance {
@@ -640,6 +680,16 @@ mod tests {
                 .unwrap(),
             vec![second]
         );
+        assert_eq!(
+            reopened
+                .selectors(ReconcileManifestKind::Object, [5; 32])
+                .unwrap(),
+            vec![selector, other_selector]
+        );
+        assert!(reopened
+            .selectors(ReconcileManifestKind::Object, [6; 32])
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

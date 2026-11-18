@@ -1047,6 +1047,18 @@ impl VNextNetworkRuntime {
             .map_err(VNextNetworkRuntimeError::Provenance)
     }
 
+    /// Selectors under which an authenticated peer delivered this record
+    /// (bounded, deterministic order). Transport observation only.
+    pub fn record_selectors(
+        &self,
+        kind: onebrain_protocol::ReconcileManifestKind,
+        cid: [u8; 32],
+    ) -> Result<Vec<ku_core::foundation::SelectorCid>, VNextNetworkRuntimeError> {
+        self.provenance
+            .selectors(kind, cid)
+            .map_err(VNextNetworkRuntimeError::Provenance)
+    }
+
     pub fn authenticated_route(
         &self,
         peer: NodeId,

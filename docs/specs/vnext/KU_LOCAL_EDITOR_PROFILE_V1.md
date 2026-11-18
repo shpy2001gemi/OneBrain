@@ -30,7 +30,8 @@ a closed tagged union using `action` and `payload`:
 | share_confirm | `{prepared_id,confirm_public}` | `{event:"share_confirmed",intent_id,public_object_cid,outbox,delivery,authorizes_reward:false}` |
 | share_intent | `{intent_id}` | `{event:"intent",intent_id,public_object_cid,state,terminal_sequence,claims_network_completion:false}` |
 | share_inspect | `{object_cid,selector}` | `{event:"public_object",object_cid,canonical_base64,semantic,authenticated_source_peers,provenance,fidelity:"unassessed",authorizes_reward:false}` |
-| share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
+| share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false,accepted_selectors?}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
+| saved_semantic | `{object_cids}` (1..64) | `{event:"saved_semantic",items:[{object_cid,semantic:{statements,statement_count}\|null}],scope,fidelity:"unassessed",authorizes_reward:false}` |
 
 Catalog returns only the authenticated principal's host-admitted sources (at most
 64, labels at most 128 UTF-8 bytes). Resolve accepts at most 256 UTF-8 bytes and
@@ -120,6 +121,14 @@ provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receive
 (`limit` 1..64 default 64, optional `query` up to 256 UTF-8 bytes matching folded literal
 text, Registry concept labels, or CID/CCID hex) while keeping private `Saved local knowledge`
 (`list`/`search`) scoped to owned private artifacts only (`not adopted into private Saved local knowledge`);
+with a live opt-in runtime each `share_list` item also carries `accepted_selectors` (at most 16
+hex selectors under which an authenticated peer delivered that record; transport observation
+only, empty when unknown) so the Web can prefill step-4 inspection.
+`saved_semantic` (not network-gated) returns display-only statement text (predicate CCID and
+text literal arguments, at most 16 statements plus exact `statement_count`; `null` for
+non-semantic objects) for 1..64 ObjectCIDs the session can already read through `get`; any
+unreadable CID fails the whole request with the same error as `get`, so it grants no new
+access, verification, fidelity or adoption;
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`
 `get` and `export` (`mode: "canonical_public_exchange"`). The `/ku` Web client
 (`createKuClient`) and workspace (`KuWorkflowPage`) project these four actions

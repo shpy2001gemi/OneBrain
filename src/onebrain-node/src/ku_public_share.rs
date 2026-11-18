@@ -569,6 +569,30 @@ pub fn list_accepted_public_kus(
     }))
 }
 
+/// Add `accepted_selectors` (hex, at most 16) to each `share_list` item from
+/// the live runtime's transport observations, so step-4 inspection can be
+/// prefilled. Unknown/unavailable provenance yields an empty list.
+pub fn annotate_accepted_selectors(listed: &mut serde_json::Value, runtime: &VNextNetworkRuntime) {
+    let Some(items) = listed["items"].as_array_mut() else {
+        return;
+    };
+    for item in items {
+        let selectors: Vec<String> = item["object_cid"]
+            .as_str()
+            .and_then(|cid| decode_hex::<32>(cid).ok())
+            .and_then(|cid| {
+                runtime
+                    .record_selectors(ReconcileManifestKind::Object, cid)
+                    .ok()
+            })
+            .unwrap_or_default()
+            .iter()
+            .map(|s| hex(s.as_bytes()))
+            .collect();
+        item["accepted_selectors"] = serde_json::json!(selectors);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

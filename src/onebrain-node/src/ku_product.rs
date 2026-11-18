@@ -53,6 +53,48 @@ const MAX_TERMINAL_BYTES: usize = 256 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 32;
 const MAX_CURSORS: usize = 1024;
 pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
+/// Bound for the display-only `saved_semantic` editor action (one list page).
+const MAX_SAVED_SEMANTIC_ITEMS: usize = 64;
+/// Statements shown per object by `saved_semantic`; `statement_count` is exact.
+const MAX_SAVED_SEMANTIC_STATEMENTS: usize = 16;
+
+/// Display projection of a semantic KU kernel (kind 2): predicate CCID and
+/// text literal arguments (non-text arguments are `null`). `None` for opaque,
+/// non-semantic or undecodable objects. Display only; no fidelity claim.
+pub(crate) fn describe_semantic_statements(bytes: &[u8]) -> Option<serde_json::Value> {
+    use ku_core::foundation::semantic::{LiteralValue, TermRef};
+    let object = decode_object(bytes).ok()?;
+    let ObjectSemantics::Known(envelope) = object.semantics() else {
+        return None;
+    };
+    if envelope.kind != ObjectKind(2) {
+        return None;
+    }
+    let semantic = SemanticFrameSet::from_canonical_value(&envelope.payload).ok()?;
+    let statements: Vec<_> = semantic
+        .statements
+        .iter()
+        .take(MAX_SAVED_SEMANTIC_STATEMENTS)
+        .map(|s| {
+            let arguments: Vec<_> = s
+                .arguments
+                .iter()
+                .map(|a| match a {
+                    TermRef::Literal(LiteralValue::Text(t)) => Some(t.as_str().to_owned()),
+                    _ => None,
+                })
+                .collect();
+            serde_json::json!({
+                "predicate_ccid": hex(s.operator_or_predicate.as_bytes()),
+                "text_arguments": arguments
+            })
+        })
+        .collect();
+    Some(serde_json::json!({
+        "statements": statements,
+        "statement_count": semantic.statements.len()
+    }))
+}
 
 /// Host-only source/encoder port. Ordinary product handles cannot install a port,
 /// supply authority booleans, or bypass its current custody/consent assessment.
@@ -504,13 +546,16 @@ impl KuStore {
                         .unwrap_or(crate::ku_public_share::MAX_PUBLIC_KU_LIST_ITEMS)
                         .min(budget.max_items),
                 );
-                let listed = crate::ku_public_share::list_accepted_public_kus(
+                let mut listed = crate::ku_public_share::list_accepted_public_kus(
                     public.as_ref(),
                     lease.as_ref(),
                     input.query.as_deref(),
                     limit,
                 )
                 .map_err(public_share_error)?;
+                if let Ok(runtime) = self.live_network_runtime() {
+                    crate::ku_public_share::annotate_accepted_selectors(&mut listed, &runtime);
+                }
                 if serde_json::to_vec(&listed).map_err(|_| invalid())?.len() as u64
                     > budget.max_bytes
                 {
@@ -525,6 +570,7 @@ impl KuStore {
             | Req::ShareIntent(_)
             | Req::ShareList(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
+            Req::SavedSemantic(input) => return self.saved_semantic(principal, input, budget),
             other => return self.inputs.editor(principal, other, budget),
         };
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
@@ -574,6 +620,46 @@ impl KuStore {
         self.inputs.restore_text(record.clone())?;
         Ok(crate::ku_manual::ManualEditorResponse::Draft(
             record.preparation,
+        ))
+    }
+    /// Display-only statement text for objects already readable through `get`
+    /// by this principal. Fails closed (same errors as `get`) for any CID the
+    /// caller cannot read; never widens access, verifies fidelity or adopts.
+    fn saved_semantic(
+        &self,
+        principal: [u8; 32],
+        input: crate::ku_manual::SavedSemantic,
+        budget: &ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        let count = input.object_cids.len();
+        if count == 0 || count > MAX_SAVED_SEMANTIC_ITEMS || count as u64 > budget.max_items as u64
+        {
+            return Err(invalid());
+        }
+        let mut items = Vec::with_capacity(count);
+        for cid_hex in &input.object_cids {
+            let cid = ObjectCID(decode_hex::<32>(cid_hex).map_err(|_| invalid())?);
+            let view = self.get(principal, cid)?;
+            let bytes = STANDARD
+                .decode(&view.canonical_bytes)
+                .map_err(|_| corrupt())?;
+            items.push(serde_json::json!({
+                "object_cid": cid_hex,
+                "semantic": describe_semantic_statements(&bytes),
+            }));
+        }
+        let result = serde_json::json!({
+            "event": "saved_semantic",
+            "items": items,
+            "scope": "display text of objects this session can already read; not verification or adoption",
+            "fidelity": "unassessed",
+            "authorizes_reward": false
+        });
+        if serde_json::to_vec(&result).map_err(|_| invalid())?.len() as u64 > budget.max_bytes {
+            return Err(resource());
+        }
+        Ok(crate::ku_manual::ManualEditorResponse::SavedSemantic(
+            result,
         ))
     }
     fn begin_extraction(

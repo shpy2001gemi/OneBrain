@@ -6,7 +6,48 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — browser click-through of `/ku` on the CLI host with `--ku-network-bind` (2026-11-18)
+## Latest follow-up — `/ku` Web UX fixes: statement text, live Delivery line, selector prefill (2026-11-18)
+
+Owner chose (l) on 2026-11-18: fix three UX findings from (k) below.
+
+- Statement text: new display-only editor action `saved_semantic`
+  (`{object_cids}` 1..64, [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs),
+  [ku_manual.rs](../../../../src/onebrain-node/src/ku_manual.rs)) returns predicate CCID +
+  text literals for objects the session can already `get`; an unreadable CID fails the
+  request like `get` (no new access, fidelity or adoption). Not network-gated.
+  [KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx) shows
+  `Statement text: “…”` on `Saved local knowledge` cards and in `Inspect saved artifact`
+  (best effort: hosts without the action show nothing, list stays usable).
+- Delivery line: the section-2 `Public share intent recorded` card shows the latest
+  inspected intent state (`Delivery: Acknowledged (latest Inspect share intent below; at
+  confirmation: …)`) when section 3 inspected the same intent ID. Web only.
+- Selector prefill: with a live runtime `share_list` items carry `accepted_selectors`
+  (≤16, from the existing source-observation table via new
+  `RedbRecordProvenance::selectors` / `VNextNetworkRuntime::record_selectors`,
+  [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs)
+  `annotate_accepted_selectors`). The browse card lists `Observed delivery selector`
+  and `Use … in step 4` fills CID + first selector with a note; none recorded → note
+  asks for the selector agreed with the sender.
+  [Editor profile](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md) updated.
+- Checks: `cargo test -p onebrain-node --lib --features vnext-network-runtime --
+  ku_public_share vnext_record_provenance` 9/9; `cargo test -p onebrain-api --lib
+  --features vnext-network-runtime ku_host` 3/3 (HTTP `accepted_selectors`, sender/receiver
+  `saved_semantic` text, receiver refused for the sender's private CID without leaking
+  text); rustfmt on touched files; `npm run test:ku` 142/142 (2 new), `npm run build`,
+  oxlint 0 errors (no warnings in touched files).
+- Live (Windows, `Documents/OneBrainLocal/peer-mvp-20261118/ui-fixes/` outside Git, copies
+  of the `browse/` dirs, two `ku_local_web` on 4441/4442, throwaway token deleted): browser
+  agent 9/9 — sender card + inspect show `“MVP demo 2026-09-30: Water is a liquid.”`;
+  re-confirm `RouteUpdated` then Inspect → card `Delivery: Acknowledged (…)`; receiver
+  browse shows `Observed delivery selector: 22…22`, `Use … in step 4` fills CID + selector,
+  inspect shows sender `4ea81249…8061`; receiver private list still 0. Host facts: only the
+  two loopback origins. The original dataset was not used.
+
+Still open from (k): header badges `0 KUs · 0 peers` on `/ku` hosts, Vietnamese draft
+sections on the English page, CLI prints the API token. Not covered: helper 36/36 rerun
+(API change is additive), CLI-host browser rerun, Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — browser click-through of `/ku` on the CLI host with `--ku-network-bind` (2026-11-18)
 
 Owner chose (k) on 2026-11-18: click the D-045 flow in a real browser with
 `onebrain start --api --ku-network-bind` as the sender, closing the "browser on

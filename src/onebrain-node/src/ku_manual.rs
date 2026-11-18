@@ -85,6 +85,13 @@ pub struct PublicShareList {
     #[serde(default)]
     pub limit: Option<u32>,
 }
+/// Display-only statement text for 1..=64 KU objects the caller may already
+/// read through `get` (owned private or accepted public). Grants no new access.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SavedSemantic {
+    pub object_cids: Vec<String>,
+}
 /// ARCH-07: lower one claim from the latest revision of a review-job window.
 /// `reviewed` records the user's explicit review; prepare/preview/save stay
 /// separate explicit steps on the fresh reserved `operation_id`.
@@ -122,6 +129,7 @@ pub enum ManualEditorRequest {
     ShareInspect(PublicShareInspect),
     ShareIntent(PublicShareIntent),
     ShareList(PublicShareList),
+    SavedSemantic(SavedSemantic),
 }
 #[derive(Serialize)]
 pub struct ManualSource {
@@ -159,6 +167,7 @@ pub enum ManualEditorResponse {
     },
     Draft(KuPrepareV1),
     PublicShare(serde_json::Value),
+    SavedSemantic(serde_json::Value),
 }
 struct Source {
     label: String,
@@ -302,7 +311,8 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ShareConfirm(_)
             | ManualEditorRequest::ShareInspect(_)
             | ManualEditorRequest::ShareIntent(_)
-            | ManualEditorRequest::ShareList(_) => Err(unavailable()),
+            | ManualEditorRequest::ShareList(_)
+            | ManualEditorRequest::SavedSemantic(_) => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

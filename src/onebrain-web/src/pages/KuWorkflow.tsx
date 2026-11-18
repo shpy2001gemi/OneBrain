@@ -19,6 +19,7 @@ import type {
   PublicShareIntentView,
   PublicShareListView,
   PublicShareObjectView,
+  SavedSemanticStatements,
 } from "../api/ku";
 import "./kuWorkflow.css";
 import {
@@ -41,6 +42,57 @@ const DEFAULT_SHARE_INTENT_RECHECK: ShareIntentRecheck = {
   intervalMs: 3000,
 };
 type ShareIntentAutoCheck = { done: number; stopped?: "limit" | "error" };
+type SavedTextMap = Record<string, SavedSemanticStatements | null>;
+/** Best-effort, display-only statement text for saved/inspected objects. A host
+ *  without `saved_semantic` (or any read failure) just shows no text. */
+async function fetchSavedText(
+  client: KuClient,
+  session: Session,
+  cids: string[],
+): Promise<SavedTextMap> {
+  const wanted = [...new Set(cids)].slice(0, 64);
+  if (wanted.length === 0) return {};
+  try {
+    const result = await client.savedSemantic(session, {
+      object_cids: wanted,
+    });
+    const items = result?.data?.payload?.items;
+    if (!Array.isArray(items)) return {};
+    return Object.fromEntries(
+      items
+        .filter((i) => wanted.includes(i.object_cid))
+        .map((i) => [i.object_cid, i.semantic ?? null]),
+    );
+  } catch {
+    return {};
+  }
+}
+function statementLines(semantic: SavedSemanticStatements): string[] {
+  return semantic.statements
+    .map((s) => s.text_arguments.filter(Boolean).join(", "))
+    .filter((line) => line.length > 0);
+}
+function SavedStatementText({
+  semantic,
+}: {
+  semantic: SavedSemanticStatements | null | undefined;
+}) {
+  if (semantic === undefined) return null;
+  const lines = semantic ? statementLines(semantic) : [];
+  if (lines.length === 0)
+    return (
+      <p className="ku-statement">
+        Statement text: not available for this object (no text literal).
+      </p>
+    );
+  const more = semantic!.statement_count - semantic!.statements.length;
+  return (
+    <p className="ku-statement">
+      Statement text: {lines.map((line) => `“${line}”`).join(" · ")}
+      {more > 0 ? ` · +${more} more` : ""}
+    </p>
+  );
+}
 export function KuWorkflowPage({
   client = defaultClient,
   shareIntentRecheck = DEFAULT_SHARE_INTENT_RECHECK,
@@ -99,6 +151,11 @@ export function KuWorkflowPage({
     useState<PublicShareObjectView>();
   const [shareListQuery, setShareListQuery] = useState("");
   const [shareListView, setShareListView] = useState<PublicShareListView>();
+  const [shareInspectSelectorNote, setShareInspectSelectorNote] = useState("");
+  /** Display-only statement text by ObjectCID; `null` = no text projection. */
+  const [savedText, setSavedText] = useState<
+    Record<string, SavedSemanticStatements | null>
+  >({});
   const [error, setError] = useState<ReturnType<typeof describeError>>();
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
@@ -165,9 +222,17 @@ export function KuWorkflowPage({
           setEditorError(
             "Manual editor unavailable. Start the opt-in host with admitted sources and a verified signed Registry.",
           );
-        if (results[1].status === "fulfilled")
-          setPage(results[1].value.data.payload);
-        else setError(describeError(results[1].reason));
+        if (results[1].status === "fulfilled") {
+          const firstPage = results[1].value.data.payload;
+          setPage(firstPage);
+          void fetchSavedText(
+            client,
+            result.data.session,
+            firstPage.items.map((i) => i.object_cid),
+          ).then((text) => {
+            if (live) setSavedText((prev) => ({ ...prev, ...text }));
+          });
+        } else setError(describeError(results[1].reason));
         if (results[2].status === "fulfilled") {
           const available = results[2].value.data.payload;
           setModels(available);
@@ -281,6 +346,12 @@ export function KuWorkflowPage({
     setPage(result.data.payload);
     setActiveQuery(term);
     setMetadata(result.meta);
+    const text = await fetchSavedText(
+      client,
+      current,
+      result.data.payload.items.map((i) => i.object_cid),
+    );
+    setSavedText((prev) => ({ ...prev, ...text }));
   }
   async function prepare(ai = false) {
     if (!session || lockedDraft || uncertain) return;
@@ -874,6 +945,12 @@ export function KuWorkflowPage({
                           setShareInspectCid(inspected.object_cid);
                           setShareInspectView(undefined);
                         }
+                        if (!(inspected.object_cid in savedText)) {
+                          const text = await fetchSavedText(client, current, [
+                            inspected.object_cid,
+                          ]);
+                          setSavedText((prev) => ({ ...prev, ...text }));
+                        }
                         requestAnimationFrame(() =>
                           inspectRef.current?.focus(),
                         );
@@ -882,6 +959,7 @@ export function KuWorkflowPage({
                   >
                     Inspect {item.object_cid}
                   </button>
+                  <SavedStatementText semantic={savedText[item.object_cid]} />
                   <p>
                     {item.disclosure_class === "PUBLIC"
                       ? "Published public artifact"
@@ -917,6 +995,7 @@ export function KuWorkflowPage({
             <br />
             SemanticContentCID: {view.semantic_content_cid ?? "unavailable"}
           </p>
+          <SavedStatementText semantic={savedText[view.object_cid]} />
           <p>
             {view.disclosure_class} · {view.artifact_validity} · {view.coverage}{" "}
             · Fidelity: {view.fidelity_frontier ?? "unassessed"} · Executable:{" "}
@@ -1158,8 +1237,15 @@ export function KuWorkflowPage({
             </p>
             <p>
               Outbox: <strong>{shareConfirmed.outbox}</strong> · Delivery:{" "}
-              <strong>{shareConfirmed.delivery}</strong> · Reward authorized:{" "}
-              {String(shareConfirmed.authorizes_reward)}
+              {shareIntentView?.intent_id === shareConfirmed.intent_id ? (
+                <>
+                  <strong>{shareIntentView.state}</strong> (latest Inspect share
+                  intent below; at confirmation: {shareConfirmed.delivery})
+                </>
+              ) : (
+                <strong>{shareConfirmed.delivery}</strong>
+              )}{" "}
+              · Reward authorized: {String(shareConfirmed.authorizes_reward)}
             </p>
             <p>
               Confirmation records a durable outbound intent only. Inspect the
@@ -1316,12 +1402,32 @@ export function KuWorkflowPage({
                         {stmt.text_arguments.filter(Boolean).join(", ")}
                       </p>
                     ))}
+                    {(item.accepted_selectors?.length ?? 0) > 0 && (
+                      <p className="ku-id">
+                        Observed delivery selector
+                        {item.accepted_selectors!.length > 1 ? "s" : ""}:{" "}
+                        {item.accepted_selectors!.join(", ")}
+                      </p>
+                    )}
                     <button
                       type="button"
                       className="btn"
                       onClick={() => {
+                        const observed = item.accepted_selectors ?? [];
                         setShareInspectCid(item.object_cid);
                         setShareInspectView(undefined);
+                        if (observed.length > 0) {
+                          setShareInspectSelector(observed[0]);
+                          setShareInspectSelectorNote(
+                            observed.length > 1
+                              ? `Filled the first of ${observed.length} observed delivery selectors; change it to inspect provenance under another selector.`
+                              : "Filled the selector this host observed the delivery under.",
+                          );
+                        } else {
+                          setShareInspectSelectorNote(
+                            "No delivery selector is recorded for this object on this host view; enter the selector agreed with the sender.",
+                          );
+                        }
                       }}
                     >
                       Use {item.object_cid} in step 4
@@ -1344,6 +1450,7 @@ export function KuWorkflowPage({
             maxLength={64}
             onChange={(e) => {
               setShareInspectCid(e.target.value);
+              setShareInspectSelectorNote("");
               setShareInspectView(undefined);
             }}
           />
@@ -1357,9 +1464,15 @@ export function KuWorkflowPage({
             maxLength={64}
             onChange={(e) => {
               setShareInspectSelector(e.target.value);
+              setShareInspectSelectorNote("");
               setShareInspectView(undefined);
             }}
           />
+          {shareInspectSelectorNote && (
+            <p role="note" aria-label="Step 4 selector prefill">
+              {shareInspectSelectorNote}
+            </p>
+          )}
           <button
             className="btn"
             disabled={

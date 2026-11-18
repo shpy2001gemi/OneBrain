@@ -1146,7 +1146,53 @@ mod tests {
             assert_eq!(items.len(), 1, "{share_list_payload}: {listed}");
             assert_eq!(items[0]["object_cid"], public_cid_hex);
             assert_eq!(items[0]["semantic"]["semantic_content_cid"], sem_cid_hex);
+            // Live receiver annotates the observed delivery selector for step-4 prefill.
+            assert_eq!(items[0]["accepted_selectors"], json!([selector_hex]));
         }
+
+        // Display-only saved_semantic: sender reads statement text of its own private KU;
+        // receiver reads the accepted Public KU it can already `get`; unknown CIDs fail closed.
+        for (router, session, cid) in [
+            (sender_router.clone(), &sender_session, &private_cid_hex),
+            (receiver_router.clone(), &receiver_session, &public_cid_hex),
+        ] {
+            let (status, sem_resp) = http_json(
+                router,
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(
+                    session,
+                    "saved_semantic",
+                    json!({ "object_cids": [cid] }),
+                )),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{sem_resp}");
+            let payload = &sem_resp["data"]["payload"];
+            assert_eq!(payload["event"], "saved_semantic");
+            assert_eq!(payload["authorizes_reward"], false);
+            assert_eq!(payload["items"][0]["object_cid"], cid.as_str());
+            assert_eq!(payload["items"][0]["semantic"]["statement_count"], 1);
+            assert_eq!(
+                payload["items"][0]["semantic"]["statements"][0]["text_arguments"],
+                json!(["Water is a liquid."])
+            );
+        }
+        let (status, unknown_resp) = http_json(
+            receiver_router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            token,
+            Some(editor_envelope(
+                &receiver_session,
+                "saved_semantic",
+                json!({ "object_cids": [private_cid_hex] }),
+            )),
+        )
+        .await;
+        assert_ne!(status, StatusCode::OK, "{unknown_resp}");
+        assert!(!unknown_resp.to_string().contains("Water is a liquid."));
 
         // Receiver also serves the accepted Public KU through registered POST /api/vnext/ku/operations.
         let (status, get_resp) = http_json(

@@ -204,11 +204,28 @@ export interface PublicShareListedItem {
   semantic: PublicShareSemantic;
   fidelity: "unassessed";
   authorizes_reward: false;
+  /** Selectors this receiver observed the record under (live runtime only). */
+  accepted_selectors?: string[];
 }
 export interface PublicShareListView {
   event: "public_objects";
   items: PublicShareListedItem[];
   has_more: boolean;
+  scope: string;
+  fidelity: "unassessed";
+  authorizes_reward: false;
+}
+export interface SavedSemanticInput {
+  object_cids: string[];
+}
+/** Display-only statement text of objects this session can already `get`. */
+export interface SavedSemanticStatements {
+  statements: PublicShareSemantic["statements"];
+  statement_count: number;
+}
+export interface SavedSemanticView {
+  event: "saved_semantic";
+  items: { object_cid: string; semantic: SavedSemanticStatements | null }[];
   scope: string;
   fidelity: "unassessed";
   authorizes_reward: false;
@@ -370,6 +387,12 @@ export function createKuClient(
         session,
         budget,
         request: { action: "share_list", payload },
+      }),
+    savedSemantic: (session: Session, payload: SavedSemanticInput) =>
+      request<SavedSemanticView>("editor", {
+        session,
+        budget,
+        request: { action: "saved_semantic", payload },
       }),
     invoke: <K extends keyof Operations>(
       session: Session,

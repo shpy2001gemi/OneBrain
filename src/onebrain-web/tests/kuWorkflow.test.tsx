@@ -90,6 +90,10 @@ function fixture(
       | "invalid_public_list_limit";
     shareListEmpty?: boolean;
     includePublicSummary?: boolean;
+    /** Host supports display-only `saved_semantic`. */
+    savedSemantic?: boolean;
+    /** `accepted_selectors` on the share_list candidate (live receiver). */
+    shareListSelectors?: string[];
   } = {},
 ) {
   let saved = false;
@@ -412,6 +416,9 @@ function fixture(
               },
               fidelity: "unassessed",
               authorizes_reward: false,
+              ...(options.shareListSelectors
+                ? { accepted_selectors: options.shareListSelectors }
+                : {}),
             };
             const matched =
               !options.shareListEmpty &&
@@ -431,6 +438,33 @@ function fixture(
             };
             break;
           }
+          case "saved_semantic":
+            if (!options.savedSemantic)
+              return shareErrorResponse("unsupported_action");
+            payload = {
+              event: "saved_semantic",
+              items: body.request.payload.object_cids.map((cid: string) => ({
+                object_cid: cid,
+                semantic: {
+                  statements: [
+                    {
+                      predicate_ccid: ccid,
+                      text_arguments: [
+                        cid === publicObject
+                          ? "Water is a liquid."
+                          : "Saved private statement.",
+                      ],
+                    },
+                  ],
+                  statement_count: 1,
+                },
+              })),
+              scope:
+                "display text of objects this session can already read; not verification or adoption",
+              fidelity: "unassessed",
+              authorizes_reward: false,
+            };
+            break;
         }
       } else {
         switch (body.request.operation) {
@@ -2577,5 +2611,159 @@ describe("local KU component journey", () => {
         name: "Accepted Public KUs in local public store",
       }),
     ).toBeNull();
+  });
+
+  it("shows saved statement text, updates the section-2 Delivery line from the inspected intent, and prefills the step-4 selector from observed delivery selectors", async () => {
+    const selector = "2".repeat(64),
+      publicObject = "d".repeat(64);
+    const f = fixture({
+      emptyCatalog: true,
+      savedSemantic: true,
+      shareListSelectors: [selector],
+    });
+    const { container } = render(<KuWorkflowPage client={f.client} />);
+
+    // Saved local knowledge card shows display-only statement text.
+    const library = (
+      await screen.findByRole("heading", { name: "Saved local knowledge" })
+    ).closest("section")!;
+    await waitFor(() =>
+      expect(library.textContent).toContain("“Saved private statement.”"),
+    );
+    expect(
+      f.calls.find((c) => c.body?.request?.action === "saved_semantic")!.body
+        .request.payload,
+    ).toEqual({ object_cids: [object] });
+
+    // Inspect saved artifact shows it too (from the cached projection, no re-read).
+    fireEvent.click(screen.getByRole("button", { name: `Inspect ${object}` }));
+    const inspect = (
+      await screen.findByRole("heading", { name: "Inspect saved artifact" })
+    ).closest("section")!;
+    expect(inspect.textContent).toContain(
+      "Statement text: “Saved private statement.”",
+    );
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "saved_semantic"),
+    ).toHaveLength(1);
+
+    // Section-2 Delivery follows the inspected intent state.
+    fireEvent.change(
+      screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+      { target: { value: "12".repeat(32) } },
+    );
+    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      target: { value: "127.0.0.1:41999" },
+    });
+    fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+      target: { value: "ab".repeat(32) },
+    });
+    fireEvent.change(
+      screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+      { target: { value: "cd".repeat(32) } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Prepare public share preview" }),
+    );
+    await screen.findByRole("article", { name: "Prepared public share preview" });
+    fireEvent.click(
+      screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirm public share" }));
+    const confirmed = await screen.findByRole("article", {
+      name: "Confirmed public share intent",
+    });
+    expect(confirmed.textContent).toContain(
+      "Delivery: pending; inspect intent for acknowledgement",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect share intent" }));
+    await screen.findByRole("heading", {
+      name: "Outbound intent status: Acknowledged",
+    });
+    expect(confirmed.textContent).toContain(
+      "Delivery: Acknowledged (latest Inspect share intent below; at confirmation: pending; inspect intent for acknowledgement)",
+    );
+
+    // Browse → Use in step 4 fills both CID and the observed selector.
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: "" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const card = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    expect(card.textContent).toContain(
+      `Observed delivery selector: ${selector}`,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: `Use ${publicObject} in step 4` }),
+    );
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted Public ObjectCID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(publicObject);
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted selector CID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(selector);
+    expect(
+      screen.getByRole("note", { name: "Step 4 selector prefill" }).textContent,
+    ).toContain("Filled the selector this host observed the delivery under.");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    await screen.findByRole("article", { name: "Accepted Public KU inspection" });
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "share_inspect").at(-1)!
+        .body.request.payload,
+    ).toEqual({ object_cid: publicObject, selector });
+
+    const result = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(result.violations).toEqual([]);
+  });
+
+  it("keeps saved lists usable on hosts without saved_semantic and explains a missing step-4 selector", async () => {
+    const f = fixture({ emptyCatalog: true });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    await waitFor(() =>
+      expect(
+        f.calls.some((c) => c.body?.request?.action === "saved_semantic"),
+      ).toBe(true),
+    );
+    expect(screen.queryByText(/Statement text:/)).toBeNull();
+    expect(
+      screen.queryAllByRole("alert").map((a) => a.textContent ?? ""),
+    ).toEqual(screen.queryAllByRole("alert").map(() => ""));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: `Use ${"d".repeat(64)} in step 4` }),
+    );
+    expect(
+      screen.getByRole("note", { name: "Step 4 selector prefill" }).textContent,
+    ).toContain("No delivery selector is recorded for this object");
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted selector CID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
   });
 });
