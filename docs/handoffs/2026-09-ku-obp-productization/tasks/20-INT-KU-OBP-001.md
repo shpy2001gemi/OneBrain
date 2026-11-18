@@ -1494,12 +1494,17 @@ networking opt-in (default off):
   `ku_local_web` host JSON config and launch with
   `cargo run --locked --manifest-path src/Cargo.toml -p onebrain-api --features vnext-network-runtime --example ku_local_web -- <host.json>`
   (which prints `Opt-in loopback OBP-RP: node_id=<64 hex> listen_addr=127.0.0.1:<port>`),
+  run `onebrain start --api` (built with `--features vnext-network-runtime`) with
+  `--api-token-file <token.txt>`, `--concept-registry-release-root`,
+  `--concept-registry-release-public-key`, `--ku-vault-key-file <vault.key>`,
+  `--ku-network-bind 127.0.0.1:0` (plus optional `--ku-source` and
+  `--ku-ollama-*`; raw token bytes are never printed),
   or run a `OneBrainNode` / `onebrain-desktop` host with opt-in
   `VNextProductRuntime` enabled (`VNextRuntimeLane::Network` active, which
   automatically binds `CanonicalPublicReader` for both `paths.network.canonical`
   and `paths.operational`). Pair the sender with a second loopback
-  `ku_local_web` / `VNextProductRuntime` host or an isolated `ku_peer_demo`
-  receiver. After saving a supported `LOCAL_ONLY` `accepted_known` manual KU
+  `ku_local_web` / `onebrain start --api` / `VNextProductRuntime` host or an
+  isolated `ku_peer_demo` receiver. After saving a supported `LOCAL_ONLY` `accepted_known` manual KU
   (one predicate + one text literal), inspect it in `/ku` Web (or call
   authenticated `POST /api/vnext/ku/editor`) and step through:
   (1) `share_prepare` for the receiver's full `node_id`, loopback `address`,
@@ -1547,9 +1552,13 @@ receiver's `/ku` page, which you can open on the receiver's port afterwards. A
 `ku_peer_demo` config must be UTF-8 without a BOM (Windows PowerShell 5
 `Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
 To use `onebrain start --api` as the sender instead, build it with
-`cargo build -p onebrain-cli --features vnext-network-runtime` and add
-`--sender-kind cli` (optional `--cli-exe`): the helper starts it from the same
-sender JSON fields with `--ku-network-bind <network.bind_addr>`.
+`cargo build --locked --manifest-path src/Cargo.toml -p onebrain-cli --features vnext-network-runtime`
+(add `--config 'profile.dev.package.sha2.opt-level=3'` in debug builds if the
+sender JSON enables `"ollama"`) and add `--sender-kind cli` (optional
+`--cli-exe`): the helper starts it from the same sender JSON fields with
+`--api-token-file <api_token_file>`, `--ku-network-bind <network.bind_addr>`,
+and `--ku-ollama-*` when `"ollama"` is present, keeping the token out of CLI
+arguments and stdout.
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API

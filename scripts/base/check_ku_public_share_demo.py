@@ -8,7 +8,7 @@ authenticated ``POST /api/vnext/ku/editor`` share actions:
   host config that contains an opt-in ``"network"`` block, or with
   ``--sender-kind cli`` the ``onebrain start --api --ku-network-bind`` host
   started from the same config fields (data_dir, port, api_token_file,
-  registry_root/public key, vault_key_file, sources, web_dir, network);
+  registry_root/public key, vault_key_file, sources, ollama, web_dir, network);
 * receiver: an isolated ``ku_peer_demo`` (no Registry, Vault key or API token),
   or with ``--receiver-kind web`` a second ``ku_local_web`` host (its own data
   dir, port and opt-in ``"network"`` block). A Web receiver is inspected through
@@ -184,21 +184,29 @@ def wait_host_ready(proc: Proc, port: int) -> tuple[Proc, str, str]:
 def start_cli_host(exe: Path, cfg: dict, name: str) -> tuple[Proc, str, str]:
     """Start ``onebrain start --api`` from the same ``ku_local_web`` JSON fields.
 
-    Uses ``--ku-network-bind`` (binary built with ``--features
-    vnext-network-runtime``). The token travels only as this local child's
-    argument; it is never printed by this helper. stdin stays open because the
-    REPL exits on EOF.
+    Uses ``--api-token-file`` and ``--ku-network-bind`` (binary built with
+    ``--features vnext-network-runtime``), plus ``--ku-ollama-*`` if ``ollama``
+    is configured. The token stays in ``api_token_file`` (never passed on argv
+    or printed). stdin stays open because the REPL exits on EOF.
     """
     network = cfg["network"]
-    token = Path(cfg["api_token_file"]).read_text(encoding="utf-8").strip()
     args = [str(exe), "start", "--data-dir", str(cfg["data_dir"]), "--api",
-            "--api-port", str(int(cfg.get("port", 4280))), "--api-token", token,
+            "--api-port", str(int(cfg.get("port", 4280))),
+            "--api-token-file", str(cfg["api_token_file"]),
             "--concept-registry-release-root", str(cfg["registry_root"]),
             "--concept-registry-release-public-key", cfg["registry_public_key"],
             "--ku-vault-key-file", str(cfg["vault_key_file"]),
             "--ku-network-bind", network["bind_addr"]]
     for source in cfg.get("sources", []):
         args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
+    ollama = cfg.get("ollama") or {}
+    if ollama:
+        args += ["--ku-ollama-executable", str(ollama["executable"]),
+                 "--ku-ollama-models-dir", str(ollama["models_dir"])]
+        for model in ollama.get("models", []):
+            args += ["--ku-ollama-model", model]
+        if ollama.get("memory_limit_bytes") is not None:
+            args += ["--ku-ollama-memory-limit-bytes", str(ollama["memory_limit_bytes"])]
     if cfg.get("web_dir"):
         args += ["--web-dir", str(cfg["web_dir"])]
     proc = Proc(args, name, stdin=True)

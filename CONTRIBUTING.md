@@ -50,17 +50,20 @@ Try supported preview → explicit private save → search/read → restart/read
 the [manual local-to-peer concept](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
 review a new Public object, explicitly confirm sharing, inspect the same Public
 CID/bytes on the receiving node and retry/restart. You can run D-045 either
-(1) directly through `/ku` Web and `ku_local_web` with an opt-in loopback
-`"network"` config block (`POST /api/vnext/ku/editor` `share_prepare`,
-`share_confirm`, `share_intent`, `share_inspect`) or a `OneBrainNode` /
-`onebrain-desktop` host with opt-in `VNextProductRuntime` enabled (see the
+(1) directly through `/ku` Web and `ku_local_web` (with an opt-in loopback
+`"network"` config block), `onebrain start --api` (with `--api-token-file`,
+`--ku-vault-key-file`, `--ku-network-bind 127.0.0.1:0` and optional
+`--ku-ollama-*`), or a `OneBrainNode` / `onebrain-desktop` host with opt-in
+`VNextProductRuntime` enabled (`POST /api/vnext/ku/editor` `share_prepare`,
+`share_confirm`, `share_intent`, `share_list`, `share_inspect`; see the
 [normal-host share seam](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)),
 or (2) through the isolated `ku_peer_demo` helper processes alongside the local
 custody host. To check path (1) end to end on one machine, run
 [check_ku_public_share_demo.py](scripts/base/check_ku_public_share_demo.py)
 against a copy of your dataset (instructions in the linked task-20 section);
 `--receiver-kind web` makes the receiver a second `/ku` Web host, and
-`--sender-kind cli` makes the sender `onebrain start --api --ku-network-bind`.
+`--sender-kind cli` makes the sender `onebrain start --api` (`--api-token-file`,
+`--ku-network-bind`, plus `--ku-ollama-*` if `"ollama"` is configured).
 Networking remains opt-in (default off), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
 literal. Registry and local-secret provisioning remain operator prerequisites,
