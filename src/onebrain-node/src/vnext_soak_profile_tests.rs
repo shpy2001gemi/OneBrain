@@ -65,6 +65,60 @@ fn m5_07_soak_profile_binds_run_profiles_and_qualification_rules() {
 }
 
 #[test]
+fn m5_07_soak_profile_name_is_the_same_for_cli_profile_and_report() {
+    let profile = profile();
+    let run_profiles = profile["run_profiles"].as_object().unwrap();
+    assert_eq!(run_profiles.len(), SoakProfile::ALL.len());
+    for variant in SoakProfile::ALL {
+        let name = variant.as_str();
+        assert!(
+            run_profiles.contains_key(name),
+            "{name} missing from profile"
+        );
+        assert_eq!(SoakProfile::parse(name).unwrap(), variant);
+        let serialized = serde_json::to_value(variant).unwrap();
+        assert_eq!(serialized, Value::String(name.to_owned()));
+        assert_eq!(
+            serde_json::from_value::<SoakProfile>(serialized).unwrap(),
+            variant
+        );
+    }
+    // Reports recorded before the names were aligned used serde's digit-joined
+    // names; they still deserialize, but the CLI only accepts canonical names.
+    for (legacy, variant) in [
+        ("nightly24h", SoakProfile::Nightly24h),
+        ("pre-release72h", SoakProfile::PreRelease72h),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<SoakProfile>(Value::String(legacy.to_owned())).unwrap(),
+            variant
+        );
+        assert!(SoakProfile::parse(legacy).is_err());
+    }
+    for (file, variant) in [
+        (
+            "M5_07_MACOS_ARM64_NIGHTLY_24H_C3F7B002_RUN_30287048429.json",
+            SoakProfile::Nightly24h,
+        ),
+        (
+            "M5_07_MACOS_ARM64_PRE_RELEASE_72H_C336C5BA_RUN_30704999238.json",
+            SoakProfile::PreRelease72h,
+        ),
+    ] {
+        let path = format!(
+            "{}/../../docs/research/evidence/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let report: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SoakProfile>(report["run_profile"].clone()).unwrap(),
+            variant,
+            "{file}"
+        );
+    }
+}
+
+#[test]
 fn m5_07_soak_profile_binds_latency_growth_and_scan_budgets() {
     let profile = profile();
     let budgets = SoakReleaseBudgets::default();

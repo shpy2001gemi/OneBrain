@@ -202,6 +202,53 @@ class EvidenceCarryForwardTests(unittest.TestCase):
         self.assertFalse(result["base_v1_reusable"])
         self.assertTrue(result["fresh_soak_required"])
 
+    def test_soak_signer_accepts_canonical_and_legacy_72h_run_profile_only(self) -> None:
+        from unittest import mock
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        from scripts.release import validate_evidence_carry_forward as module
+
+        def sign(run_profile: str) -> None:
+            report = {
+                "profile": "onebrain/dr-m5-soak-release/1",
+                "run_profile": run_profile,
+                "host_os": "linux",
+                "host_arch": "x86_64",
+                "elapsed_seconds": 259200,
+                "qualification_met": True,
+                "fair_redelivery_oracle_matches": True,
+                "task_leak_detected": False,
+                "rollback_recommended": False,
+                "rollback_reasons": [],
+            }
+            with mock.patch.object(
+                module, "_profile", return_value={"runners": [{"runner_id": "r"}]}
+            ), mock.patch.object(module, "_validate_profile"), mock.patch.object(
+                module, "_validate_binding"
+            ), mock.patch.object(
+                module,
+                "_roles",
+                return_value={"soak-runner:r": {"public_key_hex": "00", "fingerprint_hex": "00"}},
+            ):
+                module.sign_soak_child_receipt(
+                    binding={},
+                    runner_id="r",
+                    runner_identity="self-hosted:test",
+                    monotonic_start_ns=0,
+                    monotonic_end_ns=1,
+                    raw_report_bytes=json.dumps(report).encode(),
+                    signing_key=Ed25519PrivateKey.generate(),
+                )
+
+        # Both names reach the later key allowlist check (the test key is not allowlisted).
+        for name in ("pre-release-72h", "pre-release72h"):
+            with self.assertRaisesRegex(SoakEvidenceError, "not allowlisted"):
+                sign(name)
+        for name in ("nightly-24h", "nightly24h", "smoke"):
+            with self.assertRaisesRegex(SoakEvidenceError, "not the pre-release 72-hour"):
+                sign(name)
+
 
 if __name__ == "__main__":
     unittest.main()

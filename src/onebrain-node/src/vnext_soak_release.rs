@@ -43,24 +43,38 @@ pub const NIGHTLY_QUALIFICATION_SECONDS: u64 = 24 * 60 * 60;
 pub const PRE_RELEASE_QUALIFICATION_SECONDS: u64 = 72 * 60 * 60;
 pub const MIN_FAULT_CYCLES: u64 = 3;
 
+/// Run profile names are the ones frozen in `SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1`,
+/// `dr-m5-soak-release-v1.json`, the soak workflows and the `--profile` flag.
+/// Reports serialize the same names. The `alias` values are the names that
+/// serde's `kebab-case` derivation produced before (it does not split digits),
+/// kept so that already-recorded evidence reports still deserialize.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum SoakProfile {
+    #[serde(rename = "smoke")]
     Smoke,
+    #[serde(rename = "nightly-24h", alias = "nightly24h")]
     Nightly24h,
+    #[serde(rename = "pre-release-72h", alias = "pre-release72h")]
     PreRelease72h,
 }
 
 impl SoakProfile {
-    pub fn parse(value: &str) -> Result<Self, SoakReleaseError> {
-        match value {
-            "smoke" => Ok(Self::Smoke),
-            "nightly-24h" => Ok(Self::Nightly24h),
-            "pre-release-72h" => Ok(Self::PreRelease72h),
-            _ => Err(SoakReleaseError::InvalidConfig(format!(
-                "unknown soak profile {value}"
-            ))),
+    pub const ALL: [Self; 3] = [Self::Smoke, Self::Nightly24h, Self::PreRelease72h];
+
+    /// Canonical profile name, identical to the serialized form.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Smoke => "smoke",
+            Self::Nightly24h => "nightly-24h",
+            Self::PreRelease72h => "pre-release-72h",
         }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, SoakReleaseError> {
+        Self::ALL
+            .into_iter()
+            .find(|profile| profile.as_str() == value)
+            .ok_or_else(|| SoakReleaseError::InvalidConfig(format!("unknown soak profile {value}")))
     }
 
     pub const fn minimum_elapsed_seconds(self) -> u64 {

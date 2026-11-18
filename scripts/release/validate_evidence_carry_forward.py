@@ -35,6 +35,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 PROFILE_PATH = ROOT / "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json"
+# `dr_m5_soak_release` reports serialize the canonical profile name
+# (`SoakProfile::as_str`); reports written before the names were aligned carry
+# serde's digit-joined `pre-release72h`. Both name the same 72-hour profile.
+PRE_RELEASE_72H_RUN_PROFILES = frozenset({"pre-release-72h", "pre-release72h"})
 HEX_32_FIELDS = {
     "candidate_semantic_digest",
     "frozen_target_artifact_digest",
@@ -1336,7 +1340,7 @@ def sign_soak_child_receipt(
         raise SoakEvidenceError("raw soak report is not valid JSON") from error
     if report.get("profile") != "onebrain/dr-m5-soak-release/1":
         raise SoakEvidenceError("raw soak report profile mismatch")
-    if report.get("run_profile") != "pre-release72h":
+    if report.get("run_profile") not in PRE_RELEASE_72H_RUN_PROFILES:
         raise SoakEvidenceError("raw soak report is not the pre-release 72-hour profile")
     if report.get("host_os") != "linux" or report.get("host_arch") != "x86_64":
         raise SoakEvidenceError("raw soak report target host differs from the frozen target")
