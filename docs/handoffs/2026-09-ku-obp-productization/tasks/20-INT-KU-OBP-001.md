@@ -6,7 +6,51 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `/ku` local workspace on `onebrain start --api` (2026-11-18)
+## Latest follow-up — repeatable check with a second `ku_local_web` receiver (2026-11-18)
+
+Owner chose (d) on 2026-11-18.
+
+- [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  takes `--receiver-kind web` (default `peer` is unchanged) and optional
+  `--receiver-exe`. With `web`, `--receiver-config` is a second `ku_local_web`
+  host JSON with its own `data_dir`, port, Vault key and opt-in `"network"`
+  block. The receiver is inspected with its authenticated `share_inspect`
+  editor action (polled up to 30 s) plus `get`, which must serve the accepted
+  KU as `PUBLIC` with the same SemanticContentCID and `executable: false`. Each
+  host's token comes from its own `api_token_file` and is never printed. The
+  helper now stops at once with the exit code when a child process exits
+  before its expected output, instead of waiting out the 60 s timeout. No
+  runtime/Web code change.
+- Live (Windows, run dir `Documents/OneBrainLocal/peer-mvp-20261118/two-web/`
+  outside Git; sender = fresh copy of the dataset on port 4394, receiver =
+  fresh empty dataset with a new random Vault key on port 4395, same operator
+  Registry): `--receiver-kind web` **30/30**, and 30/30 again on fresh dirs
+  after the fail-fast change. Public CID `32f3b411…9161` (same as earlier runs)
+  → `Acknowledged`; the receiver shows the same CID/bytes/semantic identity
+  with the sender NodeID `3f97f07d…f7bb` as authenticated source; `get` returns
+  `PUBLIC` before and after a restart of both hosts; re-confirm gives
+  `RouteUpdated`. Peer-mode regression on fresh dirs: 28/28. A config written
+  with a BOM now fails in 1 s with `receiver exited with code 1`.
+- Receiver `/ku` Web (browser agent, throwaway token on a separate receiver
+  config, deleted after the run): `Host: active · Registry: ready`, no error
+  banner; fieldset `4. Inspect accepted Public KU` with the Public CID and
+  selector 64×`2` shows the Public CID, SemanticContentCID `03479711…54ac`,
+  `MVP demo 2026-09-30: Water is a liquid.`, the sender NodeID,
+  `transport/selector only; original source withheld and unverifiable`,
+  `Fidelity: unassessed`, `Reward authorized: false`.
+- Finding: on the receiver, `Saved local knowledge` (search empty or `water`)
+  lists **0** items (`private_owned_store_only`). An accepted Public KU is only
+  reachable by CID (fieldset 4 or `get`), not by browsing. This is a possible
+  follow-up and is not changed here.
+- Original dataset SHA-256 (247 files) unchanged; no host process is left
+  running. The run section below documents `--receiver-kind web` and the
+  `ku_peer_demo` no-BOM requirement; CONTRIBUTING mentions the option.
+
+Not covered: listing received Public KUs in `Saved local knowledge`, Ollama
+and D-045 share on `onebrain start --api`, `vite preview` opt-out,
+non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — `/ku` local workspace on `onebrain start --api` (2026-11-18)
 
 Agent pick (f) on 2026-11-18. The owner asked the agent to choose the next MVP
 item; this was the gap found in the check below.
@@ -1244,6 +1288,14 @@ Stop any host already using the sender's port first. To click the same flow in
 `/ku` Web instead, open `/ku` on the sender's own port: a production build calls
 the API on the origin that served the page (see the
 [serving-origin follow-up](#earlier-follow-up--ku-web-uses-the-serving-origin-and-an-honest-re-confirm-delivery-line-2026-11-18)).
+To make the receiver a second `/ku` Web host, write a second `ku_local_web`
+config (fresh `data_dir`, its own Vault key and port, same Registry, opt-in
+`"network"` block, `sources` may be omitted) and add `--receiver-kind web`. The
+helper then inspects the receiver through `share_inspect` and `get` (`PUBLIC`),
+the same calls as fieldset `4. Inspect accepted Public KU` on the receiver's
+`/ku` page, which you can open on the receiver's port afterwards. A
+`ku_peer_demo` config must be UTF-8 without a BOM (Windows PowerShell 5
+`Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API

@@ -6,16 +6,21 @@ authenticated ``POST /api/vnext/ku/editor`` share actions:
 
 * sender: ``ku_local_web`` built with ``--features vnext-network-runtime`` and a
   host config that contains an opt-in ``"network"`` block;
-* receiver: an isolated ``ku_peer_demo`` (no Registry, Vault key or API token).
+* receiver: an isolated ``ku_peer_demo`` (no Registry, Vault key or API token),
+  or with ``--receiver-kind web`` a second ``ku_local_web`` host (its own data
+  dir, port and opt-in ``"network"`` block). A Web receiver is inspected through
+  its authenticated ``share_inspect`` editor action and ``get`` operation, the
+  same calls as fieldset ``4. Inspect accepted Public KU`` on its ``/ku`` page.
 
 It checks prepare (nothing enqueued) -> refused ``confirm_public=false`` ->
 explicit confirm -> ``Acknowledged`` intent -> receiver inspection of the same
 Public CID/bytes with authenticated sender provenance, then restarts both
 processes and checks durability and the idempotent same-intent retry.
 
-The API token is read from the sender config's ``api_token_file`` and is never
-printed. Private ObjectCIDs are never printed. Use a COPY of your dataset as the
-sender ``data_dir``: the opt-in network runtime writes node state under it.
+API tokens are read from each ``ku_local_web`` config's ``api_token_file`` and
+are never printed. Private ObjectCIDs are never printed. Use a COPY of your dataset as the
+sender ``data_dir`` and a fresh, separate receiver ``data_dir``: the opt-in
+network runtime writes node state under each.
 This is a concept check on one host, not NAT/production/model qualification.
 """
 from __future__ import annotations
@@ -57,8 +62,10 @@ class Proc:
             text=True,
             encoding="utf-8",
         )
-        for stream, tag in ((self.p.stdout, "out"), (self.p.stderr, "err")):
-            threading.Thread(target=self._pump, args=(stream, tag), daemon=True).start()
+        self.pumps = [threading.Thread(target=self._pump, args=(stream, tag), daemon=True)
+                      for stream, tag in ((self.p.stdout, "out"), (self.p.stderr, "err"))]
+        for pump in self.pumps:
+            pump.start()
 
     def _pump(self, stream, tag: str) -> None:
         for line in stream:
@@ -68,9 +75,15 @@ class Proc:
         end = time.time() + timeout
         while time.time() < end:
             try:
-                tag, line = self.lines.get(timeout=max(0.1, end - time.time()))
+                tag, line = self.lines.get(timeout=min(0.5, max(0.1, end - time.time())))
             except queue.Empty:
-                break
+                # Fail fast with the exit code instead of waiting out the timeout
+                # (e.g. a config the binary rejects, printed above as stderr).
+                if (self.p.poll() is not None and self.lines.empty()
+                        and not any(pump.is_alive() for pump in self.pumps)):
+                    raise RuntimeError(f"{self.name} exited with code {self.p.returncode} "
+                                       "before the expected output; see its stderr above")
+                continue
             if tag == "err":
                 print(f"  ({self.name} stderr) {line[:300]}", flush=True)
                 continue
@@ -102,44 +115,22 @@ class Proc:
             self.p.kill()
 
 
-class Check:
-    def __init__(self, args: argparse.Namespace):
-        self.args = args
-        self.cfg = json.loads(Path(args.sender_config).read_text(encoding="utf-8-sig"))
-        network = self.cfg.get("network") or {}
-        if network.get("network_opt_in") is not True:
-            raise SystemExit("sender config needs an opt-in \"network\" block (see task 20)")
-        self.port = int(self.cfg.get("port", 4280))
+def load_host_config(path: Path, role: str) -> dict:
+    cfg = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    network = cfg.get("network") or {}
+    if network.get("network_opt_in") is not True:
+        raise SystemExit(f"{role} config needs an opt-in \"network\" block (see task 20)")
+    return cfg
+
+
+class Api:
+    """Authenticated ``/api/vnext/ku`` client for one ``ku_local_web`` host."""
+
+    def __init__(self, cfg: dict):
+        self.port = int(cfg.get("port", 4280))
         self.base = f"http://127.0.0.1:{self.port}/api/vnext/ku"
-        self._token = Path(self.cfg["api_token_file"]).read_text(encoding="utf-8").strip()
-        self.results: list[dict] = []
-        self.web: Proc | None = None
-        self.peer: Proc | None = None
+        self._token = Path(cfg["api_token_file"]).read_text(encoding="utf-8").strip()
 
-    # ---- reporting -------------------------------------------------------
-    def check(self, name: str, ok, detail: str = "") -> bool:
-        self.results.append({"check": name, "pass": bool(ok), "detail": detail})
-        print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}".rstrip(), flush=True)
-        return bool(ok)
-
-    # ---- processes ---------------------------------------------------------
-    def start_peer(self) -> dict:
-        self.peer = Proc([str(self.args.peer_exe), str(self.args.receiver_config)], "receiver", stdin=True)
-        return json.loads(self.peer.next_line(lambda l: l.startswith("{")))
-
-    def start_web(self) -> tuple[str, str]:
-        self.web = Proc([str(self.args.web_exe), str(self.args.sender_config)], "sender")
-        line = self.web.next_line(lambda l: l.startswith("Opt-in loopback OBP-RP"), 300)
-        fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
-        for _ in range(240):
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{self.port}/ku", timeout=2)
-                break
-            except Exception:
-                time.sleep(0.5)
-        return fields["node_id"], fields["listen_addr"]
-
-    # ---- authenticated KU API ---------------------------------------------
     def call(self, path: str, payload=None) -> tuple[int, dict]:
         req = urllib.request.Request(
             f"{self.base}/{path}",
@@ -167,11 +158,115 @@ class Check:
         return self.call("operations", {"session": self.session(), "budget": BUDGET,
                                         "request": {"operation": op, "payload": payload}})
 
+
+def start_web_host(exe: Path, config: Path, port: int, name: str) -> tuple[Proc, str, str]:
+    """Start ``ku_local_web`` and return (process, node_id, listen_addr)."""
+    proc = Proc([str(exe), str(config)], name)
+    line = proc.next_line(lambda l: l.startswith("Opt-in loopback OBP-RP"), 300)
+    fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
+    for _ in range(240):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/ku", timeout=2)
+            break
+        except Exception:
+            time.sleep(0.5)
+    return proc, fields["node_id"], fields["listen_addr"]
+
+
+class PeerReceiver:
+    """Isolated ``ku_peer_demo`` receiver inspected over its stdin commands."""
+
+    kind = "ku_peer_demo"
+
+    def __init__(self, args: argparse.Namespace):
+        self.args = args
+        self.proc: Proc | None = None
+
+    def start(self) -> tuple[str, str]:
+        self.proc = Proc([str(self.args.peer_exe), str(self.args.receiver_config)], "receiver", stdin=True)
+        started = json.loads(self.proc.next_line(lambda l: l.startswith("{")))
+        return started["node_id"], started["listen_addr"]
+
+    def inspect(self, public_cid: str) -> dict:
+        return self.proc.command({"command": "inspect", "object_cid": public_cid, "selector": SELECTOR})
+
+    def stop(self) -> None:
+        if self.proc:
+            self.proc.stop(graceful=True)
+
+    def stopped(self) -> bool:
+        return self.proc is not None and self.proc.p.returncode is not None
+
+
+class WebReceiver:
+    """Second ``ku_local_web`` receiver inspected through its authenticated API."""
+
+    kind = "ku_local_web"
+
+    def __init__(self, args: argparse.Namespace):
+        self.args = args
+        self.cfg = load_host_config(args.receiver_config, "receiver")
+        self.api = Api(self.cfg)
+        self.proc: Proc | None = None
+
+    def start(self) -> tuple[str, str]:
+        self.proc, node_id, addr = start_web_host(self.args.receiver_exe or self.args.web_exe,
+                                                  self.args.receiver_config, self.api.port, "receiver")
+        return node_id, addr
+
+    def inspect(self, public_cid: str) -> dict:
+        # Same call as the receiver page's fieldset 4; poll briefly for arrival.
+        code, env = 0, {}
+        for _ in range(30):
+            code, env = self.api.editor("share_inspect", {"object_cid": public_cid, "selector": SELECTOR})
+            if ok(code, env):
+                return payload(env)
+            time.sleep(1)
+        return {"event": "error", "code": f"{code} {error_code(env)}"}
+
+    def stop(self) -> None:
+        if self.proc:
+            self.proc.stop(graceful=False)
+
+    def stopped(self) -> bool:
+        return self.proc is not None and self.proc.p.returncode is not None
+
+
+class Check:
+    def __init__(self, args: argparse.Namespace):
+        self.args = args
+        self.cfg = load_host_config(args.sender_config, "sender")
+        self.api = Api(self.cfg)
+        self.port = self.api.port
+        self.receiver = WebReceiver(args) if args.receiver_kind == "web" else PeerReceiver(args)
+        if isinstance(self.receiver, WebReceiver) and self.receiver.api.port == self.port:
+            raise SystemExit("receiver config must use a different port than the sender")
+        self.results: list[dict] = []
+        self.web: Proc | None = None
+
+    # ---- reporting -------------------------------------------------------
+    def check(self, name: str, ok, detail: str = "") -> bool:
+        self.results.append({"check": name, "pass": bool(ok), "detail": detail})
+        print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}".rstrip(), flush=True)
+        return bool(ok)
+
+    # ---- processes ---------------------------------------------------------
+    def start_web(self) -> tuple[str, str]:
+        self.web, node_id, addr = start_web_host(self.args.web_exe, self.args.sender_config,
+                                                 self.port, "sender")
+        return node_id, addr
+
+    # ---- authenticated sender KU API ---------------------------------------
+    def editor(self, action: str, payload: dict) -> tuple[int, dict]:
+        return self.api.editor(action, payload)
+
+    def operation(self, op: str, payload: dict) -> tuple[int, dict]:
+        return self.api.operation(op, payload)
+
     # ---- journey -----------------------------------------------------------
     def run(self) -> None:
-        r = self.start_peer()
-        rid, raddr = r["node_id"], r["listen_addr"]
-        self.check("receiver ku_peer_demo started", len(rid) == 64, f"node_id={rid} addr={raddr}")
+        rid, raddr = self.receiver.start()
+        self.check(f"receiver {self.receiver.kind} started", len(rid) == 64, f"node_id={rid} addr={raddr}")
         sid, saddr = self.start_web()
         self.check("sender ku_local_web opt-in network started", len(sid) == 64 and sid != rid,
                    f"node_id={sid} addr={saddr}")
@@ -239,21 +334,23 @@ class Check:
         self.check("sender intent reaches Acknowledged", state == "Acknowledged",
                    f"state={state} claims_network_completion={view.get('claims_network_completion')}")
 
-        received = self.peer.command({"command": "inspect", "object_cid": pub, "selector": SELECTOR})
+        received = self.receiver.inspect(pub)
         self.check_received(received, prepared, sid, "")
+        self.check_receiver_public_get(prepared, "")
         code, env = self.operation("get", {"object_cid": private_cid})
         self.check("private KU stays readable on the sender", ok(code, env))
 
         # Restart both: receiver gracefully, sender as stop-web.ps1 does.
-        self.peer.stop(graceful=True)
+        self.receiver.stop()
         self.web.stop(graceful=False)
-        self.check("both processes stopped", self.peer.p.returncode is not None
+        self.check("both processes stopped", self.receiver.stopped()
                    and self.web.p.returncode is not None)
 
-        r2 = self.start_peer()
-        self.check("receiver restart keeps its NodeID", r2["node_id"] == rid, f"addr={r2['listen_addr']}")
-        received = self.peer.command({"command": "inspect", "object_cid": pub, "selector": SELECTOR})
+        rid2, raddr2 = self.receiver.start()
+        self.check("receiver restart keeps its NodeID", rid2 == rid, f"addr={raddr2}")
+        received = self.receiver.inspect(pub)
         self.check_received(received, prepared, sid, " after restart")
+        self.check_receiver_public_get(prepared, " after restart")
         sid2, _ = self.start_web()
         self.check("sender restart keeps its NodeID", sid2 == sid)
         code, env = self.editor("share_intent", {"intent_id": intent_id})
@@ -261,7 +358,7 @@ class Check:
         self.check("sender intent still Acknowledged after restart", state == "Acknowledged",
                    f"state={state}")
         code, env = self.editor("share_prepare", {
-            "object_cid": private_cid, "expected_node_id": rid, "address": r2["listen_addr"],
+            "object_cid": private_cid, "expected_node_id": rid, "address": raddr2,
             "selector": SELECTOR, "namespace": NAMESPACE})
         again = payload(env) if ok(code, env) else {}
         self.check("fresh prepare after restart: same Public CID and intent id",
@@ -286,6 +383,18 @@ class Check:
         self.check(f"confirm{when}: delivery note matches outbox outcome", expected,
                    f"outbox={outbox} delivery={delivery!r}")
 
+    def check_receiver_public_get(self, prepared: dict, when: str) -> None:
+        # Only a Web receiver has the registered operations API (Saved local knowledge).
+        if not isinstance(self.receiver, WebReceiver):
+            return
+        code, env = self.receiver.api.operation("get", {"object_cid": prepared["public_object_cid"]})
+        view = payload(env) if ok(code, env) else {}
+        self.check(f"receiver{when}: get serves the accepted KU as PUBLIC, same semantic identity",
+                   view.get("disclosure_class") == "PUBLIC"
+                   and view.get("semantic_content_cid") == prepared["semantic_content_cid"]
+                   and view.get("executable") is False,
+                   f"{code} {view.get('disclosure_class') or error_code(env)}")
+
     def check_received(self, view: dict, prepared: dict, sender: str, when: str) -> None:
         self.check(f"receiver inspect{when}: public_object", view.get("event") == "public_object",
                    view.get("code", ""))
@@ -300,8 +409,7 @@ class Check:
                    and view.get("fidelity") == "unassessed" and view.get("authorizes_reward") is False)
 
     def finish(self) -> int:
-        if self.peer:
-            self.peer.stop(graceful=True)
+        self.receiver.stop()
         if self.web:
             self.web.stop(graceful=False)
         passed = sum(r["pass"] for r in self.results)
@@ -331,7 +439,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sender-config", required=True, type=Path,
                         help="ku_local_web host JSON with an opt-in \"network\" block")
     parser.add_argument("--receiver-config", required=True, type=Path,
-                        help="ku_peer_demo JSON (data_dir, bind_addr 127.0.0.1:0, network_opt_in)")
+                        help="ku_peer_demo JSON (data_dir, bind_addr 127.0.0.1:0, network_opt_in), "
+                             "or with --receiver-kind web a second ku_local_web host JSON")
+    parser.add_argument("--receiver-kind", choices=("peer", "web"), default="peer",
+                        help="peer: ku_peer_demo (default); web: second ku_local_web host")
+    parser.add_argument("--receiver-exe", type=Path,
+                        help="ku_local_web binary for --receiver-kind web (default: --web-exe)")
     parser.add_argument("--web-exe", type=Path, default=DEFAULT_WEB)
     parser.add_argument("--peer-exe", type=Path, default=DEFAULT_PEER)
     parser.add_argument("--ack-timeout", type=int, default=60, help="seconds to wait for Acknowledged")

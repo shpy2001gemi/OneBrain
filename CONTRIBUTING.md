@@ -58,7 +58,8 @@ CID/bytes on the receiving node and retry/restart. You can run D-045 either
 or (2) through the isolated `ku_peer_demo` helper processes alongside the local
 custody host. To check path (1) end to end on one machine, run
 [check_ku_public_share_demo.py](scripts/base/check_ku_public_share_demo.py)
-against a copy of your dataset (instructions in the linked task-20 section).
+against a copy of your dataset (instructions in the linked task-20 section);
+`--receiver-kind web` makes the receiver a second `/ku` Web host.
 Networking remains opt-in (default off), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
 literal. Registry and local-secret provisioning remain operator prerequisites,
