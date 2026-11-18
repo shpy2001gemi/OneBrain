@@ -572,3 +572,33 @@ async fn lost_command_reply_is_unknown_and_never_automatically_replayed() {
     );
     task.await.unwrap();
 }
+
+#[test]
+fn obp_client_loads_api_token_file_and_detects_reflected_file_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let token_file = dir.path().join("obp-private-canary-token.txt");
+    let valid_token = "obp-client-token-file-0123456789-abcdef";
+    std::fs::write(&token_file, format!(" {valid_token}\r\n")).unwrap();
+    let parsed = parse(&[
+        "--api-url",
+        "http://127.0.0.1:4280",
+        "--api-token-file",
+        token_file.to_str().unwrap(),
+        "status",
+    ])
+    .unwrap();
+    let client = Client::new(&parsed, None).unwrap();
+    assert!(client.has_secret(&json!({"echo": valid_token})));
+    assert!(parse(&[
+        "--api-token",
+        "PRIVATE_TOKEN",
+        "--api-token-file",
+        token_file.to_str().unwrap(),
+        "status",
+    ])
+    .is_err());
+    std::fs::write(&token_file, b"short-private-canary").unwrap();
+    let err = Client::new(&parsed, None).err().unwrap();
+    assert_eq!(err, crate::API_TOKEN_INVALID);
+    assert!(!err.contains("canary"));
+}

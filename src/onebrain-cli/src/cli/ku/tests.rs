@@ -87,6 +87,32 @@ fn local_transport_rejects_credential_and_remote_destinations() {
         )
         .is_ok());
     }
+    let dir = tempfile::tempdir().unwrap();
+    let token_file = dir.path().join("ku-private-canary-token.txt");
+    let valid_token = "ku-client-token-file-0123456789-abcdef";
+    std::fs::write(&token_file, format!("{valid_token}\n")).unwrap();
+    let from_file = parse(&[
+        "--api-url",
+        "http://127.0.0.1:4280",
+        "--api-token-file",
+        token_file.to_str().unwrap(),
+        "status",
+    ])
+    .unwrap();
+    let client = Client::new(&from_file).unwrap();
+    assert_eq!(client.token, valid_token);
+    assert!(parse(&[
+        "--api-token",
+        "private-token",
+        "--api-token-file",
+        token_file.to_str().unwrap(),
+        "status",
+    ])
+    .is_err());
+    std::fs::write(&token_file, b"short-private-canary").unwrap();
+    let err = Client::new(&from_file).err().unwrap();
+    assert_eq!(err, crate::API_TOKEN_INVALID);
+    assert!(!err.contains("canary"));
 }
 
 #[tokio::test]

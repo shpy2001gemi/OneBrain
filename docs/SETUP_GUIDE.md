@@ -183,7 +183,7 @@ cargo run -p onebrain-cli -- start \
 cargo run -p onebrain-cli -- start --api --api-token-file "<path/to/api-token.txt>"
 ```
 
-> **⚠️ Quan trọng**: Ưu tiên `--api-token-file` (chứa đúng một token UTF-8 dài 32..1024 ký tự ASCII chữ/số/`-`/`_`, không đi cùng `--api-token`) để token không lộ trong lịch sử shell hay đối số tiến trình. Token mặc định khi chạy dev nhanh không cờ là `onebrain-dev-token` (hoặc `--api-token "..."`). Host CLI không in giá trị Bearer token thô ra stdout.
+> **⚠️ Quan trọng**: Ưu tiên `--api-token-file` (chứa đúng một token UTF-8 dài 32..1024 ký tự ASCII chữ/số/`-`/`_`, không đi cùng `--api-token`) cho cả `onebrain start --api` lẫn các lệnh client CLI (`onebrain ku`, `onebrain obp`, `onebrain need`, `onebrain pomv`, `onebrain vnext`, ưu tiên trước `ONEBRAIN_API_TOKEN`) để token không lộ trong lịch sử shell hay đối số tiến trình. Token mặc định khi chạy `onebrain start --api` dev nhanh không cờ là `onebrain-dev-token` (hoặc `--api-token "..."`). Host CLI không in giá trị Bearer token thô ra stdout.
 
 ### 4.2. API Server bind
 
@@ -417,7 +417,7 @@ path = "~/.onebrain/identity.key"
 | Biến | Mặc định | Mô tả |
 |------|----------|--------|
 | `ONEBRAIN_API_PORT` | `4280` | Port API server |
-| `ONEBRAIN_API_TOKEN` | — | Bearer token xác thực |
+| `ONEBRAIN_API_TOKEN` | — | Bearer token xác thực cho các lệnh client CLI khi không truyền `--api-token-file` hoặc `--api-token` |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama API endpoint |
 
 ### 7.3. CORS

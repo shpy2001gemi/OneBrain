@@ -13,9 +13,13 @@ const UNKNOWN: &str = "OBP outcome unknown; retain original key/payload/context,
 pub(crate) struct ObpArgs {
     #[arg(long, global = true, default_value = "http://127.0.0.1:4280")]
     api_url: String,
-    /// Prefer ONEBRAIN_API_TOKEN to avoid shell history disclosure.
-    #[arg(long, global = true)]
+    /// Prefer --api-token-file or ONEBRAIN_API_TOKEN to avoid shell history disclosure.
+    #[arg(long, global = true, conflicts_with = "api_token_file")]
     api_token: Option<String>,
+    /// Private UTF-8 file containing the API Bearer token (32..1024 ASCII letters,
+    /// digits, '-' or '_'). Conflicts with --api-token; overrides ONEBRAIN_API_TOKEN.
+    #[arg(long, global = true, value_name = "PATH", conflicts_with = "api_token")]
+    api_token_file: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -181,12 +185,10 @@ impl Client {
         {
             return Err("OBP requires a numeric loopback HTTP(S) origin without credentials, path, query or fragment".into());
         }
-        let token = args
-            .api_token
-            .clone()
-            .or_else(|| std::env::var("ONEBRAIN_API_TOKEN").ok())
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("set ONEBRAIN_API_TOKEN or --api-token")?;
+        let token = crate::resolve_client_api_token(
+            args.api_token.as_deref(),
+            args.api_token_file.as_deref(),
+        )?;
         let http = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())

@@ -13,9 +13,13 @@ use serde_json::{json, Value};
 pub(crate) struct KuArgs {
     #[arg(long, global = true, default_value = "http://127.0.0.1:4280")]
     api_url: String,
-    /// Prefer ONEBRAIN_API_TOKEN to keep the token out of shell history.
-    #[arg(long, global = true)]
+    /// Prefer --api-token-file or ONEBRAIN_API_TOKEN to keep the token out of shell history.
+    #[arg(long, global = true, conflicts_with = "api_token_file")]
     api_token: Option<String>,
+    /// Private UTF-8 file containing the API Bearer token (32..1024 ASCII letters,
+    /// digits, '-' or '_'). Conflicts with --api-token; overrides ONEBRAIN_API_TOKEN.
+    #[arg(long, global = true, value_name = "PATH", conflicts_with = "api_token")]
+    api_token_file: Option<PathBuf>,
     #[arg(long, global = true, default_value_t = 256, value_parser = clap::value_parser!(u32).range(1..=256))]
     max_items: u32,
     #[arg(long, global = true, default_value_t = 1_048_576, value_parser = clap::value_parser!(u64).range(32768..=1048576))]
@@ -170,12 +174,10 @@ impl Client {
         {
             return Err("KU requires a loopback http(s) API origin without credentials, path, query or fragment".into());
         }
-        let token = args
-            .api_token
-            .clone()
-            .or_else(|| std::env::var("ONEBRAIN_API_TOKEN").ok())
-            .filter(|v| !v.trim().is_empty())
-            .ok_or("set ONEBRAIN_API_TOKEN or pass --api-token")?;
+        let token = crate::resolve_client_api_token(
+            args.api_token.as_deref(),
+            args.api_token_file.as_deref(),
+        )?;
         let http = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())

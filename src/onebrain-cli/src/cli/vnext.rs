@@ -16,7 +16,6 @@ use reqwest::{Method, Url};
 use serde_json::{json, Value};
 
 const DEFAULT_API_URL: &str = "http://127.0.0.1:4280";
-const API_TOKEN_ENV: &str = "ONEBRAIN_API_TOKEN";
 const CONFIRMATION_DOMAIN: &[u8] = b"onebrain:vnext:rest-explicit-confirmation:1\0";
 const CONTINUATION_PREFIX: &str = "obc1.";
 #[cfg(feature = "vnext-network-runtime")]
@@ -29,19 +28,21 @@ pub(crate) struct ApiConnectionArgs {
     /// Base URL of the authenticated local OneBrain API.
     #[arg(long, global = true, default_value = DEFAULT_API_URL)]
     api_url: String,
-    /// Bearer token. Prefer the ONEBRAIN_API_TOKEN environment variable.
-    #[arg(long, global = true)]
+    /// Bearer token. Prefer --api-token-file or the ONEBRAIN_API_TOKEN environment variable.
+    #[arg(long, global = true, conflicts_with = "api_token_file")]
     api_token: Option<String>,
+    /// Private UTF-8 file containing the API Bearer token (32..1024 ASCII letters,
+    /// digits, '-' or '_'). Conflicts with --api-token; overrides ONEBRAIN_API_TOKEN.
+    #[arg(long, global = true, value_name = "PATH", conflicts_with = "api_token")]
+    api_token_file: Option<PathBuf>,
 }
 
 impl ApiConnectionArgs {
     fn client(&self) -> Result<VNextApiClient, String> {
-        let token = self
-            .api_token
-            .clone()
-            .or_else(|| std::env::var(API_TOKEN_ENV).ok())
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| format!("missing API token; pass --api-token or set {API_TOKEN_ENV}"))?;
+        let token = crate::resolve_client_api_token(
+            self.api_token.as_deref(),
+            self.api_token_file.as_deref(),
+        )?;
         VNextApiClient::new(&self.api_url, token)
     }
 }
@@ -1043,6 +1044,26 @@ mod tests {
         assert!(zero.contains("not evidence of network-wide absence"));
         assert!(nonzero.contains("quarantined proposal"));
         assert!(!nonzero.contains("Authorized"));
+    }
+
+    #[test]
+    fn api_connection_args_support_token_file_and_fail_closed_on_invalid_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let token_file = dir.path().join("vnext-private-canary-token.txt");
+        let valid_token = "vnext-client-token-file-0123456789-abcdef";
+        std::fs::write(&token_file, format!("{valid_token}\n")).unwrap();
+        let connection = ApiConnectionArgs {
+            api_url: DEFAULT_API_URL.to_owned(),
+            api_token: None,
+            api_token_file: Some(token_file.clone()),
+        };
+        let client = connection.client().unwrap();
+        assert_eq!(client.token, valid_token);
+
+        std::fs::write(&token_file, b"short-private-canary").unwrap();
+        let err = connection.client().err().unwrap();
+        assert_eq!(err, crate::API_TOKEN_INVALID);
+        assert!(!err.contains("canary"));
     }
 
     #[cfg(feature = "vnext-network-runtime")]

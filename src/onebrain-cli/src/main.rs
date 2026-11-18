@@ -682,16 +682,26 @@ fn exit_on_client_error(result: Result<(), String>) {
 }
 
 const DEFAULT_API_TOKEN: &str = "onebrain-dev-token";
+pub(crate) const API_TOKEN_ENV: &str = "ONEBRAIN_API_TOKEN";
 
-const API_TOKEN_UNREADABLE: &str = "api_token_unreadable: cannot read --api-token-file. Point it \
+pub(crate) const CLIENT_API_TOKEN_MISSING: &str =
+    "missing API token; pass --api-token-file, set ONEBRAIN_API_TOKEN, or pass --api-token";
+
+pub(crate) const CLIENT_API_TOKEN_CONFLICT: &str =
+    "api_token_conflict: --api-token cannot be combined with --api-token-file";
+
+pub(crate) const API_TOKEN_UNREADABLE: &str =
+    "api_token_unreadable: cannot read --api-token-file. Point it \
     at an existing locally readable UTF-8 token file and keep the token outside Git and command \
     arguments.";
 
-const API_TOKEN_TOO_LARGE: &str = "api_token_too_large: --api-token-file exceeds 1024 bytes \
+pub(crate) const API_TOKEN_TOO_LARGE: &str =
+    "api_token_too_large: --api-token-file exceeds 1024 bytes \
     including surrounding whitespace. Supply a plain UTF-8 token file, not JSON, a key file or a \
     canonical source file.";
 
-const API_TOKEN_INVALID: &str = "api_token_invalid: --api-token-file must contain a UTF-8 token \
+pub(crate) const API_TOKEN_INVALID: &str =
+    "api_token_invalid: --api-token-file must contain a UTF-8 token \
     of 32..1024 ASCII letters, digits, '-' or '_' after trimming surrounding whitespace, without \
     quotes or JSON.";
 
@@ -706,9 +716,42 @@ fn resolve_start_api_token(
     }
 }
 
+/// Resolve the Bearer token for client subcommands (`ku`, `obp`, `need`, `pomv`,
+/// `vnext`). `--api-token-file` overrides `ONEBRAIN_API_TOKEN` and fails closed
+/// without falling back to the environment when unreadable or invalid.
+pub(crate) fn resolve_client_api_token(
+    api_token: Option<&str>,
+    api_token_file: Option<&std::path::Path>,
+) -> Result<String, String> {
+    resolve_client_api_token_with_env(api_token, api_token_file, std::env::var(API_TOKEN_ENV).ok())
+}
+
+pub(crate) fn resolve_client_api_token_with_env(
+    api_token: Option<&str>,
+    api_token_file: Option<&std::path::Path>,
+    env_token: Option<String>,
+) -> Result<String, String> {
+    if api_token.is_some() && api_token_file.is_some() {
+        return Err(CLIENT_API_TOKEN_CONFLICT.to_owned());
+    }
+    if let Some(path) = api_token_file {
+        return load_api_token_file(path).map_err(str::to_owned);
+    }
+    if let Some(inline) = api_token {
+        return if inline.trim().is_empty() {
+            Err(CLIENT_API_TOKEN_MISSING.to_owned())
+        } else {
+            Ok(inline.to_owned())
+        };
+    }
+    env_token
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| CLIENT_API_TOKEN_MISSING.to_owned())
+}
+
 /// Read and validate `--api-token-file` with the same 32..=1024 ASCII rule as
 /// `ku_local_web`, without reflecting private file paths or bytes in errors.
-fn load_api_token_file(path: &std::path::Path) -> Result<String, &'static str> {
+pub(crate) fn load_api_token_file(path: &std::path::Path) -> Result<String, &'static str> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
@@ -1203,6 +1246,177 @@ mod vnext_command_tests {
         assert!(api_token_banner(true, false).contains("--api-token-file"));
         assert!(api_token_banner(false, true).contains("default dev Bearer token"));
         assert!(api_token_banner(false, false).contains("--api-token"));
+    }
+
+    #[test]
+    fn client_subcommands_accept_api_token_file_conflict_with_inline_and_prioritize_over_env() {
+        let cases: &[(&[&str], &[&str])] = &[
+            (
+                &["onebrain", "ku", "--api-token-file", "token.txt", "status"],
+                &["onebrain", "ku", "status", "--api-token-file", "token.txt"],
+            ),
+            (
+                &["onebrain", "need", "--api-token-file", "token.txt", "list"],
+                &["onebrain", "need", "list", "--api-token-file", "token.txt"],
+            ),
+            (
+                &[
+                    "onebrain",
+                    "pomv",
+                    "--api-token-file",
+                    "token.txt",
+                    "view",
+                    "--target",
+                    "4141414141414141414141414141414141414141414141414141414141414141",
+                ],
+                &[
+                    "onebrain",
+                    "pomv",
+                    "view",
+                    "--target",
+                    "4141414141414141414141414141414141414141414141414141414141414141",
+                    "--api-token-file",
+                    "token.txt",
+                ],
+            ),
+            (
+                &[
+                    "onebrain",
+                    "vnext",
+                    "--api-token-file",
+                    "token.txt",
+                    "status",
+                ],
+                &[
+                    "onebrain",
+                    "vnext",
+                    "status",
+                    "--api-token-file",
+                    "token.txt",
+                ],
+            ),
+        ];
+        for (before, after) in cases {
+            assert!(CliArgs::try_parse_from(before.iter().copied()).is_ok());
+            assert!(CliArgs::try_parse_from(after.iter().copied()).is_ok());
+            let mut same_level_after = after.to_vec();
+            same_level_after.extend_from_slice(&["--api-token", "inline-token"]);
+            assert!(CliArgs::try_parse_from(same_level_after).is_err());
+            let mut same_level_before = vec![before[0], before[1], "--api-token", "inline-token"];
+            same_level_before.extend_from_slice(&before[2..]);
+            assert!(CliArgs::try_parse_from(same_level_before).is_err());
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing-private-canary.txt");
+        // Even if clap merges global flags across parent/subcommand levels,
+        // client token resolution fails closed before touching disk.
+        let split_conflict = resolve_client_api_token_with_env(
+            Some("inline-token"),
+            Some(&missing),
+            Some("env-token".into()),
+        )
+        .unwrap_err();
+        assert_eq!(split_conflict, CLIENT_API_TOKEN_CONFLICT);
+        assert!(!split_conflict.contains("canary"));
+
+        #[cfg(feature = "vnext-outbound-first")]
+        {
+            assert!(CliArgs::try_parse_from([
+                "onebrain",
+                "obp",
+                "--api-token-file",
+                "token.txt",
+                "status",
+            ])
+            .is_ok());
+            assert!(CliArgs::try_parse_from([
+                "onebrain",
+                "obp",
+                "status",
+                "--api-token-file",
+                "token.txt",
+            ])
+            .is_ok());
+            assert!(CliArgs::try_parse_from([
+                "onebrain",
+                "obp",
+                "status",
+                "--api-token-file",
+                "token.txt",
+                "--api-token",
+                "inline-token",
+            ])
+            .is_err());
+        }
+
+        let token_path = root.path().join("client-private-canary.txt");
+        let valid = "client-token-from-file-1234567890-abcdef";
+        std::fs::write(&token_path, format!("  {valid}\r\n")).unwrap();
+        assert_eq!(
+            resolve_client_api_token_with_env(
+                None,
+                Some(&token_path),
+                Some("env-token-must-not-override-file".into()),
+            )
+            .unwrap(),
+            valid
+        );
+
+        let unreadable = resolve_client_api_token_with_env(
+            None,
+            Some(&missing),
+            Some("env-token-must-not-mask-missing-file".into()),
+        )
+        .unwrap_err();
+        assert_eq!(unreadable, API_TOKEN_UNREADABLE);
+        assert!(!unreadable.contains("canary"));
+
+        std::fs::write(&token_path, b"short-private-canary").unwrap();
+        let invalid = resolve_client_api_token_with_env(
+            None,
+            Some(&token_path),
+            Some("env-token-must-not-mask-invalid-file".into()),
+        )
+        .unwrap_err();
+        assert_eq!(invalid, API_TOKEN_INVALID);
+        assert!(!invalid.contains("canary"));
+
+        std::fs::write(&token_path, vec![b'x'; 1025]).unwrap();
+        let oversize = resolve_client_api_token_with_env(
+            None,
+            Some(&token_path),
+            Some("env-token-must-not-mask-oversize-file".into()),
+        )
+        .unwrap_err();
+        assert_eq!(oversize, API_TOKEN_TOO_LARGE);
+
+        assert_eq!(
+            resolve_client_api_token_with_env(
+                Some("inline-secret"),
+                None,
+                Some("env-token".into()),
+            )
+            .unwrap(),
+            "inline-secret"
+        );
+        assert_eq!(
+            resolve_client_api_token_with_env(Some("   "), None, Some("env-token".into()))
+                .unwrap_err(),
+            CLIENT_API_TOKEN_MISSING
+        );
+        assert_eq!(
+            resolve_client_api_token_with_env(None, None, Some("env-token".into())).unwrap(),
+            "env-token"
+        );
+        assert_eq!(
+            resolve_client_api_token_with_env(None, None, Some("  \t\n ".into())).unwrap_err(),
+            CLIENT_API_TOKEN_MISSING
+        );
+        assert_eq!(
+            resolve_client_api_token_with_env(None, None, None).unwrap_err(),
+            CLIENT_API_TOKEN_MISSING
+        );
     }
 }
 
