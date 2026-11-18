@@ -102,6 +102,20 @@ enum Commands {
         /// Path to built web dashboard (default: auto-detect)
         #[arg(long)]
         web_dir: Option<PathBuf>,
+        /// Enable the local `/ku` workspace on the API host: the dataset's
+        /// private 32-byte binary Vault key file. Requires --api and a signed
+        /// Registry (--concept-registry-release-root and its public key).
+        #[arg(long, requires = "api")]
+        ku_vault_key_file: Option<PathBuf>,
+        /// Operator-admitted canonical LOCAL_ONLY Text SourceArtifact for `/ku`
+        /// manual drafts, as LABEL=PATH (repeatable, at most 64).
+        #[arg(
+            long = "ku-source",
+            value_name = "LABEL=PATH",
+            requires = "ku_vault_key_file",
+            value_parser = parse_ku_source
+        )]
+        ku_sources: Vec<(String, PathBuf)>,
         #[command(flatten)]
         vnext: VNextStartArgs,
     },
@@ -190,6 +204,8 @@ async fn main() {
             api_port,
             api_token,
             web_dir,
+            ku_vault_key_file,
+            ku_sources,
             vnext,
         } => {
             let vnext_config = match vnext.feature_config() {
@@ -245,6 +261,26 @@ async fn main() {
                     LegacyTcpListener::Disabled
                 },
             };
+            // Read the Vault key and verify the Registry before touching data_dir,
+            // like the `ku_local_web` host; private paths/bytes are never printed.
+            #[cfg(feature = "base-v1")]
+            let ku_runtime = match ku_vault_key_file.as_deref() {
+                Some(vault_key_file) => {
+                    match prepare_start_ku_runtime(&config, vault_key_file, &ku_sources) {
+                        Ok(runtime) => Some(runtime),
+                        Err(error) => {
+                            eprintln!("{error}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => None,
+            };
+            #[cfg(not(feature = "base-v1"))]
+            if ku_vault_key_file.is_some() || !ku_sources.is_empty() {
+                eprintln!("--ku-vault-key-file requires a binary built with the base-v1 feature");
+                std::process::exit(2);
+            }
             std::fs::create_dir_all(&config.data_dir).expect("Failed to create data directory");
 
             println!("\u{2554}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2557}");
@@ -303,11 +339,18 @@ async fn main() {
                 }
             };
             #[cfg(feature = "base-v1")]
-            if let Err(error) = node
-                .install_base_runtime(onebrain_api::base_runtime_config_for_api_token(&api_token))
+            let (ku_enabled, ku_issue) = (
+                ku_runtime.is_some(),
+                ku_runtime.as_ref().and_then(|(_, issue)| *issue),
+            );
+            #[cfg(feature = "base-v1")]
             {
-                eprintln!("Failed to install the Base v1 runtime: {error}");
-                std::process::exit(1);
+                let mut base = onebrain_api::base_runtime_config_for_api_token(&api_token);
+                base.ku = ku_runtime.map(|(ku, _)| ku);
+                if let Err(error) = node.install_base_runtime(base) {
+                    eprintln!("Failed to install the Base v1 runtime: {error}");
+                    std::process::exit(1);
+                }
             }
             #[cfg(feature = "vnext-network-runtime")]
             if let Some(dependencies) = vnext_dependencies {
@@ -465,6 +508,18 @@ async fn main() {
                 });
                 println!("  ✓ API server started on http://127.0.0.1:{}", api_port);
                 println!("  ✓ Token: {}", api_token);
+                #[cfg(feature = "base-v1")]
+                if ku_enabled {
+                    println!(
+                        "  ✓ Local KU: http://127.0.0.1:{}/ku — local/private only; AI unqualified; no publication",
+                        api_port
+                    );
+                    if let Some(reason) = ku_issue {
+                        eprintln!("  ⚠ {}", ku_source_warning(reason));
+                    }
+                } else {
+                    println!("  Local KU (/ku): unavailable (start with --ku-vault-key-file and a signed Registry to enable)");
+                }
                 println!();
                 println!("Type 'help' for available commands.");
                 println!();
@@ -494,6 +549,101 @@ fn exit_on_client_error(result: Result<(), String>) {
         eprintln!("vNext CLI error: {error}");
         std::process::exit(2);
     }
+}
+
+/// Parse one `--ku-source LABEL=PATH`; the label is split at the first `=`.
+fn parse_ku_source(value: &str) -> Result<(String, PathBuf), String> {
+    match value.split_once('=') {
+        Some((label, path)) if !label.is_empty() && !path.is_empty() => {
+            Ok((label.to_owned(), PathBuf::from(path)))
+        }
+        _ => Err("expected LABEL=PATH with a non-empty label and path".into()),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+const KU_REGISTRY_REQUIRED: &str = "ku_registry_unavailable: --ku-vault-key-file needs a signed \
+    Registry. Pass --concept-registry-release-root (the root containing releases/ and activation \
+    state) and --concept-registry-release-public-key (its independently trusted key); an unsigned \
+    concepts.obr is insufficient. Retain the existing data_dir and Vault key when retrying.";
+
+#[cfg(feature = "base-v1")]
+const KU_REGISTRY_UNAVAILABLE: &str = "ku_registry_unavailable: cannot open the signed Registry \
+    for the local KU workspace. Check --concept-registry-release-root and \
+    --concept-registry-release-public-key; retain the existing data_dir and Vault key when \
+    retrying.";
+
+/// Prepare the shared node-owned KU runtime for `onebrain start --api`, using
+/// the same `ku_host` helper as `ku_local_web` and Desktop. Fatal errors are
+/// Vault-key or Registry setup failures; source failures keep saved reads.
+#[cfg(feature = "base-v1")]
+fn prepare_start_ku_runtime(
+    config: &NodeConfig,
+    vault_key_file: &std::path::Path,
+    sources: &[(String, PathBuf)],
+) -> Result<
+    (
+        onebrain_node::ku_product::KuRuntimeConfig,
+        Option<&'static str>,
+    ),
+    &'static str,
+> {
+    use onebrain_api::ku_host::{prepare_ku_runtime, KuHostInputsConfig, Source};
+    let (Some(registry_root), Some(registry_public_key)) = (
+        config.concept_registry_release_root.clone(),
+        config.concept_registry_release_public_key.clone(),
+    ) else {
+        return Err(KU_REGISTRY_REQUIRED);
+    };
+    let inputs = KuHostInputsConfig {
+        registry_root,
+        registry_public_key,
+        vault_key_file: vault_key_file.to_path_buf(),
+        sources: sources
+            .iter()
+            .map(|(label, canonical_file)| Source {
+                label: label.clone(),
+                canonical_file: canonical_file.clone(),
+            })
+            .collect(),
+        ollama: None,
+    };
+    let (ku, issue) = prepare_ku_runtime(config, &inputs).map_err(|reason| match reason {
+        "ku_host_input_unavailable" => {
+            "ku_vault_key_unreadable: cannot read --ku-vault-key-file. Point it at the \
+            dataset's existing private Vault key; do not generate a replacement key or change \
+            data_dir."
+        }
+        "ku_host_input_exceeds_limit" | "ku_vault_key_invalid" => {
+            "ku_vault_key_invalid: --ku-vault-key-file must contain exactly 32 binary bytes \
+            (not hex, Base64 or text). Restore the dataset's original key; do not pad, \
+            truncate or replace it."
+        }
+        other => other,
+    })?;
+    if issue == Some("ku_registry_unavailable") {
+        return Err(KU_REGISTRY_UNAVAILABLE);
+    }
+    Ok((ku, issue))
+}
+
+/// Non-fatal `/ku` source/model issues: saved KU reads stay available.
+#[cfg(feature = "base-v1")]
+fn ku_source_warning(reason: &'static str) -> String {
+    let guidance = match reason {
+        "ku_host_input_unavailable" => "cannot read a --ku-source file",
+        "ku_host_input_exceeds_limit" => "a --ku-source file exceeds 65536 bytes",
+        "ku_source_admission_failed" => {
+            "a --ku-source file is not a canonical LOCAL_ONLY Text SourceArtifact, a label is \
+            not 1..128 UTF-8 bytes, or source IDs repeat"
+        }
+        "ku_host_source_limit" => "more than 64 --ku-source entries",
+        _ => "the KU input setup is incomplete",
+    };
+    format!(
+        "{reason}: {guidance}. Source editing is unavailable for this launch; saved KU reads \
+        still work. Retry with the same data_dir and original Vault key."
+    )
 }
 
 #[cfg(test)]
@@ -684,5 +834,112 @@ mod vnext_command_tests {
             "test",
         ]);
         assert!(prepare_without_ack.is_err());
+    }
+}
+
+#[cfg(all(test, feature = "base-v1"))]
+#[path = "../../onebrain-api/src/ku_api/tests/registry_fixture.rs"]
+#[allow(dead_code)]
+mod registry_fixture;
+
+#[cfg(all(test, feature = "base-v1"))]
+mod start_ku_tests {
+    use super::*;
+
+    fn start_args(argv: &[&str]) -> Result<CliArgs, clap::Error> {
+        let mut full = vec!["onebrain", "start"];
+        full.extend_from_slice(argv);
+        CliArgs::try_parse_from(full)
+    }
+
+    #[test]
+    fn ku_flags_require_api_and_vault_key_and_parse_label_path() {
+        assert!(start_args(&["--ku-vault-key-file", "vault.key"]).is_err());
+        assert!(start_args(&["--api", "--ku-source", "Label=source.canonical"]).is_err());
+        let parsed = start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-source",
+            "My label=a=b.canonical",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Some(Commands::Start { ku_vault_key_file: Some(_), ref ku_sources, .. })
+                if ku_sources == &vec![("My label".to_owned(), PathBuf::from("a=b.canonical"))]
+        ));
+        for bad in ["no-separator", "=path", "label="] {
+            assert!(parse_ku_source(bad).is_err(), "{bad}");
+        }
+        let default = start_args(&["--api"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Some(Commands::Start { ku_vault_key_file: None, ref ku_sources, .. }) if ku_sources.is_empty()
+        ));
+    }
+
+    #[tokio::test]
+    async fn ku_runtime_setup_fails_closed_and_keeps_saved_reads_for_source_issues() {
+        let root = tempfile::tempdir().unwrap();
+        drop(registry_fixture::registry(root.path()));
+        let public_key = onebrain_base_contract::ku_payload::hex(
+            ed25519_dalek::SigningKey::from_bytes(&[0x42; 32])
+                .verifying_key()
+                .as_bytes(),
+        );
+        let key_path = root.path().join("vault.key");
+        std::fs::write(&key_path, [0x51; 32]).unwrap();
+        let data_dir = root.path().join("dataset");
+        let config = |release_root: Option<PathBuf>, key: Option<String>| NodeConfig {
+            data_dir: data_dir.clone(),
+            concept_registry_release_root: release_root,
+            concept_registry_release_public_key: key,
+            ..Default::default()
+        };
+        let signed = config(Some(root.path().join("registry")), Some(public_key.clone()));
+
+        // No signed Registry, unreadable or wrong-size key: fatal, data_dir untouched.
+        let error = prepare_start_ku_runtime(&config(None, None), &key_path, &[])
+            .err()
+            .unwrap();
+        assert_eq!(error, KU_REGISTRY_REQUIRED);
+        let missing = root.path().join("private-missing-canary.key");
+        let error = prepare_start_ku_runtime(&signed, &missing, &[])
+            .err()
+            .unwrap();
+        assert!(error.starts_with("ku_vault_key_unreadable:"));
+        assert!(!error.contains("canary"));
+        let short = root.path().join("short.key");
+        std::fs::write(&short, [1; 31]).unwrap();
+        let error = prepare_start_ku_runtime(&signed, &short, &[])
+            .err()
+            .unwrap();
+        assert!(error.starts_with("ku_vault_key_invalid:"));
+        let wrong_key = config(Some(root.path().join("registry")), Some("00".repeat(32)));
+        let error = prepare_start_ku_runtime(&wrong_key, &key_path, &[])
+            .err()
+            .unwrap();
+        assert_eq!(error, KU_REGISTRY_UNAVAILABLE);
+        assert!(!data_dir.exists());
+
+        // Signed Registry + key: usable runtime; a source issue is a warning only.
+        let (_, issue) = prepare_start_ku_runtime(&signed, &key_path, &[]).unwrap();
+        assert!(issue.is_none());
+        let (_, issue) = prepare_start_ku_runtime(
+            &signed,
+            &key_path,
+            &[(
+                "label".into(),
+                root.path().join("private-source-canary.canonical"),
+            )],
+        )
+        .unwrap();
+        assert_eq!(issue, Some("ku_host_input_unavailable"));
+        let warning = ku_source_warning(issue.unwrap());
+        assert!(warning.starts_with("ku_host_input_unavailable:"));
+        assert!(warning.contains("saved KU reads"));
+        assert!(!warning.contains("canary"));
+        assert_eq!(std::fs::read(&key_path).unwrap(), [0x51; 32]);
     }
 }

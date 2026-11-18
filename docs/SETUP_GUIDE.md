@@ -264,9 +264,20 @@ hoặc `ku_local_web` phục vụ Web và API trên cùng một cổng, cổng n
 Khi xem bằng `npm run preview` (API ở cổng khác), build với
 `VITE_API_SAME_ORIGIN=false` để dùng `VITE_API_BASE` (mặc định `http://127.0.0.1:4280`).
 Chế độ `npm run dev` luôn dùng `VITE_API_BASE`.
-Trang `/ku` (Local KU workspace) cần host `ku_local_web`; trên `onebrain start --api`
-trang vẫn mở nhưng báo `Host: unavailable` và `ku_dependency_unavailable` (HTTP 503),
-vì host CLI chưa nối KU runtime.
+Trang `/ku` (Local KU workspace) cần KU runtime. Host `ku_local_web` luôn có; với
+`onebrain start --api` thêm Vault key của dataset và Registry đã ký, ví dụ:
+
+```bash
+cargo run -p onebrain-cli -- start --api --data-dir <dataset> \
+  --concept-registry-release-root <registry-root> \
+  --concept-registry-release-public-key <64-hex-public-key> \
+  --ku-vault-key-file <vault.key> \
+  --ku-source "<label>=<source.canonical>"   # tùy chọn, lặp được, tối đa 64
+```
+
+Không có `--ku-vault-key-file` thì `/ku` vẫn mở nhưng báo `Host: unavailable` và
+`ku_dependency_unavailable` (HTTP 503). Host CLI chỉ lưu local/private: chưa có
+Ollama draft và chia sẻ Public KU D-045 (dùng `ku_local_web` cho hai việc này).
 
 ### 5.4. Cấu trúc Web Dashboard
 

@@ -6,7 +6,50 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `onebrain start --api` serves the new Web on its own origin (2026-11-18)
+## Latest follow-up — `/ku` local workspace on `onebrain start --api` (2026-11-18)
+
+Agent pick (f) on 2026-11-18. The owner asked the agent to choose the next MVP
+item; this was the gap found in the check below.
+
+- [main.rs](../../../../src/onebrain-cli/src/main.rs): `onebrain start` takes
+  `--ku-vault-key-file <PATH>` (requires `--api`) and repeatable
+  `--ku-source LABEL=PATH` (requires the key file). The signed Registry comes
+  from the existing `--concept-registry-release-root` /
+  `--concept-registry-release-public-key` flags. `prepare_start_ku_runtime`
+  calls the same `ku_host::prepare_ku_runtime` as `ku_local_web` and Desktop
+  before `data_dir` is created. No signed Registry, an unreadable or wrong-size
+  Vault key, or a Registry that does not verify stops startup with a coded
+  message and no private path. A source failure prints a warning; saved reads
+  still work. The runtime goes into `BaseRuntimeConfig.ku`. Without the flags
+  the host prints `Local KU (/ku): unavailable …`, the same behaviour as before.
+- Scope: local/private only. No Ollama draft provider (`ollama: None`). D-045
+  Public share on this host returns 503 `capability_disabled` /
+  `ku_public_share_network_unavailable` (an honest refusal); use `ku_local_web`
+  with its opt-in network block for sharing.
+- Checks: `cargo test -p onebrain-cli --bin onebrain` 45/45, including 2 new
+  `start_ku_tests` (flag requirements, `LABEL=PATH` parsing, fatal setup
+  errors that leave `data_dir` absent and hide paths, source issue as warning,
+  Vault key unchanged); `cargo fmt --check` PASS.
+- Live (Windows, fresh copy of the local dataset in
+  `Documents/OneBrainLocal/peer-mvp-20261118/start-api/ku-data/`, operator
+  Registry + Vault key + admitted source, random throwaway token, port 4393):
+  `/api/vnext/ku/status` 200 (`registry_ready: true`), wrong token 403. Browser
+  agent on `/ku`: `Host: active · Registry: ready`, no error banner; search
+  `water` → the saved `Private / LOCAL_ONLY` KU `3b570175…2abe` (semantic
+  `03479711…54ac`, `MVP demo 2026-09-30: Water is a liquid.`); manual draft
+  (source `Developer-owned manual MVP: water`, Registry lookup, first concept,
+  text `start-api KU check 2026-11-18`) → `Validation: ready` → `Save exact
+  preview privately` → `Operation committed. Published: false. Reward
+  authorized: false`; new KU `e7ca228e…e6f0` listed as `Private / LOCAL_ONLY`.
+  After a restart with the same flags, both KUs read back with the same
+  SemanticContentCID. Original dataset SHA-256 (247 files) unchanged.
+  [SETUP_GUIDE §5.3](../../../SETUP_GUIDE.md) shows the command.
+
+Not covered: Ollama drafts and D-045 share on the CLI host, `vite preview`
+opt-out, a second `ku_local_web` receiver, non-loopback/NAT/Linux/macOS.
+Parent task stays Merged.
+
+## Earlier follow-up — `onebrain start --api` serves the new Web on its own origin (2026-11-18)
 
 Owner chose (e) on 2026-11-18: check the same-origin fix below on the normal
 CLI host, not only on `ku_local_web`. No runtime/Web code changed.
