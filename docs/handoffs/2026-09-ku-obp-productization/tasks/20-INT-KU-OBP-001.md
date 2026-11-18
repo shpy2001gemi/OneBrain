@@ -6,7 +6,48 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — D-045 demo through the real `/ku` Web buttons (2026-11-18)
+## Latest follow-up — `/ku` Web uses the serving origin and an honest re-confirm Delivery line (2026-11-18)
+
+Owner chose (a)+(b) on 2026-11-18 from the two findings of the Web-button run
+below.
+
+- (a) [client.ts](../../../../src/onebrain-web/src/api/client.ts):
+  `resolveApiBase` picks the API origin. A production page loaded over http(s)
+  uses the origin that served it, because the shipped hosts (`ku_local_web`,
+  `onebrain start --api`) serve the built Web and the API on one port. The
+  Vite dev server keeps `VITE_API_BASE` (or the 4280 default). A split
+  production deployment such as `vite preview` opts out at build time with
+  `VITE_API_SAME_ORIGIN=false`. Tauri still takes its base from the desktop IPC
+  handoff. A stale `VITE_API_BASE` in a local `.env` no longer pins the built
+  page to 4280.
+- (b) [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs)
+  `confirm_delivery_note`: only `Added` says `pending; inspect intent for
+  acknowledgement`. `Existing` / `RouteUpdated` (re-confirm of the same intent)
+  say `existing intent …; inspect intent for its current state`, because
+  re-confirming does not reset an intent that may already be `Acknowledged`. The
+  `/ku` confirm card adds a note for any non-`Added` outcome (also covers older
+  hosts).
+- Checks: Rust unit test for the three outcomes; `ku_host::tests` 3/3; new
+  `tests/kuApiBase.test.ts` (4) and `kuWorkflow.test.tsx` `RouteUpdated`/`Existing`
+  cases (the shared fixture now returns the real `Added` outcome);
+  [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  now also checks that the delivery note matches the outbox outcome.
+- Live (Windows, fresh copy of the dataset, sender on port **4391**, nothing on
+  4280): helper 28/28 (`Added` → pending note, re-confirm `RouteUpdated` →
+  existing-intent note, `Acknowledged`, receiver inspect, restart). Then the
+  rebuilt Web on 4391: the owner typed the token, the AuthGate connected, and a
+  browser agent clicked prepare/confirm on the saved KU (Public CID
+  `32f3b411…9161`). The card showed `Outbox: RouteUpdated · Delivery: existing
+  intent, new peer address recorded; inspect intent for its current state` plus
+  the note; `Inspect share intent` showed `Acknowledged`. Original dataset
+  SHA-256 (247 files) unchanged; run dir
+  `Documents/OneBrainLocal/peer-mvp-20261118/origin/` outside Git.
+
+Not covered: `vite preview` with the opt-out, `onebrain start --api` serving the
+new build, a second `ku_local_web` receiver, non-loopback/NAT/Linux/macOS.
+Parent task stays Merged.
+
+## Earlier follow-up — D-045 demo through the real `/ku` Web buttons (2026-11-18)
 
 Owner chose option (a) on 2026-11-18 after the helper rerun below: drive the
 same local two-node topology through the real `/ku` page instead of the API.
@@ -38,7 +79,8 @@ same local two-node topology through the real `/ku` page instead of the API.
   intent with `Outbox: RouteUpdated`. Original dataset SHA-256 (247 files)
   unchanged; run dir `Documents/OneBrainLocal/peer-mvp-20261118/web/` outside Git.
 
-Found during the run (not fixed, no runtime/Web code changed):
+Found during the run (no runtime/Web code changed in this run; both fixed in the
+follow-up above):
 
 - The built Web calls `VITE_API_BASE` from `src/onebrain-web/.env`
   (`http://127.0.0.1:4280`), not the origin that served the page. A
@@ -1130,9 +1172,9 @@ topology check, then run
 It runs prepare → confirm → `Acknowledged` → receiver inspect → restart/retry
 and prints PASS/FAIL per step plus `SUMMARY n/n passed` (exit 0 only if all pass).
 Stop any host already using the sender's port first. To click the same flow in
-`/ku` Web instead, run the sender on port 4280: the built Web calls
-`VITE_API_BASE` from `src/onebrain-web/.env`, not the serving origin (see the
-[Web-button run](#latest-follow-up--d-045-demo-through-the-real-ku-web-buttons-2026-11-18)).
+`/ku` Web instead, open `/ku` on the sender's own port: a production build calls
+the API on the origin that served the page (see the
+[serving-origin follow-up](#latest-follow-up--ku-web-uses-the-serving-origin-and-an-honest-re-confirm-delivery-line-2026-11-18)).
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API

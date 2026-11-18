@@ -1162,6 +1162,14 @@ export function KuWorkflowPage({
               Confirmation records a durable outbound intent only. Inspect the
               outbound intent below to check peer acknowledgement.
             </p>
+            {shareConfirmed.outbox !== "Added" && (
+              <p role="note">
+                This host already had this exact outbound intent, so
+                confirmation did not reset its delivery state; it may already
+                be Acknowledged or terminal. Use Inspect share intent below for
+                its current state.
+              </p>
+            )}
           </article>
         )}
         <fieldset disabled={busy || !session}>

@@ -259,6 +259,12 @@ npm run build
 npm run preview   # Preview bản build tại localhost:4173
 ```
 
+Bản build production gọi API theo origin đã phục vụ trang (host `onebrain start --api`
+hoặc `ku_local_web` phục vụ Web và API trên cùng một cổng, cổng nào cũng được).
+Khi xem bằng `npm run preview` (API ở cổng khác), build với
+`VITE_API_SAME_ORIGIN=false` để dùng `VITE_API_BASE` (mặc định `http://127.0.0.1:4280`).
+Chế độ `npm run dev` luôn dùng `VITE_API_BASE`.
+
 ### 5.4. Cấu trúc Web Dashboard
 
 ```

@@ -18,7 +18,7 @@ use std::net::SocketAddr;
 
 use crate::ku_product::KuServices;
 use crate::vnext_network_runtime::VNextNetworkRuntime;
-use crate::vnext_outbox::OutboundTransferIntent;
+use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
 
 pub const PUBLIC_CONSEQUENCE: &str = "This new object and its semantic content become Public. The recipient may retain and forward it permanently. The private source and original private object are not included. Provenance is authenticated transport only, not original-source, author or fidelity verification.";
 pub const MAX_PREPARED_PUBLIC_KU_SHARES: usize = 16;
@@ -369,7 +369,7 @@ impl PublicKuShareCoordinator {
             "intent_id": hex(&intent.id),
             "public_object_cid": hex(&intent.cid),
             "outbox": format!("{outcome:?}"),
-            "delivery": "pending; inspect intent for acknowledgement",
+            "delivery": confirm_delivery_note(outcome),
             "authorizes_reward": false
         }))
     }
@@ -422,6 +422,21 @@ pub fn inspect_accepted_public_ku(
         "fidelity": "unassessed",
         "authorizes_reward": false
     }))
+}
+
+/// Confirmation-time delivery wording. Only a newly added intent is known to be
+/// pending; a re-confirmed identical intent keeps whatever state it already
+/// reached (it may already be `Acknowledged`), so the note defers to inspection.
+pub fn confirm_delivery_note(outcome: OutboxEnqueueOutcome) -> &'static str {
+    match outcome {
+        OutboxEnqueueOutcome::Added => "pending; inspect intent for acknowledgement",
+        OutboxEnqueueOutcome::Existing => {
+            "existing intent unchanged; inspect intent for its current state"
+        }
+        OutboxEnqueueOutcome::RouteUpdated => {
+            "existing intent, new peer address recorded; inspect intent for its current state"
+        }
+    }
 }
 
 /// Sender-side D-045 inspection of a durable outbound transfer intent.
@@ -520,6 +535,23 @@ mod tests {
         let replay = prepare(&view, 200).unwrap().confirm(&view, 201).unwrap();
         assert_eq!(intent.id, replay.id);
         assert_eq!(view, original);
+    }
+
+    #[test]
+    fn only_a_newly_added_intent_claims_pending_delivery_at_confirmation() {
+        assert_eq!(
+            confirm_delivery_note(OutboxEnqueueOutcome::Added),
+            "pending; inspect intent for acknowledgement"
+        );
+        for outcome in [
+            OutboxEnqueueOutcome::Existing,
+            OutboxEnqueueOutcome::RouteUpdated,
+        ] {
+            let note = confirm_delivery_note(outcome);
+            assert!(!note.contains("pending"), "{outcome:?}: {note}");
+            assert!(note.starts_with("existing intent"), "{outcome:?}: {note}");
+            assert!(note.ends_with("inspect intent for its current state"));
+        }
     }
 
     #[test]

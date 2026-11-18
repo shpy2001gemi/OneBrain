@@ -12,7 +12,37 @@ import type {
 import { logDebug } from '../components/DebugConsole';
 import { isTauri, getApiConfig } from './tauri';
 
-let API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:4280';
+const DEFAULT_API_BASE = 'http://127.0.0.1:4280';
+
+/**
+ * Choose the API origin for the browser build.
+ *
+ * Shipped hosts (`onebrain start --api`, `ku_local_web`) serve the built Web
+ * and the API on one origin, on whatever port they were started with, so a
+ * production page loaded over http(s) talks to the origin that served it.
+ * The Vite dev server cannot serve the API, so dev keeps `VITE_API_BASE`
+ * (or the 4280 default). A split production deployment (e.g. `vite preview`)
+ * opts out at build time with `VITE_API_SAME_ORIGIN=false`. Tauri replaces
+ * this value from its own IPC handoff in `initConfig`.
+ */
+export function resolveApiBase(opts: {
+  envBase?: string;
+  dev: boolean;
+  sameOrigin?: string;
+  origin?: string;
+}): string {
+  const configured = opts.envBase || DEFAULT_API_BASE;
+  if (opts.dev || opts.sameOrigin === 'false') return configured;
+  if (opts.origin && /^https?:\/\/[^/]+$/.test(opts.origin)) return opts.origin;
+  return configured;
+}
+
+let API_BASE = resolveApiBase({
+  envBase: import.meta.env.VITE_API_BASE,
+  dev: import.meta.env.DEV,
+  sameOrigin: import.meta.env.VITE_API_SAME_ORIGIN,
+  origin: isTauri() ? undefined : globalThis.location?.origin,
+});
 let TOKEN = isTauri() ? '' : localStorage.getItem('ob_api_token') || '';
 let configReady: Promise<void> | null = null;
 

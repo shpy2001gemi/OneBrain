@@ -225,6 +225,7 @@ class Check:
         self.check("explicit share_confirm creates the durable intent",
                    confirmed.get("intent_id") == intent_id and confirmed.get("authorizes_reward") is False,
                    f"{code} outbox={confirmed.get('outbox')}")
+        self.check_delivery_note(confirmed, "")
 
         state, view = None, {}
         for _ in range(self.args.ack_timeout):
@@ -271,8 +272,19 @@ class Check:
             retried = payload(env) if ok(code, env) else {}
             self.check("re-confirm reuses the same intent", retried.get("intent_id") == intent_id,
                        f"{code} outbox={retried.get('outbox')}")
+            self.check_delivery_note(retried, " (re-confirm)")
         code, env = self.operation("get", {"object_cid": private_cid})
         self.check("private KU readable after restart", ok(code, env))
+
+    def check_delivery_note(self, confirmed: dict, when: str) -> None:
+        # Only a newly Added intent is pending at confirmation; a reused intent
+        # (Existing/RouteUpdated) keeps its state and must not claim "pending".
+        outbox, delivery = confirmed.get("outbox"), str(confirmed.get("delivery", ""))
+        expected = delivery.startswith("pending") if outbox == "Added" else (
+            outbox in ("Existing", "RouteUpdated") and "pending" not in delivery
+            and delivery.endswith("inspect intent for its current state"))
+        self.check(f"confirm{when}: delivery note matches outbox outcome", expected,
+                   f"outbox={outbox} delivery={delivery!r}")
 
     def check_received(self, view: dict, prepared: dict, sender: str, when: str) -> None:
         self.check(f"receiver inspect{when}: public_object", view.get("event") == "public_object",

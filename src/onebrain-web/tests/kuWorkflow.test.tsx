@@ -68,6 +68,8 @@ function fixture(
       | "outbox_unavailable_reprepare_same_intent"
       | "explicit_public_confirmation_required"
       | "invalid_clock";
+    /** Real host outcomes: OutboxEnqueueOutcome Debug names. */
+    shareConfirmOutbox?: "Added" | "Existing" | "RouteUpdated";
     shareIntentFailure?:
       | "intent_not_found"
       | "outbox_unavailable"
@@ -333,8 +335,13 @@ function fixture(
               event: "share_confirmed",
               intent_id: shareIntent,
               public_object_cid: publicObject,
-              outbox: "Enqueued",
-              delivery: "pending; inspect intent for acknowledgement",
+              outbox: options.shareConfirmOutbox ?? "Added",
+              delivery:
+                (options.shareConfirmOutbox ?? "Added") === "Added"
+                  ? "pending; inspect intent for acknowledgement"
+                  : options.shareConfirmOutbox === "Existing"
+                    ? "existing intent unchanged; inspect intent for its current state"
+                    : "existing intent, new peer address recorded; inspect intent for its current state",
               authorizes_reward: false,
             };
             break;
@@ -908,6 +915,55 @@ describe("local KU component journey", () => {
     );
     await preview();
   });
+  it.each(["RouteUpdated", "Existing"] as const)(
+    "does not claim pending delivery when confirmation reuses an existing intent (%s)",
+    async (outcome) => {
+      const f = fixture({ emptyCatalog: true, shareConfirmOutbox: outcome });
+      render(<KuWorkflowPage client={f.client} />);
+      fireEvent.click(
+        await screen.findByRole("button", { name: `Inspect ${object}` }),
+      );
+      await screen.findByRole("heading", { name: "Inspect saved artifact" });
+      fireEvent.change(
+        screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
+        { target: { value: "12".repeat(32) } },
+      );
+      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+        target: { value: "127.0.0.1:42001" },
+      });
+      fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
+        target: { value: "ab".repeat(32) },
+      });
+      fireEvent.change(
+        screen.getByLabelText("Namespace commitment (64 lowercase hex)"),
+        { target: { value: "cd".repeat(32) } },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Prepare public share preview" }),
+      );
+      await screen.findByRole("article", {
+        name: "Prepared public share preview",
+      });
+      fireEvent.click(
+        screen.getByLabelText(/Confirm public disclosure of this exact preview/),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirm public share" }),
+      );
+      const confirmedRegion = await screen.findByRole("article", {
+        name: "Confirmed public share intent",
+      });
+      const text = confirmedRegion.textContent ?? "";
+      expect(text).toContain(`Outbox: ${outcome}`);
+      expect(text).not.toContain("Delivery: pending");
+      expect(text).toContain("inspect intent for its current state");
+      expect(text).toContain("did not reset its delivery state");
+      expect(text).toContain("Reward authorized: false");
+      expect(
+        f.calls.some((c) => c.body?.request?.action === "share_intent"),
+      ).toBe(false);
+    },
+  );
   it("projects D-045 Public KU share preview, separate confirmation, disabled-network preservation, intent status and receiver inspection without exposing private CIDs", async () => {
     const options = { emptyCatalog: true, shareNetworkDisabled: true };
     const f = fixture(options);
@@ -993,6 +1049,10 @@ describe("local KU component journey", () => {
     expect(confirmedRegion.textContent).toContain(
       "pending; inspect intent for acknowledgement",
     );
+    expect(confirmedRegion.textContent).toContain("Outbox: Added");
+    expect(
+      confirmedRegion.textContent?.includes("did not reset its delivery state"),
+    ).toBe(false);
     expect(confirmedRegion.textContent).toContain("Reward authorized: false");
     expect(confirmedRegion.textContent).not.toContain(object);
     expect(
