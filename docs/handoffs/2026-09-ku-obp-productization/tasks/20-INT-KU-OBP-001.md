@@ -6,7 +6,69 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `/ku` Web UX fixes: statement text, live Delivery line, selector prefill (2026-11-18)
+## Latest follow-up — `/ku` header badges, English draft sections, CLI Ollama flags & shared Base archive byte facade (2026-11-18)
+
+Owner delegated sequential execution of (m) → (g) → (c) on 2026-11-18:
+
+- **(m) Real `/ku` header badges & English draft UI (`559746d`):**
+  - Added recovery-admitted, display-only editor action `workspace_summary` (`{}`,
+    [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs),
+    [ku_manual.rs](../../../../src/onebrain-node/src/ku_manual.rs),
+    [dispatch.rs](../../../../src/onebrain-node/src/ku_product/dispatch.rs)): never
+    network-gated; returns `private_saved` (exact owned private KU count, excluding
+    accepted Public KUs) and `network` (`{enabled: false}` or the live loopback
+    `node_id`, `listen_addr`, `active_sessions`, `authenticated_sessions`,
+    `accepted_records`; `claims_network_completion: false`, `authorizes_reward: false`).
+    [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md)
+    updated.
+  - [Header.tsx](../../../../src/onebrain-web/src/components/Header.tsx) on `/ku`
+    renders `KU workspace` + `N private KU(s) saved` + `Loopback peer network · N
+    active session(s)` (NodeID tooltip) or `Peer network off · local only` via
+    [kuHeaderSummary.ts](../../../../src/onebrain-web/src/pages/kuHeaderSummary.ts),
+    suppressing legacy `0 KUs` / `0 peers` / `simulated` counters (hosts without the
+    action show no header counts). The Scope notice in
+    [KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx) also prints
+    `This host's loopback NodeID: … · listen …` for step 1.
+  - Translated [KuReviewDraft.tsx](../../../../src/onebrain-web/src/pages/KuReviewDraft.tsx),
+    [KuDraftClaims.tsx](../../../../src/onebrain-web/src/pages/KuDraftClaims.tsx),
+    [KuReviewLowering.tsx](../../../../src/onebrain-web/src/pages/KuReviewLowering.tsx)
+    and the legacy-flow summary in `KuWorkflow.tsx` to English.
+  - Checks: `ku_host` 3/3 (+summary on/off), `onebrain-node` 9/9, vitest 147/147
+    (incl. new [kuHeader.test.tsx](../../../../src/onebrain-web/tests/kuHeader.test.tsx)),
+    `npm run build`, oxlint 0 errors, rustfmt on touched files; live browser 7/7 each
+    on two `ku_local_web` (`:4441/ku` `1 private KU saved`, `:4442/ku` `0 private KUs
+    saved`, matching NodeIDs, 0 Vietnamese UI strings; throwaway token deleted).
+- **(g) Opt-in Ollama flags on `onebrain start --api` (`602d9ab`):**
+  - Added `--ku-ollama-executable`, `--ku-ollama-models-dir`, repeatable
+    `--ku-ollama-model` (1..8) and optional `--ku-ollama-memory-limit-bytes` (default
+    12 GiB) in [main.rs](../../../../src/onebrain-cli/src/main.rs), off by default and
+    requiring `--ku-vault-key-file`; validated before Registry/Vault/`data_dir` and
+    mapped onto `ku_host::Ollama` in `prepare_start_ku_runtime`. An unavailable model
+    produces a startup warning (`ku_experimental_model_unavailable`) without blocking
+    manual editing or saved reads. Updated [SETUP_GUIDE.md](../../../SETUP_GUIDE.md)
+    §5.3 and [KU_WEB_001_OLLAMA_IMPLEMENTATION.md](../outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
+  - Checks: CLI 47/47 + 48/48 feature, rustfmt; live CLI host `:4451` (`ollama-cli/`
+    outside Git, stopped after check, throwaway token redacted/deleted) admits
+    installed `qwen3:8b` via editor `models` and warns on an uninstalled tag without
+    running model inference.
+- **(c) Shared Base archive byte/file lifecycle (`75ede56`, ARCH-13 slice 16 follow-up):**
+  - Extracted `create_base_archive`, `restore_base_archive` and
+    `reconcile_restored_archive` over `ArchiveByteSink` / `ArchiveByteSource`
+    (`BoundedVecSink`, `SliceSource`, `FileSink`, `FileSource`) in
+    [base_archive_file.rs](../../../../src/onebrain-node/src/base_archive_file.rs) and
+    routed `create_base_archive_bytes` / `restore_base_archive_bytes` in
+    [handlers.rs](../../../../src/onebrain-api/src/handlers.rs) (-335 lines) through it.
+  - Checks: `base_archive_file` unit 2/2, `base_gate_integration` 1/1, API
+    `base_contract` 8/8, `--no-default-features` check, rustfmt, layering, KU/vNext/mobile
+    validators PASS.
+
+Still open from (k): `onebrain start --api` prints the API Bearer token on stdout and
+has no `--api-token-file` option. Not covered: full helper rerun with `--sender-kind cli`
+after (m)/(g), `/ku` share combined with vNext lanes, adopting Public KUs into private
+storage (needs owner boundary decision), non-loopback/NAT/Linux/macOS. Parent task stays
+Merged.
+
+## Earlier follow-up — `/ku` Web UX fixes: statement text, live Delivery line, selector prefill (2026-11-18)
 
 Owner chose (l) on 2026-11-18: fix three UX findings from (k) below.
 
