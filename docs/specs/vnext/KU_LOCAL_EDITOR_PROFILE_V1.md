@@ -118,7 +118,7 @@ without treating acknowledgement as adoption, Use, verification or reward, and
 re-reads only an exact `Pending` view a bounded number of times, read-only), and
 `share_inspect` inspects an accepted Public KU and its authenticated transport/selector
 provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
-`share_list` browses and filters accepted Public KUs in the host's verified public store
+`share_list` (not network-gated) browses and filters accepted Public KUs in the host's verified public store
 (`limit` 1..64 default 64, optional `query` up to 256 UTF-8 bytes matching folded literal
 text, Registry concept labels, or CID/CCID hex) while keeping private `Saved local knowledge`
 (`list`/`search`) scoped to owned private artifacts only (`not adopted into private Saved local knowledge`);

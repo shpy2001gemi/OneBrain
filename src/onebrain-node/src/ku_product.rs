@@ -210,7 +210,10 @@ pub use dispatch::KuServices;
 use public_reader::lookup_live_network_runtime;
 #[cfg(feature = "vnext-network-runtime")]
 pub use public_reader::register_live_network_runtime;
-pub use public_reader::{register_live_public_reader, CanonicalPublicReader, KuPublicReader};
+pub use public_reader::{
+    inspect_public_ku, list_accepted_public_kus, register_live_public_reader,
+    CanonicalPublicReader, KuPublicReader, MAX_PUBLIC_KU_LIST_ITEMS, MAX_PUBLIC_KU_QUERY_BYTES,
+};
 
 pub struct KuRuntimeConfig {
     pub vault_key: VaultKey,
@@ -339,7 +342,6 @@ fn public_share_network_unavailable() -> BaseServiceError {
     )
 }
 
-#[cfg(feature = "vnext-network-runtime")]
 fn public_share_error(code: &'static str) -> BaseServiceError {
     let base_code = match code {
         "explicit_public_confirmation_required"
@@ -419,7 +421,6 @@ impl KuStore {
         budget: &ResourceBudgetV1,
     ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
         use crate::ku_manual::ManualEditorRequest as Req;
-        #[cfg(feature = "vnext-network-runtime")]
         use crate::ku_manual::ManualEditorResponse as Resp;
         let input = match request {
             Req::EncodeText(input) => input,
@@ -522,7 +523,6 @@ impl KuStore {
                 }
                 return Ok(Resp::PublicShare(status));
             }
-            #[cfg(feature = "vnext-network-runtime")]
             Req::ShareList(input) => {
                 let public = self
                     .public
@@ -534,25 +534,25 @@ impl KuStore {
                     None
                 };
                 if let Some(raw_limit) = input.limit {
-                    if raw_limit == 0
-                        || raw_limit > crate::ku_public_share::MAX_PUBLIC_KU_LIST_ITEMS
-                    {
+                    if raw_limit == 0 || raw_limit > MAX_PUBLIC_KU_LIST_ITEMS {
                         return Err(public_share_error("invalid_public_list_limit"));
                     }
                 }
                 let limit = Some(
                     input
                         .limit
-                        .unwrap_or(crate::ku_public_share::MAX_PUBLIC_KU_LIST_ITEMS)
+                        .unwrap_or(MAX_PUBLIC_KU_LIST_ITEMS)
                         .min(budget.max_items),
                 );
-                let mut listed = crate::ku_public_share::list_accepted_public_kus(
+                #[cfg_attr(not(feature = "vnext-network-runtime"), allow(unused_mut))]
+                let mut listed = list_accepted_public_kus(
                     public.as_ref(),
                     lease.as_ref(),
                     input.query.as_deref(),
                     limit,
                 )
                 .map_err(public_share_error)?;
+                #[cfg(feature = "vnext-network-runtime")]
                 if let Ok(runtime) = self.live_network_runtime() {
                     crate::ku_public_share::annotate_accepted_selectors(&mut listed, &runtime);
                 }
@@ -567,8 +567,7 @@ impl KuStore {
             Req::SharePrepare(_)
             | Req::ShareConfirm(_)
             | Req::ShareInspect(_)
-            | Req::ShareIntent(_)
-            | Req::ShareList(_) => return Err(public_share_network_unavailable()),
+            | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
             Req::SavedSemantic(input) => return self.saved_semantic(principal, input, budget),
             Req::WorkspaceSummary {} => return self.workspace_summary(principal, budget),

@@ -693,6 +693,329 @@ async fn real_shared_service_preserves_disabled_generation_and_reconciles_origin
     assert_eq!(retained.expected_peer, intent.expected_peer);
 }
 
+#[tokio::test]
+async fn desktop_stock_local_ku_editor_serves_workspace_summary_saved_semantic_and_offline_share_list(
+) {
+    use ku_core::foundation::semantic::{
+        ConceptCcid, LiteralValue, SemanticFrameSet, StatementFrame, StatementId,
+        StatementQualifiers, TermRef,
+    };
+    use ku_core::foundation::semantic_content::{
+        normalize_semantic_content, SEMANTIC_CONTENT_PROFILE,
+    };
+    use ku_core::foundation::{DisclosureClass, NormalizedText, ResourceProfile, StoredRecordKind};
+    use onebrain_base_contract::ku_payload::hex;
+    use onebrain_node::canonical_exchange::{write_canonical_exchange, BaseExchangeEntryV1};
+
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = ku_config(dir.path());
+    let sup = std::sync::Arc::new(Supervisor::default());
+    let host = ku_start::provision_local(cfg.clone(), sup.clone(), "STOCK_TOKEN".into())
+        .await
+        .unwrap();
+    let (node, port) = sup.start(host, "STOCK_TOKEN".into(), 0).await.unwrap();
+    let root = format!("http://127.0.0.1:{port}/api/vnext/ku");
+
+    let editor_req = |session: &Value, action: &str, payload: Value| {
+        json!({
+            "session": session,
+            "budget": {
+                "max_items": 64,
+                "max_bytes": 1048576,
+                "max_work_units": 1000000
+            },
+            "request": {
+                "action": action,
+                "payload": payload
+            }
+        })
+    };
+
+    let (code, status) = ku_http(&root, "STOCK_TOKEN", "/status", None).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{status}");
+    let session = &status["data"]["session"];
+
+    // Tauri packaged origin CORS + initial workspace_summary on stock Desktop.
+    let cors_resp = client()
+        .post(format!("{root}/editor"))
+        .header("Origin", "tauri://localhost")
+        .bearer_auth("STOCK_TOKEN")
+        .json(&editor_req(session, "workspace_summary", json!({})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cors_resp.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        cors_resp
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("tauri://localhost")
+    );
+    let initial_summary: Value = cors_resp.json().await.unwrap();
+    assert_eq!(initial_summary["data"]["payload"]["private_saved"], 0);
+    assert_eq!(
+        initial_summary["data"]["payload"]["network"],
+        json!({ "enabled": false })
+    );
+    assert_eq!(
+        initial_summary["data"]["payload"]["claims_network_completion"],
+        false
+    );
+
+    // Save one private manual KU on stock Desktop.
+    let (_, catalog) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(session, "catalog", json!({}))),
+    )
+    .await;
+    let source = &catalog["data"]["payload"]["sources"][0]["source_ref"];
+    let (_, reserved) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/reservations",
+        Some(json!({ "session": session })),
+    )
+    .await;
+    let op = &reserved["data"]["payload"]["operation_id"];
+    let (code, draft) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(
+            session,
+            "draft",
+            json!({
+                "operation_id": op,
+                "idempotency_key": op,
+                "source_ref": source,
+                "predicate_label": "water",
+                "selected_ccid": "07".repeat(16),
+                "argument_text": "Stock Desktop private statement"
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{draft}");
+    let (code, prepared) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            session,
+            "prepare",
+            draft["data"]["payload"].clone(),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{prepared}");
+    let private_cid_hex = prepared["data"]["payload"]["object_cids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (code, saved) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/operations",
+        Some(ku_operation(
+            session,
+            "save",
+            json!({
+                "operation_id": op,
+                "idempotency_key": op,
+                "object_cids": [private_cid_hex]
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{saved}");
+
+    // Import one Public KU into `vnext_verified.redb` on stock Desktop.
+    let public_semantic = SemanticFrameSet {
+        statements: vec![StatementFrame {
+            statement_id: StatementId(0),
+            operator_or_predicate: ConceptCcid::from_bytes([0x07; 16]),
+            arguments: vec![TermRef::Literal(LiteralValue::Text(
+                NormalizedText::new("Stock Desktop imported public water fact").unwrap(),
+            ))],
+            constraints: vec![],
+            qualifiers: StatementQualifiers::default(),
+        }],
+    };
+    let normalized =
+        normalize_semantic_content(&public_semantic, SEMANTIC_CONTENT_PROFILE).unwrap();
+    let (public_bytes, public_cid_raw) = normalized
+        .semantic
+        .to_knowledge_object(DisclosureClass::Public)
+        .unwrap()
+        .encode(ResourceProfile::ObjectV1)
+        .unwrap();
+    let public_cid_hex = hex(&public_cid_raw.into_bytes());
+    let exchange_path = dir.path().join("public.obx");
+    write_canonical_exchange(
+        &[BaseExchangeEntryV1::VNextPublic {
+            kind: StoredRecordKind::Object,
+            cid: public_cid_raw.into_bytes(),
+            canonical_bytes: public_bytes,
+        }],
+        std::fs::File::create(&exchange_path).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        node.lock()
+            .await
+            .import_canonical_exchange(&exchange_path)
+            .unwrap()
+            .imported,
+        1
+    );
+
+    // workspace_summary counts only the owned private KU; network stays disabled.
+    let (code, summary) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{summary}");
+    assert_eq!(summary["data"]["payload"]["private_saved"], 1);
+    assert_eq!(
+        summary["data"]["payload"]["network"],
+        json!({ "enabled": false })
+    );
+
+    // saved_semantic renders both readable CIDs and fails closed on an unknown CID.
+    let (code, saved_sem) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(
+            session,
+            "saved_semantic",
+            json!({ "object_cids": [private_cid_hex, public_cid_hex] }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{saved_sem}");
+    let sem_items = saved_sem["data"]["payload"]["items"].as_array().unwrap();
+    assert_eq!(sem_items.len(), 2);
+    assert_eq!(
+        sem_items[0]["semantic"]["statements"][0]["text_arguments"],
+        json!(["Stock Desktop private statement"])
+    );
+    assert_eq!(
+        sem_items[1]["semantic"]["statements"][0]["text_arguments"],
+        json!(["Stock Desktop imported public water fact"])
+    );
+    assert_eq!(saved_sem["data"]["payload"]["fidelity"], "unassessed");
+    assert_eq!(saved_sem["data"]["payload"]["authorizes_reward"], false);
+
+    let (code, missing_sem) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(
+            session,
+            "saved_semantic",
+            json!({ "object_cids": ["ff".repeat(32)] }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::NOT_FOUND, "{missing_sem}");
+
+    // Offline share_list browses and filters the public store without mixing private KUs.
+    for query_payload in [
+        json!({}),
+        json!({ "query": "water" }),
+        json!({ "query": "imported public" }),
+    ] {
+        let (code, listed) = ku_http(
+            &root,
+            "STOCK_TOKEN",
+            "/editor",
+            Some(editor_req(session, "share_list", query_payload)),
+        )
+        .await;
+        assert_eq!(code, reqwest::StatusCode::OK, "{listed}");
+        let items = listed["data"]["payload"]["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["object_cid"], public_cid_hex);
+        assert!(items[0].get("accepted_selectors").is_none());
+        assert_eq!(items[0]["fidelity"], "unassessed");
+        assert_eq!(items[0]["authorizes_reward"], false);
+    }
+    let (code, empty_list) = ku_http(
+        &root,
+        "STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(
+            session,
+            "share_list",
+            json!({ "query": "Stock Desktop private statement" }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{empty_list}");
+    assert_eq!(
+        empty_list["data"]["payload"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+
+    drop(node);
+    sup.shutdown().await.unwrap();
+
+    // Restart stock Desktop and confirm all three actions retain parity.
+    let restart_sup = std::sync::Arc::new(Supervisor::default());
+    let restart_host =
+        ku_start::provision_local(cfg, restart_sup.clone(), "RESTART_STOCK_TOKEN".into())
+            .await
+            .unwrap();
+    let (_, restart_port) = restart_sup
+        .start(restart_host, "RESTART_STOCK_TOKEN".into(), 0)
+        .await
+        .unwrap();
+    let restart_root = format!("http://127.0.0.1:{restart_port}/api/vnext/ku");
+    let (code, restart_status) =
+        ku_http(&restart_root, "RESTART_STOCK_TOKEN", "/status", None).await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{restart_status}");
+    let restart_session = &restart_status["data"]["session"];
+
+    let (code, restart_summary) = ku_http(
+        &restart_root,
+        "RESTART_STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(restart_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{restart_summary}");
+    assert_eq!(restart_summary["data"]["payload"]["private_saved"], 1);
+
+    let (code, restart_list) = ku_http(
+        &restart_root,
+        "RESTART_STOCK_TOKEN",
+        "/editor",
+        Some(editor_req(
+            restart_session,
+            "share_list",
+            json!({ "query": "water" }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{restart_list}");
+    assert_eq!(
+        restart_list["data"]["payload"]["items"][0]["object_cid"],
+        public_cid_hex
+    );
+
+    restart_sup.shutdown().await.unwrap();
+}
+
 #[cfg(feature = "vnext-network-runtime")]
 async fn provision_ku_with_opt_in_vnext(
     cfg: &config::DesktopConfig,
@@ -890,6 +1213,28 @@ async fn vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_shar
     .await;
     assert_eq!(code, reqwest::StatusCode::OK, "{saved}");
 
+    let (code, sender_summary) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(sender_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{sender_summary}");
+    assert_eq!(sender_summary["data"]["payload"]["private_saved"], 1);
+    assert_eq!(
+        sender_summary["data"]["payload"]["network"]["enabled"],
+        true
+    );
+    assert_eq!(
+        sender_summary["data"]["payload"]["network"]["node_id"],
+        sender_peer_hex
+    );
+    assert_eq!(
+        sender_summary["data"]["payload"]["claims_network_completion"],
+        false
+    );
+
     let selector_hex = "02".repeat(32);
     let namespace_hex = "03".repeat(32);
     let (code, share_prepared) = ku_http(
@@ -974,11 +1319,61 @@ async fn vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_shar
         "ku_public_share_network_unavailable"
     );
 
+    // While VNextRuntimeLane::Network is killed, workspace_summary and saved_semantic
+    // stay available (never network-gated) and honestly report network disabled.
+    let (code, killed_summary) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(sender_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{killed_summary}");
+    assert_eq!(killed_summary["data"]["payload"]["private_saved"], 1);
+    assert_eq!(
+        killed_summary["data"]["payload"]["network"],
+        json!({ "enabled": false })
+    );
+    let (code, killed_semantic) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            sender_session,
+            "saved_semantic",
+            json!({ "object_cids": [private_cid_hex] }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{killed_semantic}");
+    assert_eq!(
+        killed_semantic["data"]["payload"]["items"][0]["semantic"]["statements"][0]
+            ["text_arguments"],
+        json!(["Desktop opt-in public share statement"])
+    );
+
     sender_node
         .lock()
         .await
         .reenable_vnext_runtime_lane(onebrain_node::VNextRuntimeLane::Network)
         .unwrap();
+
+    let (code, reenabled_summary) = ku_http(
+        &sender_ku_root,
+        "SENDER_TOKEN",
+        "/editor",
+        Some(editor_req(sender_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{reenabled_summary}");
+    assert_eq!(
+        reenabled_summary["data"]["payload"]["network"]["enabled"],
+        true
+    );
+    assert_eq!(
+        reenabled_summary["data"]["payload"]["network"]["node_id"],
+        sender_peer_hex
+    );
 
     let (code, confirmed_resp) = ku_http(
         &sender_ku_root,
@@ -1075,6 +1470,88 @@ async fn vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_shar
     );
     assert_eq!(accepted["fidelity"], "unassessed");
     assert_eq!(accepted["authorizes_reward"], false);
+
+    // Receiver Desktop parity for workspace_summary, share_list (with accepted_selectors),
+    // and saved_semantic (reads accepted Public KU, rejects sender's private CID).
+    let (code, receiver_summary) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(receiver_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{receiver_summary}");
+    assert_eq!(receiver_summary["data"]["payload"]["private_saved"], 0);
+    assert_eq!(
+        receiver_summary["data"]["payload"]["network"]["enabled"],
+        true
+    );
+    assert_eq!(
+        receiver_summary["data"]["payload"]["network"]["node_id"],
+        receiver_peer_hex
+    );
+    assert!(
+        receiver_summary["data"]["payload"]["network"]["accepted_records"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+
+    for query_payload in [
+        json!({}),
+        json!({ "query": "water" }),
+        json!({ "query": "Desktop opt-in" }),
+    ] {
+        let (code, share_listed) = ku_http(
+            &receiver_ku_root,
+            "RECEIVER_TOKEN",
+            "/editor",
+            Some(editor_req(receiver_session, "share_list", query_payload)),
+        )
+        .await;
+        assert_eq!(code, reqwest::StatusCode::OK, "{share_listed}");
+        let items = share_listed["data"]["payload"]["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["object_cid"], public_cid_hex);
+        assert_eq!(items[0]["semantic"]["semantic_content_cid"], sem_cid_hex);
+        assert_eq!(items[0]["accepted_selectors"], json!([selector_hex]));
+        assert_eq!(items[0]["fidelity"], "unassessed");
+        assert_eq!(items[0]["authorizes_reward"], false);
+    }
+
+    let (code, receiver_semantic) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            receiver_session,
+            "saved_semantic",
+            json!({ "object_cids": [public_cid_hex] }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{receiver_semantic}");
+    assert_eq!(
+        receiver_semantic["data"]["payload"]["items"][0]["semantic"]["statements"][0]
+            ["text_arguments"],
+        json!(["Desktop opt-in public share statement"])
+    );
+    let (code, receiver_private_sem) = ku_http(
+        &receiver_ku_root,
+        "RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            receiver_session,
+            "saved_semantic",
+            json!({ "object_cids": [private_cid_hex] }),
+        )),
+    )
+    .await;
+    assert_eq!(
+        code,
+        reqwest::StatusCode::NOT_FOUND,
+        "{receiver_private_sem}"
+    );
 
     let (code, get_resp) = ku_http(
         &receiver_ku_root,
@@ -1185,6 +1662,55 @@ async fn vnext_product_runtime_binds_canonical_public_reader_for_desktop_ku_shar
     .await;
     assert_eq!(code, reqwest::StatusCode::OK, "{local_export}");
     assert!(local_export["data"]["payload"]["public_records"].is_string());
+
+    let (code, local_summary) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(local_session, "workspace_summary", json!({}))),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_summary}");
+    assert_eq!(local_summary["data"]["payload"]["private_saved"], 0);
+    assert_eq!(
+        local_summary["data"]["payload"]["network"],
+        json!({ "enabled": false })
+    );
+
+    let (code, local_semantic) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            local_session,
+            "saved_semantic",
+            json!({ "object_cids": [public_cid_hex] }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_semantic}");
+    assert_eq!(
+        local_semantic["data"]["payload"]["items"][0]["semantic"]["statements"][0]
+            ["text_arguments"],
+        json!(["Desktop opt-in public share statement"])
+    );
+
+    let (code, local_list) = ku_http(
+        &local_receiver_root,
+        "LOCAL_RECEIVER_TOKEN",
+        "/editor",
+        Some(editor_req(
+            local_session,
+            "share_list",
+            json!({ "query": "water" }),
+        )),
+    )
+    .await;
+    assert_eq!(code, reqwest::StatusCode::OK, "{local_list}");
+    let local_items = local_list["data"]["payload"]["items"].as_array().unwrap();
+    assert_eq!(local_items.len(), 1);
+    assert_eq!(local_items[0]["object_cid"], public_cid_hex);
+    assert!(local_items[0].get("accepted_selectors").is_none());
 
     let (code, local_inspect) = ku_http(
         &local_receiver_root,

@@ -606,6 +606,55 @@ mod tests {
         assert_eq!(summary["private_saved"], 1);
         assert_eq!(summary["network"], serde_json::json!({ "enabled": false }));
         assert_eq!(summary["claims_network_completion"], false);
+
+        // share_list and saved_semantic also work on a local-only host without
+        // `vnext-network-runtime` (such as stock Desktop or CLI), browsing the
+        // verified public store without `accepted_selectors` and rendering
+        // statement text only for readable CIDs.
+        let ManualEditorResponse::PublicShare(listed) = services
+            .editor(
+                ManualEditorRequest::ShareList(onebrain_node::ku_manual::PublicShareList {
+                    query: Some("water".into()),
+                    limit: None,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(listed["event"], "public_objects");
+        let listed_items = listed["items"].as_array().unwrap();
+        assert_eq!(listed_items.len(), 1);
+        assert_eq!(listed_items[0]["object_cid"], hex(&public_cid.0));
+        assert!(listed_items[0].get("accepted_selectors").is_none());
+
+        let ManualEditorResponse::SavedSemantic(saved_sem) = services
+            .editor(
+                ManualEditorRequest::SavedSemantic(onebrain_node::ku_manual::SavedSemantic {
+                    object_cids: vec![hex(&private_cid.0), hex(&public_cid.0)],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(saved_sem["event"], "saved_semantic");
+        assert_eq!(saved_sem["items"].as_array().unwrap().len(), 2);
+        let unreadable = services
+            .editor(
+                ManualEditorRequest::SavedSemantic(onebrain_node::ku_manual::SavedSemantic {
+                    object_cids: vec!["ff".repeat(32)],
+                }),
+                budget(),
+            )
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(unreadable.code, BaseErrorCodeV1::NotFound);
     }
 
     #[cfg(feature = "vnext-network-runtime")]

@@ -3,13 +3,24 @@
 //! Moved verbatim from ku_product.rs; ku_product re-exports the public
 //! items so onebrain_node::ku_product::{KuPublicReader, CanonicalPublicReader}
 //! paths are unchanged.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
-use ku_core::foundation::{ObjectCid, RedbVerifiedBackend};
+use ku_core::concept_registry::ResolveResult;
+use ku_core::foundation::semantic::{LiteralValue, SemanticFrameSet, TermRef};
+use ku_core::foundation::semantic_content::{normalize_semantic_content, SEMANTIC_CONTENT_PROFILE};
+use ku_core::foundation::{
+    decode_knowledge_object, DisclosureClass, KnownObjectKind, ObjectCid, ObjectKind,
+    ObjectSemantics, RedbVerifiedBackend, ReservedDomain, ResourceProfile,
+};
+use onebrain_base_contract::ku_payload::hex;
 
 use super::corrupt;
 use crate::base_runtime::BaseServiceError;
+use crate::concept_registry_runtime::ConceptRegistryReaderLease;
+
+pub const MAX_PUBLIC_KU_LIST_ITEMS: u32 = 64;
+pub const MAX_PUBLIC_KU_QUERY_BYTES: usize = 256;
 /// Read-only view of the already owned public acceptance store.
 pub trait KuPublicReader: Send + Sync {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError>;
@@ -275,4 +286,171 @@ impl KuPublicReader for crate::vnext_network_runtime::VNextNetworkRuntime {
     fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
         self.public_objects().map_err(|_| corrupt())
     }
+}
+
+/// Render content of a known public kernel for explicit review/inspection.
+/// This comparison identity and display grant no authority or source access.
+pub fn inspect_public_ku(bytes: &[u8]) -> Result<serde_json::Value, &'static str> {
+    let object = decode_knowledge_object(
+        bytes,
+        ResourceProfile::ObjectV1,
+        &[KnownObjectKind::new(ObjectKind(2), 1)],
+        &[],
+    )
+    .map_err(|_| "invalid_public_ku")?;
+    let ObjectSemantics::Known(envelope) = object.semantics() else {
+        return Err("unsupported_public_ku");
+    };
+    if envelope.kind != ObjectKind(2)
+        || envelope.disclosure != DisclosureClass::Public
+        || !envelope.references.is_empty()
+        || !envelope.extensions.is_empty()
+        || !envelope.critical_extensions.is_empty()
+        || envelope.limits.is_some()
+    {
+        return Err("unsupported_public_ku");
+    }
+    let semantic = SemanticFrameSet::from_canonical_value(&envelope.payload)
+        .map_err(|_| "unsupported_public_ku")?;
+    if semantic.statements.len() != 1
+        || semantic.statements.iter().any(|s| {
+            s.arguments.len() != 1
+                || !matches!(&s.arguments[0], TermRef::Literal(LiteralValue::Text(_)))
+                || !s.constraints.is_empty()
+                || s.qualifiers != Default::default()
+        })
+    {
+        return Err("unsupported_public_ku");
+    }
+    let normalized = normalize_semantic_content(&semantic, SEMANTIC_CONTENT_PROFILE)
+        .map_err(|_| "unsupported_public_ku")?;
+    let statements: Vec<_> = semantic
+        .statements
+        .iter()
+        .map(|s| {
+            let arguments: Vec<_> = s
+                .arguments
+                .iter()
+                .map(|a| match a {
+                    TermRef::Literal(LiteralValue::Text(t)) => Some(t.as_str().to_owned()),
+                    _ => None,
+                })
+                .collect();
+            serde_json::json!({
+                "predicate_ccid": hex(s.operator_or_predicate.as_bytes()),
+                "text_arguments": arguments
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "semantic_content_cid": hex(normalized.cid.as_bytes()),
+        "statements": statements,
+        "fidelity": "unassessed"
+    }))
+}
+
+fn fold_query_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for word in text.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.extend(word.chars().flat_map(char::to_lowercase));
+    }
+    out
+}
+
+/// Receiver-side D-045 bounded browse/filter of accepted Public KUs in the
+/// node's verified public store (`vnext_verified.redb`). Separate from private
+/// `Saved local knowledge` (`list`/`search`), because receiving a Public KU is
+/// transport storage, never adoption into owned private knowledge.
+pub fn list_accepted_public_kus(
+    public: &dyn KuPublicReader,
+    registry: Option<&ConceptRegistryReaderLease>,
+    query: Option<&str>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, &'static str> {
+    let limit = limit.unwrap_or(MAX_PUBLIC_KU_LIST_ITEMS);
+    if limit == 0 || limit > MAX_PUBLIC_KU_LIST_ITEMS {
+        return Err("invalid_public_list_limit");
+    }
+    let query = match query {
+        Some(raw) => {
+            if raw.len() > MAX_PUBLIC_KU_QUERY_BYTES {
+                return Err("invalid_public_query");
+            }
+            let folded = fold_query_text(raw);
+            (!folded.is_empty()).then_some(folded)
+        }
+        None => None,
+    };
+    let mut label_ccids = BTreeSet::new();
+    if let (Some(text), Some(reg)) = (query.as_deref(), registry) {
+        if let Ok(resolved) = reg.resolve_checked(text) {
+            let candidates = match resolved {
+                ResolveResult::Found(c) | ResolveResult::Fuzzy(c) => vec![c],
+                ResolveResult::Ambiguous(values) => values,
+                ResolveResult::NotFound => Vec::new(),
+            };
+            for candidate in candidates.into_iter().take(64) {
+                label_ccids.insert(hex(&candidate.ccid));
+            }
+        }
+    }
+    let records = public
+        .list_public_objects()
+        .map_err(|_| "public_store_unavailable")?;
+    let mut items = Vec::new();
+    let mut has_more = false;
+    for (cid, bytes) in records {
+        if ReservedDomain::Object.digest(&bytes) != cid {
+            continue;
+        }
+        let Ok(semantic) = inspect_public_ku(&bytes) else {
+            continue;
+        };
+        let object_cid = hex(&cid);
+        if let Some(ref folded) = query {
+            let cid_match = object_cid.contains(folded.as_str())
+                || semantic["semantic_content_cid"]
+                    .as_str()
+                    .is_some_and(|s| s.contains(folded.as_str()));
+            let stmt_match = semantic["statements"].as_array().is_some_and(|stmts| {
+                stmts.iter().any(|stmt| {
+                    let pred_match = stmt["predicate_ccid"].as_str().is_some_and(|pred| {
+                        pred.contains(folded.as_str()) || label_ccids.contains(pred)
+                    });
+                    let text_match = stmt["text_arguments"].as_array().is_some_and(|args| {
+                        args.iter().any(|arg| {
+                            arg.as_str()
+                                .is_some_and(|t| fold_query_text(t).contains(folded.as_str()))
+                        })
+                    });
+                    pred_match || text_match
+                })
+            });
+            if !cid_match && !stmt_match {
+                continue;
+            }
+        }
+        if items.len() < limit as usize {
+            items.push(serde_json::json!({
+                "object_cid": object_cid,
+                "semantic": semantic,
+                "fidelity": "unassessed",
+                "authorizes_reward": false
+            }));
+        } else {
+            has_more = true;
+            break;
+        }
+    }
+    Ok(serde_json::json!({
+        "event": "public_objects",
+        "items": items,
+        "has_more": has_more,
+        "scope": "accepted_public_store_only; not adopted into private Saved local knowledge",
+        "fidelity": "unassessed",
+        "authorizes_reward": false
+    }))
 }
