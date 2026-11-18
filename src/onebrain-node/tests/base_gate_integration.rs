@@ -34,6 +34,7 @@ use onebrain_base_contract::{
 use onebrain_node::archive::{
     ArchiveSnapshotRecord, BaseArchiveService, SnapshotVerifiedBackend, StagedArchiveBackendFactory,
 };
+use onebrain_node::base_archive_file::{create_base_archive_file, restore_base_archive_file};
 use onebrain_node::identity_recovery::SignerRecoveryPolicy;
 use onebrain_node::signer_ports::{
     ExpectedSignerIdentity, NodeTransportIdentity, SessionPublicKey,
@@ -810,4 +811,77 @@ async fn task25_integrates_archive_restart_registry_tuple_and_default_off_lanes(
     );
     assert_eq!(receipt.default_active_network_lanes, 0);
     assert!(!receipt.legacy_write_enabled);
+}
+
+// ARCH-13 slice 16: the CLI `backup`/`restore` commands are thin wrappers over
+// this facade; it replaces the CLI source needles in validate_base_v1_packaging.
+#[tokio::test]
+async fn cli_base_archive_file_facade_round_trips_through_scoped_management() {
+    let temp = tempfile::tempdir().unwrap();
+    let (registry_key, _) = install_signed_registry(temp.path());
+    let config = node_config(temp.path(), &registry_key);
+    let mut node = OneBrainNode::new(config).await.unwrap();
+    install_base(&mut node, temp.path());
+    let proof = b"task-25-integration-proof";
+    let password = || b"cli-password".to_vec();
+    let archive_path = temp.path().join("cli-archive.obar");
+
+    // An unauthenticated host gets no management grant and writes no file.
+    assert!(
+        create_base_archive_file(&node, b"wrong-proof", password(), &archive_path)
+            .await
+            .is_err()
+    );
+    assert!(!archive_path.exists());
+
+    let size = create_base_archive_file(&node, proof, password(), &archive_path)
+        .await
+        .unwrap();
+    let bytes = fs::read(&archive_path).unwrap();
+    assert_eq!(size, bytes.len() as u64);
+    assert!(bytes.starts_with(b"OBARV002"));
+    let open_handles = |node: &OneBrainNode| {
+        node.base_services()
+            .unwrap()
+            .snapshot()
+            .unwrap()
+            .active_management_handles
+    };
+    assert_eq!(
+        open_handles(&node),
+        0,
+        "create left a management grant open"
+    );
+
+    let empty = temp.path().join("empty.obar");
+    fs::write(&empty, b"").unwrap();
+    assert_eq!(
+        restore_base_archive_file(&node, proof, password(), &empty)
+            .await
+            .unwrap_err(),
+        "archive size is outside the Base restore bound"
+    );
+    assert!(
+        restore_base_archive_file(&node, b"wrong-proof", password(), &archive_path)
+            .await
+            .is_err()
+    );
+
+    restore_base_archive_file(&node, proof, password(), &archive_path)
+        .await
+        .unwrap();
+
+    // Each call closes its management generation, so the next one can open
+    // a new grant on the activated dataset.
+    let second = temp.path().join("cli-archive-2.obar");
+    let second_size = create_base_archive_file(&node, proof, password(), &second)
+        .await
+        .unwrap();
+    assert!(fs::read(&second).unwrap().starts_with(b"OBARV002"));
+    assert_eq!(second_size, fs::metadata(&second).unwrap().len());
+    assert_eq!(
+        open_handles(&node),
+        0,
+        "restore or create left a grant open"
+    );
 }

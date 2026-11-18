@@ -12,6 +12,7 @@ mod activation_journal;
 pub mod anti_gaming_guard;
 pub mod archive;
 pub mod archive_capabilities;
+pub mod base_archive_file;
 pub mod base_operation_store;
 pub mod base_runtime;
 pub mod blob_authority;

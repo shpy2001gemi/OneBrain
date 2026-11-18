@@ -1526,6 +1526,7 @@ impl BaseServiceCore {
                     source_store
                         .carry_record_to(operation_id, &target_store, false)
                         .map_err(store_error)?;
+                    self.revoke_previous_generation_management(&source_store);
                 }
                 self.emit_operation_event(operation_id, b"committed")?;
                 Ok(receipt)
@@ -1540,6 +1541,32 @@ impl BaseServiceCore {
                 self.emit_operation_event(operation_id, b"failed")?;
                 Ok(receipt)
             }
+        }
+    }
+
+    /// A restore switched the dataset generation. Management handles bound to
+    /// the previous generation can no longer pass `ensure_management`, so their
+    /// owners cannot close them; revoke them as part of the switch instead of
+    /// leaving them counted in `active_management_handles` for the process.
+    fn revoke_previous_generation_management(&self, previous_store: &BaseOperationStore) {
+        let current = self.dataset_generations.current_generation();
+        let Ok(mut authority) = self.lock_authority() else {
+            return;
+        };
+        let stale = authority
+            .management
+            .iter()
+            .filter(|(_, record)| record.dataset_generation != current)
+            .map(|(id, record)| (*id, record.principal))
+            .collect::<Vec<_>>();
+        for (id, principal) in stale {
+            let _ = previous_store.transition_authority(
+                id,
+                BaseAuthorityKindV1::ManagementHandle,
+                principal,
+                BaseAuthorityStateV1::Revoked,
+            );
+            authority.management.remove(&id);
         }
     }
 

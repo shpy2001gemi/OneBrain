@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from scripts.ci import validate_vnext_contracts
@@ -61,6 +62,30 @@ class BaseV1RuntimeGateTests(unittest.TestCase):
                 with mutate_workflow(self, lambda text, check=check: check.sub("true\n", text)):
                     with self.assertRaisesRegex(ContractError, "forbidden combination"):
                         validate_base_v1_packaging()
+
+    def test_cli_archive_facade_round_trip_test_exists(self) -> None:
+        root = validate_vnext_contracts.ROOT
+        integration = (root / "src/onebrain-node/tests/base_gate_integration.rs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "fn cli_base_archive_file_facade_round_trips_through_scoped_management",
+            integration,
+        )
+
+    def test_cli_archive_must_route_through_the_tested_facade(self) -> None:
+        cli = validate_vnext_contracts.ROOT / "src/onebrain-cli/src/cli/data.rs"
+        real_read_text = Path.read_text
+
+        def read_text(path: Path, *args, **kwargs) -> str:
+            text = real_read_text(path, *args, **kwargs)
+            if path == cli:
+                return text.replace("restore_base_archive_file(", "restore_inline(")
+            return text
+
+        with mock.patch.object(Path, "read_text", read_text):
+            with self.assertRaisesRegex(ContractError, "bypasses the tested facade"):
+                validate_base_v1_packaging()
 
     def test_release_version_tests_exist(self) -> None:
         root = validate_vnext_contracts.ROOT

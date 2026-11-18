@@ -6601,15 +6601,17 @@ def validate_base_v1_packaging() -> int:
             raise ContractError(
                 f"API archive path bypasses the Base scoped facade: {forbidden}"
             )
-    for required in (
-        "issue_base_management_grant",
-        "ArchiveSinkBegin",
-        "ArchiveSourceBegin",
-        "ArchiveCapabilityHandleV1",
-        "management.close().await",
-    ):
+    # ARCH-13 slice 16: the CLI archive lifecycle (management grant, sink and
+    # source begin, capability commit/seal, management close) lives in
+    # onebrain_node::base_archive_file and is proved by the
+    # cli_base_archive_file_facade_round_trips_through_scoped_management test
+    # in base_gate_integration, which the integrated Base gate runs (marker
+    # checked below). Lint, kept: CLI backup/restore route through that facade.
+    for required in ("create_base_archive_file(", "restore_base_archive_file("):
         if required not in cli_archive:
-            raise ContractError(f"CLI Base archive lifecycle is missing {required}")
+            raise ContractError(
+                f"CLI Base archive path bypasses the tested facade: {required}"
+            )
     abi = tomllib.loads(
         (ROOT / "src/onebrain-base-abi/Cargo.toml").read_text(encoding="utf-8")
     )
