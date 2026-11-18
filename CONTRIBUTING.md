@@ -56,7 +56,10 @@ CID/bytes on the receiving node and retry/restart. You can run D-045 either
 `onebrain-desktop` host with opt-in `VNextProductRuntime` enabled (see the
 [normal-host share seam](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)),
 or (2) through the isolated `ku_peer_demo` helper processes alongside the local
-custody host. Networking remains opt-in (default off), source material and
+custody host. To check path (1) end to end on one machine, run
+[check_ku_public_share_demo.py](scripts/base/check_ku_public_share_demo.py)
+against a copy of your dataset (instructions in the linked task-20 section).
+Networking remains opt-in (default off), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
 literal. Registry and local-secret provisioning remain operator prerequisites,
 described in the linked run instructions. A bounded first contribution is

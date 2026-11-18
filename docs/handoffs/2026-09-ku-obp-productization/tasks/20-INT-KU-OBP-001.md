@@ -6,7 +6,46 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — bounded automatic re-check of a Pending outbound intent in `/ku` Web (2026-11-09)
+## Latest follow-up — local two-node rerun on current main and repeatable check (2026-11-18)
+
+Owner chose this MVP item on 2026-11-18 (after ARCH-13): rerun the D-045
+contributor demo on the local Windows machine; no VPS. The last live run was the
+helper-driven 2026-10-01 run; since then the share moved into the registered
+editor API, `ku_local_web` gained the opt-in `"network"` block and ARCH-09..15
+reshaped the node.
+
+- Topology: sender `ku_local_web` (`--features vnext-network-runtime`, opt-in
+  loopback `"network"` block, model-free host config) on a **copy** of the
+  local dataset, because the network runtime writes node state under
+  `data_dir`; receiver an isolated `ku_peer_demo` (no Registry/Vault/token).
+  The original dataset was hashed before and after: unchanged.
+- New helper [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  starts both processes and drives the documented authenticated
+  `POST /api/vnext/ku/editor` actions: prepare (nothing enqueued, new Public CID
+  ≠ private CID, one predicate + one text literal, public bytes exclude the
+  private CID and source label/path) → no intent before confirm → refused
+  `confirm_public=false` → explicit confirm (`Added`) → `Acknowledged` → receiver
+  `inspect` with the same Public CID/bytes/semantic identity, authenticated
+  sender NodeID, `fidelity=unassessed`, no reward → private KU still readable →
+  stop both (receiver `shutdown`, sender stopped like `stop-web.ps1`) → restart
+  with the same NodeIDs → Public object and `Acknowledged` intent persist → fresh
+  prepare gives the same Public CID/intent and re-confirm returns `RouteUpdated`.
+  It never prints the token or private ObjectCIDs. On state left by an earlier
+  run it reports the existing intent as INFO instead of the prepare-only check.
+- Result (Windows, main `e47363a`): the existing saved manual KU
+  (`MVP demo 2026-09-30: Water is a liquid.`) again produced Public CID
+  `32f3b411f5944780d41cd482ad6262e1ee447181aa57ea2d78281ac74a9b9161`, the same
+  as on 2026-10-01. Scratch run 28/28, helper on fresh copies 26/26, helper
+  rerun on existing state 25/25 + INFO. Run dirs/results stay outside Git in
+  `Documents/OneBrainLocal/peer-mvp-20261118/`.
+
+Not covered: the `/ku` Web buttons themselves (the helper calls the same editor
+API the page uses; the Web share UI keeps its vitest coverage), a second
+`ku_local_web` receiver, wrong-peer rejection (covered by existing Rust tests),
+non-loopback/NAT/Linux/macOS. Registry/Vault/token provisioning remains a manual
+prerequisite. No runtime code changed. Parent task stays Merged.
+
+## Earlier follow-up — bounded automatic re-check of a Pending outbound intent in `/ku` Web (2026-11-09)
 
 Chosen and recorded before implementation as a bounded D-044 MVP step. Before,
 a `Pending` intent required repeated manual `Inspect share intent` clicks.
@@ -1032,6 +1071,17 @@ networking opt-in (default off):
   host, not a second Vault writer. The right runtime needs no source, Registry,
   model, API token or Vault key. Node identity, canonical bytes, outbox and
   reconciliation remain owned by existing node services.
+
+**Repeatable check of the first path:** after building `ku_local_web`
+(`--features vnext-network-runtime`) and `ku_peer_demo`
+(`--features vnext-outbound-first`), point a sender host config with the opt-in
+`"network"` block at a **copy** of your dataset (the network runtime writes node
+state under `data_dir`), write a receiver `ku_peer_demo` config as in the
+topology check, then run
+`python scripts/base/check_ku_public_share_demo.py --sender-config <sender.json> --receiver-config <right.json>`.
+It runs prepare → confirm → `Acknowledged` → receiver inspect → restart/retry
+and prints PASS/FAIL per step plus `SUMMARY n/n passed` (exit 0 only if all pass).
+Stop any host already using the sender's port first.
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API
