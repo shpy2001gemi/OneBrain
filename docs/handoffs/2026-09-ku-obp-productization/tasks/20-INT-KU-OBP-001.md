@@ -6,7 +6,56 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — receiver browse and filter of accepted Public KUs (`share_list`) on `/ku` Web (2026-11-18)
+## Latest follow-up — opt-in loopback network for `/ku` on `onebrain start --api` (2026-11-18)
+
+Owner chose (i) on 2026-11-18. Closes the CLI-host gap left by (f) below, where
+D-045 share on `onebrain start --api` was refused with
+`ku_public_share_network_unavailable`.
+
+- [main.rs](../../../../src/onebrain-cli/src/main.rs): `onebrain start` takes
+  `--ku-network-bind <LOOPBACK_ADDR>` (for example `127.0.0.1:0`; requires
+  `--ku-vault-key-file`, so also `--api`). It is off by default. Before vNext
+  dependency preparation, Registry, Vault key or `data_dir` are touched,
+  `validate_start_ku_network` reuses `ku_host::KuHostNetworkConfig::validate`
+  (same loopback-only rule as `ku_local_web`). It refuses with exit 2 and a coded
+  message for a non-loopback address (`ku_network_config_invalid`), for a
+  combination with `--vnext-kql`/`--vnext-public-use`/`--vnext-pomv-view` (the vNext
+  product runtime owns the same network stores), and for a binary built without
+  `--features vnext-network-runtime` (`ku_network_runtime_unavailable`). After the
+  Base runtime is installed, the host calls the shared
+  `ku_host::start_host_loopback_network_runtime` (`ku_network_startup_failed` →
+  exit 1). It keeps the runtime alive for the session and prints `Opt-in loopback
+  OBP-RP: node_id=… listen_addr=…`. No new route: the existing editor
+  `share_prepare`/`share_confirm`/`share_intent`/`share_inspect`/`share_list`
+  actions find the runtime through the `CanonicalPublicReader` registration.
+- [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py):
+  `--sender-kind cli` (+ `--cli-exe`) starts the sender as `onebrain start --api
+  --ku-network-bind` from the same sender JSON fields (stdin stays open because
+  the REPL exits on EOF; the token is passed only as the child's argument and is
+  never printed). The default `web` sender is unchanged.
+- Checks: `cargo test -p onebrain-cli --bin onebrain` 46/46 and with
+  `--features vnext-network-runtime` 47/47 (new
+  `ku_network_bind_is_opt_in_loopback_and_requires_vault_key`); `cargo fmt
+  --check` PASS.
+- Live (Windows, `Documents/OneBrainLocal/peer-mvp-20261118/cli-sender/` outside
+  Git, sender = fresh dataset copy, receiver = fresh `ku_local_web` with a new
+  random Vault key): `--sender-kind cli --receiver-kind web` **36/36** (ports
+  4401/4402; prepare → refused `confirm_public=false` → confirm `Added` →
+  `Acknowledged` → receiver `share_inspect`/`get` `PUBLIC`/`share_list` + private
+  `list` 0 → restart both → same NodeIDs, still `Acknowledged`, re-confirm
+  `RouteUpdated`). After the validation moved ahead of vNext dependency
+  preparation, a rerun on fresh dirs with the final binary (ports 4421/4422)
+  passed 36/36 again. Default `ku_local_web` sender regression on fresh dirs: 36/36.
+  Live refusals: `0.0.0.0:0` and `--vnext-kql` both exit 2 with `data_dir` not
+  created. Original dataset SHA-256 (247 files) unchanged.
+  [SETUP_GUIDE §5.3](../../../SETUP_GUIDE.md) shows the flag.
+
+Not covered: Ollama drafts on the CLI host, combining `/ku` sharing with vNext
+product lanes, browser click-through on the CLI host (`/ku` Web code is
+unchanged and uses the same editor API as the helper), `vite preview` opt-out,
+non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — receiver browse and filter of accepted Public KUs (`share_list`) on `/ku` Web (2026-11-18)
 
 Agent pick (h) on 2026-11-18 at the owner's request, closing the receiver UX gap
 found in (d) below while preserving the private/public adoption boundary tested
@@ -1354,6 +1403,10 @@ helper then inspects the receiver through `share_list`, `share_inspect`, `get`
 receiver's `/ku` page, which you can open on the receiver's port afterwards. A
 `ku_peer_demo` config must be UTF-8 without a BOM (Windows PowerShell 5
 `Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
+To use `onebrain start --api` as the sender instead, build it with
+`cargo build -p onebrain-cli --features vnext-network-runtime` and add
+`--sender-kind cli` (optional `--cli-exe`): the helper starts it from the same
+sender JSON fields with `--ku-network-bind <network.bind_addr>`.
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API

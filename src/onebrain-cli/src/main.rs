@@ -116,6 +116,12 @@ enum Commands {
             value_parser = parse_ku_source
         )]
         ku_sources: Vec<(String, PathBuf)>,
+        /// Opt-in loopback OBP-RP listener for `/ku` D-045 Public KU share,
+        /// browse and inspect, e.g. 127.0.0.1:0. Off by default (local/private
+        /// only). Requires --ku-vault-key-file and a binary built with
+        /// --features vnext-network-runtime; not combinable with vNext lanes.
+        #[arg(long, value_name = "LOOPBACK_ADDR", requires = "ku_vault_key_file")]
+        ku_network_bind: Option<SocketAddr>,
         #[command(flatten)]
         vnext: VNextStartArgs,
     },
@@ -206,6 +212,7 @@ async fn main() {
             web_dir,
             ku_vault_key_file,
             ku_sources,
+            ku_network_bind,
             vnext,
         } => {
             let vnext_config = match vnext.feature_config() {
@@ -214,6 +221,19 @@ async fn main() {
                     eprintln!("Invalid vNext configuration: {error}");
                     std::process::exit(2);
                 }
+            };
+            // Validate the opt-in `/ku` network before anything (including vNext
+            // dependency preparation) touches data_dir, as `ku_local_web` does.
+            #[cfg(feature = "base-v1")]
+            let ku_network = match ku_network_bind {
+                Some(bind_addr) => match validate_start_ku_network(bind_addr, vnext.requested()) {
+                    Ok(network) => Some(network),
+                    Err(error) => {
+                        eprintln!("{error}");
+                        std::process::exit(2);
+                    }
+                },
+                None => None,
             };
             #[cfg(not(feature = "vnext-network-runtime"))]
             if vnext.requested() {
@@ -277,7 +297,7 @@ async fn main() {
                 None => None,
             };
             #[cfg(not(feature = "base-v1"))]
-            if ku_vault_key_file.is_some() || !ku_sources.is_empty() {
+            if ku_vault_key_file.is_some() || !ku_sources.is_empty() || ku_network_bind.is_some() {
                 eprintln!("--ku-vault-key-file requires a binary built with the base-v1 feature");
                 std::process::exit(2);
             }
@@ -352,6 +372,27 @@ async fn main() {
                     std::process::exit(1);
                 }
             }
+            // Kept alive for the whole REPL/API session; dropping it stops OBP-RP.
+            #[cfg(all(feature = "base-v1", feature = "vnext-network-runtime"))]
+            let ku_network_runtime = match ku_network.as_ref() {
+                Some(network) => {
+                    match onebrain_api::ku_host::start_host_loopback_network_runtime(
+                        &config.data_dir,
+                        network,
+                    )
+                    .await
+                    {
+                        Ok(runtime) => Some(runtime),
+                        Err(_) => {
+                            eprintln!("{KU_NETWORK_STARTUP_FAILED}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => None,
+            };
+            #[cfg(all(feature = "base-v1", not(feature = "vnext-network-runtime")))]
+            let _ = ku_network;
             #[cfg(feature = "vnext-network-runtime")]
             if let Some(dependencies) = vnext_dependencies {
                 if let Err(error) = node.set_vnext_product_dependencies(dependencies) {
@@ -510,10 +551,28 @@ async fn main() {
                 println!("  ✓ Token: {}", api_token);
                 #[cfg(feature = "base-v1")]
                 if ku_enabled {
-                    println!(
-                        "  ✓ Local KU: http://127.0.0.1:{}/ku — local/private only; AI unqualified; no publication",
-                        api_port
-                    );
+                    #[cfg(feature = "vnext-network-runtime")]
+                    let ku_network_status = ku_network_runtime.as_ref().map(|r| r.status());
+                    #[cfg(not(feature = "vnext-network-runtime"))]
+                    let ku_network_status: Option<()> = None;
+                    if ku_network_status.is_none() {
+                        println!(
+                            "  ✓ Local KU: http://127.0.0.1:{}/ku — local/private only; AI unqualified; no publication",
+                            api_port
+                        );
+                    }
+                    #[cfg(feature = "vnext-network-runtime")]
+                    if let Some(status) = ku_network_status {
+                        println!(
+                            "  ✓ Local KU: http://127.0.0.1:{}/ku — explicit D-045 Public share over opt-in loopback; AI unqualified",
+                            api_port
+                        );
+                        println!(
+                            "  ✓ Opt-in loopback OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
+                            onebrain_base_contract::ku_payload::hex(&status.principal),
+                            status.listen_addr
+                        );
+                    }
                     if let Some(reason) = ku_issue {
                         eprintln!("  ⚠ {}", ku_source_warning(reason));
                     }
@@ -625,6 +684,49 @@ fn prepare_start_ku_runtime(
         return Err(KU_REGISTRY_UNAVAILABLE);
     }
     Ok((ku, issue))
+}
+
+#[cfg(feature = "base-v1")]
+const KU_NETWORK_CONFIG_INVALID: &str = "ku_network_config_invalid: --ku-network-bind must be a \
+    loopback socket address such as 127.0.0.1:0; omit it for local/private-only /ku. Retain the \
+    existing data_dir and Vault key when retrying.";
+
+#[cfg(feature = "base-v1")]
+const KU_NETWORK_CONFLICTS_VNEXT: &str = "ku_network_config_invalid: --ku-network-bind cannot be \
+    combined with --vnext-kql, --vnext-public-use or --vnext-pomv-view in this MVP; start /ku \
+    sharing without vNext product lanes.";
+
+#[cfg(all(feature = "base-v1", not(feature = "vnext-network-runtime")))]
+const KU_NETWORK_RUNTIME_UNAVAILABLE: &str = "ku_network_runtime_unavailable: --ku-network-bind \
+    needs a onebrain binary built with --features vnext-network-runtime. Omit it for \
+    local/private-only /ku; retain the existing data_dir and Vault key when retrying.";
+
+#[cfg(all(feature = "base-v1", feature = "vnext-network-runtime"))]
+const KU_NETWORK_STARTUP_FAILED: &str = "ku_network_startup_failed: cannot start the opt-in \
+    loopback VNextNetworkRuntime for /ku. Check that --ku-network-bind is an available local \
+    address and that no other process uses this data_dir; retain the existing data_dir and Vault \
+    key when retrying.";
+
+/// Validate the opt-in `/ku` loopback network before any Registry, Vault key
+/// or dataset access, with the same `KuHostNetworkConfig` rule as `ku_local_web`.
+#[cfg(feature = "base-v1")]
+fn validate_start_ku_network(
+    bind_addr: SocketAddr,
+    vnext_requested: bool,
+) -> Result<onebrain_api::ku_host::KuHostNetworkConfig, &'static str> {
+    let network = onebrain_api::ku_host::KuHostNetworkConfig {
+        network_opt_in: true,
+        bind_addr,
+    };
+    network.validate().map_err(|_| KU_NETWORK_CONFIG_INVALID)?;
+    // The vNext product runtime owns the same network stores for data_dir.
+    if vnext_requested {
+        return Err(KU_NETWORK_CONFLICTS_VNEXT);
+    }
+    #[cfg(not(feature = "vnext-network-runtime"))]
+    return Err(KU_NETWORK_RUNTIME_UNAVAILABLE);
+    #[cfg(feature = "vnext-network-runtime")]
+    Ok(network)
 }
 
 /// Non-fatal `/ku` source/model issues: saved KU reads stay available.
@@ -941,5 +1043,58 @@ mod start_ku_tests {
         assert!(warning.contains("saved KU reads"));
         assert!(!warning.contains("canary"));
         assert_eq!(std::fs::read(&key_path).unwrap(), [0x51; 32]);
+    }
+
+    #[test]
+    fn ku_network_bind_is_opt_in_loopback_and_requires_vault_key() {
+        // Off by default; requires the KU Vault key (and so --api).
+        let default = start_args(&["--api", "--ku-vault-key-file", "vault.key"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Some(Commands::Start {
+                ku_network_bind: None,
+                ..
+            })
+        ));
+        assert!(start_args(&["--api", "--ku-network-bind", "127.0.0.1:0"]).is_err());
+        assert!(start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-network-bind",
+            "not-an-address"
+        ])
+        .is_err());
+        let parsed = start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-network-bind",
+            "127.0.0.1:0",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Some(Commands::Start { ku_network_bind: Some(addr), .. })
+                if addr == "127.0.0.1:0".parse::<SocketAddr>().unwrap()
+        ));
+
+        // Non-loopback or vNext-lane combinations fail closed before any I/O.
+        for addr in ["0.0.0.0:0", "192.168.1.10:4500", "[::]:0"] {
+            assert_eq!(
+                validate_start_ku_network(addr.parse().unwrap(), false).err(),
+                Some(KU_NETWORK_CONFIG_INVALID),
+                "{addr}"
+            );
+        }
+        assert_eq!(
+            validate_start_ku_network("127.0.0.1:0".parse().unwrap(), true).err(),
+            Some(KU_NETWORK_CONFLICTS_VNEXT)
+        );
+        let loopback = validate_start_ku_network("[::1]:0".parse().unwrap(), false);
+        #[cfg(feature = "vnext-network-runtime")]
+        assert!(loopback.unwrap().network_opt_in);
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        assert_eq!(loopback.err(), Some(KU_NETWORK_RUNTIME_UNAVAILABLE));
     }
 }

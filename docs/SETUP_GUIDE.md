@@ -276,8 +276,22 @@ cargo run -p onebrain-cli -- start --api --data-dir <dataset> \
 ```
 
 Không có `--ku-vault-key-file` thì `/ku` vẫn mở nhưng báo `Host: unavailable` và
-`ku_dependency_unavailable` (HTTP 503). Host CLI chỉ lưu local/private: chưa có
-Ollama draft và chia sẻ Public KU D-045 (dùng `ku_local_web` cho hai việc này).
+`ku_dependency_unavailable` (HTTP 503). Mặc định host CLI chỉ lưu local/private và
+chưa có Ollama draft (dùng `ku_local_web` cho việc này).
+
+Để host CLI cũng chia sẻ/duyệt/xem Public KU D-045, build với
+`--features vnext-network-runtime` và thêm cờ opt-in loopback (tắt mặc định; chỉ
+nhận địa chỉ loopback; không dùng chung với `--vnext-kql`/`--vnext-public-use`/
+`--vnext-pomv-view`):
+
+```bash
+cargo run -p onebrain-cli --features vnext-network-runtime -- start --api ... \
+  --ku-vault-key-file <vault.key> --ku-network-bind 127.0.0.1:0
+```
+
+Host in `Opt-in loopback OBP-RP: node_id=… listen_addr=…` — đó là NodeID/địa chỉ
+mà host bên kia điền vào bước chia sẻ. Đây là demo một máy, không phải
+NAT/production qualification; không có reward.
 
 ### 5.4. Cấu trúc Web Dashboard
 

@@ -5,7 +5,10 @@ Starts two real loopback processes on this host and drives the documented
 authenticated ``POST /api/vnext/ku/editor`` share actions:
 
 * sender: ``ku_local_web`` built with ``--features vnext-network-runtime`` and a
-  host config that contains an opt-in ``"network"`` block;
+  host config that contains an opt-in ``"network"`` block, or with
+  ``--sender-kind cli`` the ``onebrain start --api --ku-network-bind`` host
+  started from the same config fields (data_dir, port, api_token_file,
+  registry_root/public key, vault_key_file, sources, web_dir, network);
 * receiver: an isolated ``ku_peer_demo`` (no Registry, Vault key or API token),
   or with ``--receiver-kind web`` a second ``ku_local_web`` host (its own data
   dir, port and opt-in ``"network"`` block). A Web receiver is inspected through
@@ -41,6 +44,7 @@ REPO = Path(__file__).resolve().parents[2]
 EXE = ".exe" if sys.platform == "win32" else ""
 DEFAULT_WEB = REPO / "src" / "target" / "debug" / "examples" / f"ku_local_web{EXE}"
 DEFAULT_PEER = REPO / "src" / "target" / "debug" / "examples" / f"ku_peer_demo{EXE}"
+DEFAULT_CLI = REPO / "src" / "target" / "debug" / f"onebrain{EXE}"
 # Synthetic demo scope from the task-20 run instructions; grants no authority.
 SELECTOR = "2" * 64
 NAMESPACE = "3" * 64
@@ -162,7 +166,11 @@ class Api:
 def start_web_host(exe: Path, config: Path, port: int, name: str) -> tuple[Proc, str, str]:
     """Start ``ku_local_web`` and return (process, node_id, listen_addr)."""
     proc = Proc([str(exe), str(config)], name)
-    line = proc.next_line(lambda l: l.startswith("Opt-in loopback OBP-RP"), 300)
+    return wait_host_ready(proc, port)
+
+
+def wait_host_ready(proc: Proc, port: int) -> tuple[Proc, str, str]:
+    line = proc.next_line(lambda l: "Opt-in loopback OBP-RP:" in l, 300)
     fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
     for _ in range(240):
         try:
@@ -171,6 +179,30 @@ def start_web_host(exe: Path, config: Path, port: int, name: str) -> tuple[Proc,
         except Exception:
             time.sleep(0.5)
     return proc, fields["node_id"], fields["listen_addr"]
+
+
+def start_cli_host(exe: Path, cfg: dict, name: str) -> tuple[Proc, str, str]:
+    """Start ``onebrain start --api`` from the same ``ku_local_web`` JSON fields.
+
+    Uses ``--ku-network-bind`` (binary built with ``--features
+    vnext-network-runtime``). The token travels only as this local child's
+    argument; it is never printed by this helper. stdin stays open because the
+    REPL exits on EOF.
+    """
+    network = cfg["network"]
+    token = Path(cfg["api_token_file"]).read_text(encoding="utf-8").strip()
+    args = [str(exe), "start", "--data-dir", str(cfg["data_dir"]), "--api",
+            "--api-port", str(int(cfg.get("port", 4280))), "--api-token", token,
+            "--concept-registry-release-root", str(cfg["registry_root"]),
+            "--concept-registry-release-public-key", cfg["registry_public_key"],
+            "--ku-vault-key-file", str(cfg["vault_key_file"]),
+            "--ku-network-bind", network["bind_addr"]]
+    for source in cfg.get("sources", []):
+        args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
+    if cfg.get("web_dir"):
+        args += ["--web-dir", str(cfg["web_dir"])]
+    proc = Proc(args, name, stdin=True)
+    return wait_host_ready(proc, int(cfg.get("port", 4280)))
 
 
 class PeerReceiver:
@@ -252,8 +284,11 @@ class Check:
 
     # ---- processes ---------------------------------------------------------
     def start_web(self) -> tuple[str, str]:
-        self.web, node_id, addr = start_web_host(self.args.web_exe, self.args.sender_config,
-                                                 self.port, "sender")
+        if self.args.sender_kind == "cli":
+            self.web, node_id, addr = start_cli_host(self.args.cli_exe, self.cfg, "sender")
+        else:
+            self.web, node_id, addr = start_web_host(self.args.web_exe, self.args.sender_config,
+                                                     self.port, "sender")
         return node_id, addr
 
     # ---- authenticated sender KU API ---------------------------------------
@@ -268,7 +303,8 @@ class Check:
         rid, raddr = self.receiver.start()
         self.check(f"receiver {self.receiver.kind} started", len(rid) == 64, f"node_id={rid} addr={raddr}")
         sid, saddr = self.start_web()
-        self.check("sender ku_local_web opt-in network started", len(sid) == 64 and sid != rid,
+        sender = "onebrain start --api" if self.args.sender_kind == "cli" else "ku_local_web"
+        self.check(f"sender {sender} opt-in network started", len(sid) == 64 and sid != rid,
                    f"node_id={sid} addr={saddr}")
 
         code, env = self.operation("list", {"limit": 64})
@@ -468,6 +504,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="peer: ku_peer_demo (default); web: second ku_local_web host")
     parser.add_argument("--receiver-exe", type=Path,
                         help="ku_local_web binary for --receiver-kind web (default: --web-exe)")
+    parser.add_argument("--sender-kind", choices=("web", "cli"), default="web",
+                        help="web: ku_local_web (default); cli: onebrain start --api "
+                             "--ku-network-bind built from the same sender JSON fields")
+    parser.add_argument("--cli-exe", type=Path, default=DEFAULT_CLI,
+                        help="onebrain binary built with --features vnext-network-runtime")
     parser.add_argument("--web-exe", type=Path, default=DEFAULT_WEB)
     parser.add_argument("--peer-exe", type=Path, default=DEFAULT_PEER)
     parser.add_argument("--ack-timeout", type=int, default=60, help="seconds to wait for Acknowledged")
