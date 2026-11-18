@@ -128,7 +128,7 @@ cargo run -p onebrain-cli -- start \
   --port 4242 \
   --api \
   --api-port 4280 \
-  --api-token "my-secret-token" \
+  --api-token-file "<path/to/api-token.txt>" \
   --ollama-url "http://localhost:11434" \
   --model "qwen3:8b"
 ```
@@ -139,7 +139,8 @@ cargo run -p onebrain-cli -- start \
 | `--port` | `4242` | P2P port |
 | `--api` | `false` | Bật API server cho Web Dashboard |
 | `--api-port` | `4280` | Port API server |
-| `--api-token` | `onebrain-dev-token` | Token xác thực |
+| `--api-token-file` | — | File UTF-8 riêng tư chứa Bearer token (32..1024 ký tự ASCII chữ/số/`-`/`_`; xung đột với `--api-token`) |
+| `--api-token` | `onebrain-dev-token` | Token xác thực truyền trực tiếp (chỉ nên dùng cho dev nhanh; ưu tiên `--api-token-file`) |
 | `--ollama-url` | `http://localhost:11434` | Ollama endpoint |
 | `--model` | `qwen3:8b` | AI model |
 | `--seeds` | — | Seed nodes (comma-separated) |
@@ -179,10 +180,10 @@ cargo run -p onebrain-cli -- start \
 ### 4.1. Bật API
 
 ```bash
-cargo run -p onebrain-cli -- start --api --api-token "your-secret-token"
+cargo run -p onebrain-cli -- start --api --api-token-file "<path/to/api-token.txt>"
 ```
 
-> **⚠️ Quan trọng**: Thay `"your-secret-token"` bằng token bảo mật. Token mặc định cho dev là `onebrain-dev-token`.
+> **⚠️ Quan trọng**: Ưu tiên `--api-token-file` (chứa đúng một token UTF-8 dài 32..1024 ký tự ASCII chữ/số/`-`/`_`, không đi cùng `--api-token`) để token không lộ trong lịch sử shell hay đối số tiến trình. Token mặc định khi chạy dev nhanh không cờ là `onebrain-dev-token` (hoặc `--api-token "..."`). Host CLI không in giá trị Bearer token thô ra stdout.
 
 ### 4.2. API Server bind
 
@@ -269,6 +270,7 @@ Trang `/ku` (Local KU workspace) cần KU runtime. Host `ku_local_web` luôn có
 
 ```bash
 cargo run -p onebrain-cli -- start --api --data-dir <dataset> \
+  --api-token-file <api-token.txt> \
   --concept-registry-release-root <registry-root> \
   --concept-registry-release-public-key <64-hex-public-key> \
   --ku-vault-key-file <vault.key> \

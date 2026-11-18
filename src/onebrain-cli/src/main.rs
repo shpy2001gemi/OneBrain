@@ -96,9 +96,17 @@ enum Commands {
         /// API server port (default: 4280)
         #[arg(long, default_value_t = 4280)]
         api_port: u16,
-        /// API Bearer token for authentication
-        #[arg(long, default_value = "onebrain-dev-token")]
+        /// API Bearer token for authentication (prefer --api-token-file to avoid shell/argv exposure)
+        #[arg(
+            long,
+            default_value = DEFAULT_API_TOKEN,
+            conflicts_with = "api_token_file"
+        )]
         api_token: String,
+        /// Private UTF-8 file containing the API Bearer token (32..1024 ASCII letters,
+        /// digits, '-' or '_'). Conflicts with --api-token; never printed on stdout.
+        #[arg(long, value_name = "PATH", conflicts_with = "api_token")]
+        api_token_file: Option<PathBuf>,
         /// Path to built web dashboard (default: auto-detect)
         #[arg(long)]
         web_dir: Option<PathBuf>,
@@ -232,6 +240,7 @@ async fn main() {
             api,
             api_port,
             api_token,
+            api_token_file,
             web_dir,
             ku_vault_key_file,
             ku_sources,
@@ -282,6 +291,17 @@ async fn main() {
                 );
                 std::process::exit(2);
             }
+            // Read and validate --api-token-file before anything touches data_dir,
+            // Registry or Vault key; never print token bytes or private paths.
+            let (api_token, api_token_from_file) =
+                match resolve_start_api_token(api_token, api_token_file.as_deref()) {
+                    Ok(resolved) => resolved,
+                    Err(error) => {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
+                };
+            let api_token_is_default = !api_token_from_file && api_token == DEFAULT_API_TOKEN;
             #[cfg(feature = "vnext-network-runtime")]
             let vnext_dependencies = if vnext.requested() {
                 match cli::vnext::prepare_runtime_dependencies(&data_dir) {
@@ -596,7 +616,10 @@ async fn main() {
                     }
                 });
                 println!("  ✓ API server started on http://127.0.0.1:{}", api_port);
-                println!("  ✓ Token: {}", api_token);
+                println!(
+                    "{}",
+                    api_token_banner(api_token_from_file, api_token_is_default)
+                );
                 #[cfg(feature = "base-v1")]
                 if ku_enabled {
                     #[cfg(feature = "vnext-network-runtime")]
@@ -655,6 +678,70 @@ fn exit_on_client_error(result: Result<(), String>) {
     if let Err(error) = result {
         eprintln!("vNext CLI error: {error}");
         std::process::exit(2);
+    }
+}
+
+const DEFAULT_API_TOKEN: &str = "onebrain-dev-token";
+
+const API_TOKEN_UNREADABLE: &str = "api_token_unreadable: cannot read --api-token-file. Point it \
+    at an existing locally readable UTF-8 token file and keep the token outside Git and command \
+    arguments.";
+
+const API_TOKEN_TOO_LARGE: &str = "api_token_too_large: --api-token-file exceeds 1024 bytes \
+    including surrounding whitespace. Supply a plain UTF-8 token file, not JSON, a key file or a \
+    canonical source file.";
+
+const API_TOKEN_INVALID: &str = "api_token_invalid: --api-token-file must contain a UTF-8 token \
+    of 32..1024 ASCII letters, digits, '-' or '_' after trimming surrounding whitespace, without \
+    quotes or JSON.";
+
+/// Resolve the `onebrain start` API token before touching `data_dir` or custody.
+fn resolve_start_api_token(
+    api_token: String,
+    api_token_file: Option<&std::path::Path>,
+) -> Result<(String, bool), &'static str> {
+    match api_token_file {
+        Some(path) => Ok((load_api_token_file(path)?, true)),
+        None => Ok((api_token, false)),
+    }
+}
+
+/// Read and validate `--api-token-file` with the same 32..=1024 ASCII rule as
+/// `ku_local_web`, without reflecting private file paths or bytes in errors.
+fn load_api_token_file(path: &std::path::Path) -> Result<String, &'static str> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .map_err(|_| API_TOKEN_UNREADABLE)?
+        .take(1025)
+        .read_to_end(&mut bytes)
+        .map_err(|_| API_TOKEN_UNREADABLE)?;
+    if bytes.len() > 1024 {
+        return Err(API_TOKEN_TOO_LARGE);
+    }
+    let token = String::from_utf8(bytes)
+        .map_err(|_| API_TOKEN_INVALID)?
+        .trim()
+        .to_owned();
+    if token.len() < 32
+        || !token
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    {
+        return Err(API_TOKEN_INVALID);
+    }
+    Ok(token)
+}
+
+/// Startup auth banner for `onebrain start --api`; takes only flags so raw
+/// token bytes and private file paths can never be printed to stdout.
+fn api_token_banner(from_file: bool, is_default: bool) -> &'static str {
+    if from_file {
+        "  ✓ Auth: Bearer token loaded from --api-token-file (not printed)"
+    } else if is_default {
+        "  ✓ Auth: default dev Bearer token active (not printed; pass --api-token-file for private custody)"
+    } else {
+        "  ✓ Auth: Bearer token set via --api-token (not printed; prefer --api-token-file)"
     }
 }
 
@@ -1025,6 +1112,97 @@ mod vnext_command_tests {
             "test",
         ]);
         assert!(prepare_without_ack.is_err());
+    }
+
+    #[test]
+    fn api_token_file_conflicts_with_api_token_validates_bounds_and_redacts_banner() {
+        let default = CliArgs::try_parse_from(["onebrain", "start", "--api"]).unwrap();
+        let Some(Commands::Start {
+            api_token,
+            api_token_file,
+            ..
+        }) = default.command
+        else {
+            panic!()
+        };
+        assert_eq!(api_token, DEFAULT_API_TOKEN);
+        assert!(api_token_file.is_none());
+
+        let with_file = CliArgs::try_parse_from([
+            "onebrain",
+            "start",
+            "--api",
+            "--api-token-file",
+            "token.txt",
+        ])
+        .unwrap();
+        assert!(matches!(
+            with_file.command,
+            Some(Commands::Start {
+                api_token_file: Some(ref path),
+                ..
+            }) if path == &PathBuf::from("token.txt")
+        ));
+
+        assert!(CliArgs::try_parse_from([
+            "onebrain",
+            "start",
+            "--api",
+            "--api-token",
+            "custom-token",
+            "--api-token-file",
+            "token.txt",
+        ])
+        .is_err());
+
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("private-missing-canary.txt");
+        let err = resolve_start_api_token(DEFAULT_API_TOKEN.into(), Some(&missing)).unwrap_err();
+        assert_eq!(err, API_TOKEN_UNREADABLE);
+        assert!(!err.contains("canary"));
+
+        let token_path = root.path().join("private-token-canary.txt");
+        for (bytes, expected) in [
+            (b"short-private-canary".to_vec(), API_TOKEN_INVALID),
+            (vec![0xff; 32], API_TOKEN_INVALID),
+            (
+                format!("\"{}\"", "private-canary-".repeat(3)).into_bytes(),
+                API_TOKEN_INVALID,
+            ),
+            (vec![b'a'; 1025], API_TOKEN_TOO_LARGE),
+        ] {
+            std::fs::write(&token_path, &bytes).unwrap();
+            let err =
+                resolve_start_api_token(DEFAULT_API_TOKEN.into(), Some(&token_path)).unwrap_err();
+            assert_eq!(err, expected);
+            assert!(!err.contains("canary"));
+            assert!(!err.contains(&root.path().display().to_string()));
+            assert_eq!(std::fs::read(&token_path).unwrap(), bytes);
+        }
+
+        let valid = "synthetic-private-token-canary-1234567890";
+        std::fs::write(&token_path, format!(" \r\n{valid}\t ")).unwrap();
+        let (loaded, from_file) =
+            resolve_start_api_token(DEFAULT_API_TOKEN.into(), Some(&token_path)).unwrap();
+        assert!(from_file);
+        assert_eq!(loaded, valid);
+
+        std::fs::write(&token_path, vec![b'a'; 1024]).unwrap();
+        assert_eq!(load_api_token_file(&token_path).unwrap().len(), 1024);
+
+        let (inline, from_file) = resolve_start_api_token("inline-secret".into(), None).unwrap();
+        assert!(!from_file);
+        assert_eq!(inline, "inline-secret");
+
+        for (from_file, is_default) in [(true, false), (false, true), (false, false)] {
+            let banner = api_token_banner(from_file, is_default);
+            assert!(!banner.contains(DEFAULT_API_TOKEN));
+            assert!(!banner.contains(valid));
+            assert!(!banner.contains("inline-secret"));
+        }
+        assert!(api_token_banner(true, false).contains("--api-token-file"));
+        assert!(api_token_banner(false, true).contains("default dev Bearer token"));
+        assert!(api_token_banner(false, false).contains("--api-token"));
     }
 }
 
