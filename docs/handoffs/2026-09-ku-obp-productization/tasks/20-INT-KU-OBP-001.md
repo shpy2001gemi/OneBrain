@@ -6,7 +6,54 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `/ku` header badges, English draft sections, CLI Ollama flags & shared Base archive byte facade (2026-11-18)
+## Latest follow-up — CLI `--api-token-file`, redacted token banner & CLI+Ollama D-045 verification (2026-11-19)
+
+Owner selected sequential execution of (n) → (o) on 2026-11-18/19:
+
+- **(n) `--api-token-file <PATH>` and redacted token banner on `onebrain start` (`9dbc407`):**
+  - Added `--api-token-file <PATH>` (conflicts with `--api-token`) to `Commands::Start`
+    in [main.rs](../../../../src/onebrain-cli/src/main.rs), validated with the same
+    bounded 32..=1024 ASCII `[A-Za-z0-9_-]` rule as `ku_local_web` before touching
+    `data_dir`, Registry or Vault key, and never reflecting private paths or secret
+    bytes in error messages.
+  - Replaced raw `✓ Token: <api_token>` stdout output with `api_token_banner(from_file,
+    is_default)`, which takes only booleans so raw Bearer tokens and private paths
+    cannot be printed to stdout. Updated [SETUP_GUIDE.md](../../../SETUP_GUIDE.md)
+    §3.3, §4.1 and §5.3.
+  - Checks: `onebrain-cli` 48/48 + 49/49 (`vnext-network-runtime`), `--no-default-features`
+    check, `rustfmt --check` on `main.rs`, live CLI smoke (conflict refusal, missing-file
+    refusal without creating `data_dir` or leaking canary, valid `--api-token-file`
+    startup with redacted banner), `validate_vnext_contracts.py` PASS.
+- **(o) D-045 CLI+Ollama → Web 36/36 rerun, live browser verification & docs (`3a49df0`):**
+  - Updated `start_cli_host` in
+    [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+    to pass `--api-token-file` (no token on child argv) and map optional `"ollama"`
+    onto `--ku-ollama-*`.
+  - Ran `check_ku_public_share_demo.py --sender-kind cli --receiver-kind web` against
+    an isolated copy (`Documents/OneBrainLocal/peer-mvp-20261118/cli-full-check/`
+    outside Git; throwaway token deleted after checks; original 247-file dataset SHA-256
+    unchanged): **36/36 PASS** (`onebrain start --api` sender with `--api-token-file`,
+    `--ku-network-bind` and `--ku-ollama-*` `qwen3:8b` → `ku_local_web` receiver,
+    including restart and idempotent `RouteUpdated` re-confirm).
+  - Live browser agent **9/9 PASS** (0 console errors; host facts: visited only
+    `http://127.0.0.1:4461` and `http://127.0.0.1:4462`): sender `:4461/ku` showed
+    `1 private KU saved` + `Loopback peer network` header badges, host NodeID in Scope
+    notice, English draft UI with admitted `qwen3:8b` in both Ollama model selectors
+    (no inference run), statement text on saved/inspected cards, and Step 1 → Step 2
+    (`Outbox: Added`) → Step 3 (`Acknowledged`, Step 2 Delivery line updated); receiver
+    `:4462/ku` showed `0 private KUs saved`, private list `0` items, `Browse accepted
+    Public KUs` + `"water"` filter + `Use … in step 4` prefilling both CID and selector,
+    and Step 4 inspection showing sender CLI NodeID, `Fidelity: unassessed`, `Reward
+    authorized: false`.
+  - Updated [Run the local-to-peer manual concept (D-045)](#run-the-local-to-peer-manual-concept-d-045)
+    and [CONTRIBUTING.md](../../../../CONTRIBUTING.md).
+
+Not covered: `/ku` share combined with vNext product lanes, adopting accepted Public KUs
+into private storage (needs explicit owner boundary decision), `--api-token-file` on
+client subcommands (`onebrain ku`/`obp`/`need`/`pomv`/`vnext`), non-loopback/NAT/Linux/macOS.
+Parent task stays Merged.
+
+## Earlier follow-up — `/ku` header badges, English draft sections, CLI Ollama flags & shared Base archive byte facade (2026-11-18)
 
 Owner delegated sequential execution of (m) → (g) → (c) on 2026-11-18:
 
