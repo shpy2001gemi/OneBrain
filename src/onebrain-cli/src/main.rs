@@ -122,6 +122,29 @@ enum Commands {
         /// --features vnext-network-runtime; not combinable with vNext lanes.
         #[arg(long, value_name = "LOOPBACK_ADDR", requires = "ku_vault_key_file")]
         ku_network_bind: Option<SocketAddr>,
+        /// Experimental local Ollama for `/ku` AI text intake and background
+        /// drafts: path to the installed `ollama` executable. Off by default.
+        /// Requires --ku-vault-key-file, --ku-ollama-models-dir and at least one
+        /// --ku-ollama-model; models are admitted at startup, never downloaded.
+        #[arg(
+            long,
+            value_name = "PATH",
+            requires_all = ["ku_vault_key_file", "ku_ollama_models_dir", "ku_ollama_models"]
+        )]
+        ku_ollama_executable: Option<PathBuf>,
+        /// Ollama models directory for --ku-ollama-executable.
+        #[arg(long, value_name = "DIR", requires = "ku_ollama_executable")]
+        ku_ollama_models_dir: Option<PathBuf>,
+        /// Installed Ollama model tag offered on `/ku` (repeatable, 1..8), e.g. qwen3:8b.
+        #[arg(
+            long = "ku-ollama-model",
+            value_name = "MODEL",
+            requires = "ku_ollama_executable"
+        )]
+        ku_ollama_models: Vec<String>,
+        /// Memory limit for the managed Ollama worker (default 12 GiB).
+        #[arg(long, value_name = "BYTES", requires = "ku_ollama_executable")]
+        ku_ollama_memory_limit_bytes: Option<u64>,
         #[command(flatten)]
         vnext: VNextStartArgs,
     },
@@ -213,6 +236,10 @@ async fn main() {
             ku_vault_key_file,
             ku_sources,
             ku_network_bind,
+            ku_ollama_executable,
+            ku_ollama_models_dir,
+            ku_ollama_models,
+            ku_ollama_memory_limit_bytes,
             vnext,
         } => {
             let vnext_config = match vnext.feature_config() {
@@ -234,6 +261,19 @@ async fn main() {
                     }
                 },
                 None => None,
+            };
+            #[cfg(feature = "base-v1")]
+            let ku_ollama = match start_ku_ollama(
+                ku_ollama_executable,
+                ku_ollama_models_dir,
+                ku_ollama_models,
+                ku_ollama_memory_limit_bytes,
+            ) {
+                Ok(ollama) => ollama,
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(2);
+                }
             };
             #[cfg(not(feature = "vnext-network-runtime"))]
             if vnext.requested() {
@@ -286,7 +326,8 @@ async fn main() {
             #[cfg(feature = "base-v1")]
             let ku_runtime = match ku_vault_key_file.as_deref() {
                 Some(vault_key_file) => {
-                    match prepare_start_ku_runtime(&config, vault_key_file, &ku_sources) {
+                    match prepare_start_ku_runtime(&config, vault_key_file, &ku_sources, ku_ollama)
+                    {
                         Ok(runtime) => Some(runtime),
                         Err(error) => {
                             eprintln!("{error}");
@@ -297,7 +338,11 @@ async fn main() {
                 None => None,
             };
             #[cfg(not(feature = "base-v1"))]
-            if ku_vault_key_file.is_some() || !ku_sources.is_empty() || ku_network_bind.is_some() {
+            if ku_vault_key_file.is_some()
+                || !ku_sources.is_empty()
+                || ku_network_bind.is_some()
+                || ku_ollama_executable.is_some()
+            {
                 eprintln!("--ku-vault-key-file requires a binary built with the base-v1 feature");
                 std::process::exit(2);
             }
@@ -643,6 +688,7 @@ fn prepare_start_ku_runtime(
     config: &NodeConfig,
     vault_key_file: &std::path::Path,
     sources: &[(String, PathBuf)],
+    ollama: Option<onebrain_api::ku_host::Ollama>,
 ) -> Result<
     (
         onebrain_node::ku_product::KuRuntimeConfig,
@@ -668,7 +714,7 @@ fn prepare_start_ku_runtime(
                 canonical_file: canonical_file.clone(),
             })
             .collect(),
-        ollama: None,
+        ollama,
     };
     let (ku, issue) = prepare_ku_runtime(config, &inputs).map_err(|reason| match reason {
         "ku_host_input_unavailable" => {
@@ -687,6 +733,38 @@ fn prepare_start_ku_runtime(
         return Err(KU_REGISTRY_UNAVAILABLE);
     }
     Ok((ku, issue))
+}
+
+#[cfg(feature = "base-v1")]
+const KU_OLLAMA_MODEL_LIMIT: &str = "ku_model_limit: pass 1..8 --ku-ollama-model tags with \
+    --ku-ollama-executable; omit all --ku-ollama-* flags for a /ku host without AI intake.";
+
+/// Default memory limit for the managed `/ku` Ollama worker (12 GiB), matching
+/// the documented `ku_local_web` host example.
+#[cfg(feature = "base-v1")]
+const KU_OLLAMA_DEFAULT_MEMORY_LIMIT: u64 = 12 * 1024 * 1024 * 1024;
+
+/// Map the opt-in `--ku-ollama-*` flags onto the shared `ku_host::Ollama`
+/// config before any Registry, Vault key or dataset access.
+#[cfg(feature = "base-v1")]
+fn start_ku_ollama(
+    executable: Option<PathBuf>,
+    models_dir: Option<PathBuf>,
+    models: Vec<String>,
+    memory_limit_bytes: Option<u64>,
+) -> Result<Option<onebrain_api::ku_host::Ollama>, &'static str> {
+    let (Some(executable), Some(models_dir)) = (executable, models_dir) else {
+        return Ok(None);
+    };
+    if models.is_empty() || models.len() > 8 || models.iter().any(|m| m.trim().is_empty()) {
+        return Err(KU_OLLAMA_MODEL_LIMIT);
+    }
+    Ok(Some(onebrain_api::ku_host::Ollama {
+        executable,
+        models_dir,
+        models,
+        memory_limit_bytes: memory_limit_bytes.unwrap_or(KU_OLLAMA_DEFAULT_MEMORY_LIMIT),
+    }))
 }
 
 #[cfg(feature = "base-v1")]
@@ -735,6 +813,14 @@ fn validate_start_ku_network(
 /// Non-fatal `/ku` source/model issues: saved KU reads stay available.
 #[cfg(feature = "base-v1")]
 fn ku_source_warning(reason: &'static str) -> String {
+    if reason == "ku_experimental_model_unavailable" {
+        return format!(
+            "{reason}: a --ku-ollama-model could not be admitted (check --ku-ollama-executable, \
+            --ku-ollama-models-dir and that the model is already installed; models are never \
+            downloaded). AI intake offers only admitted models; manual editing and saved KU \
+            reads still work."
+        );
+    }
     let guidance = match reason {
         "ku_host_input_unavailable" => "cannot read a --ku-source file",
         "ku_host_input_exceeds_limit" => "a --ku-source file exceeds 65536 bytes",
@@ -1005,31 +1091,31 @@ mod start_ku_tests {
         let signed = config(Some(root.path().join("registry")), Some(public_key.clone()));
 
         // No signed Registry, unreadable or wrong-size key: fatal, data_dir untouched.
-        let error = prepare_start_ku_runtime(&config(None, None), &key_path, &[])
+        let error = prepare_start_ku_runtime(&config(None, None), &key_path, &[], None)
             .err()
             .unwrap();
         assert_eq!(error, KU_REGISTRY_REQUIRED);
         let missing = root.path().join("private-missing-canary.key");
-        let error = prepare_start_ku_runtime(&signed, &missing, &[])
+        let error = prepare_start_ku_runtime(&signed, &missing, &[], None)
             .err()
             .unwrap();
         assert!(error.starts_with("ku_vault_key_unreadable:"));
         assert!(!error.contains("canary"));
         let short = root.path().join("short.key");
         std::fs::write(&short, [1; 31]).unwrap();
-        let error = prepare_start_ku_runtime(&signed, &short, &[])
+        let error = prepare_start_ku_runtime(&signed, &short, &[], None)
             .err()
             .unwrap();
         assert!(error.starts_with("ku_vault_key_invalid:"));
         let wrong_key = config(Some(root.path().join("registry")), Some("00".repeat(32)));
-        let error = prepare_start_ku_runtime(&wrong_key, &key_path, &[])
+        let error = prepare_start_ku_runtime(&wrong_key, &key_path, &[], None)
             .err()
             .unwrap();
         assert_eq!(error, KU_REGISTRY_UNAVAILABLE);
         assert!(!data_dir.exists());
 
         // Signed Registry + key: usable runtime; a source issue is a warning only.
-        let (_, issue) = prepare_start_ku_runtime(&signed, &key_path, &[]).unwrap();
+        let (_, issue) = prepare_start_ku_runtime(&signed, &key_path, &[], None).unwrap();
         assert!(issue.is_none());
         let (_, issue) = prepare_start_ku_runtime(
             &signed,
@@ -1038,6 +1124,7 @@ mod start_ku_tests {
                 "label".into(),
                 root.path().join("private-source-canary.canonical"),
             )],
+            None,
         )
         .unwrap();
         assert_eq!(issue, Some("ku_host_input_unavailable"));
@@ -1045,7 +1132,110 @@ mod start_ku_tests {
         assert!(warning.starts_with("ku_host_input_unavailable:"));
         assert!(warning.contains("saved KU reads"));
         assert!(!warning.contains("canary"));
+
+        // Opt-in Ollama with an unavailable executable is a model warning only:
+        // the runtime still starts (manual editing and saved reads keep working).
+        let ollama = start_ku_ollama(
+            Some(root.path().join("missing-ollama-canary.exe")),
+            Some(root.path().join("models")),
+            vec!["qwen3:8b".into()],
+            None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ollama.memory_limit_bytes, KU_OLLAMA_DEFAULT_MEMORY_LIMIT);
+        let (_, issue) = prepare_start_ku_runtime(&signed, &key_path, &[], Some(ollama)).unwrap();
+        assert_eq!(issue, Some("ku_experimental_model_unavailable"));
+        let warning = ku_source_warning(issue.unwrap());
+        assert!(warning.contains("manual editing and saved KU reads still work"));
+        assert!(!warning.contains("canary"));
         assert_eq!(std::fs::read(&key_path).unwrap(), [0x51; 32]);
+    }
+
+    #[test]
+    fn ku_ollama_flags_are_opt_in_and_bounded() {
+        let default = start_args(&["--api", "--ku-vault-key-file", "vault.key"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Some(Commands::Start { ku_ollama_executable: None, ref ku_ollama_models, .. })
+                if ku_ollama_models.is_empty()
+        ));
+        // Executable needs the Vault key, a models dir and at least one model.
+        assert!(start_args(&[
+            "--api",
+            "--ku-ollama-executable",
+            "ollama.exe",
+            "--ku-ollama-models-dir",
+            "models",
+            "--ku-ollama-model",
+            "qwen3:8b"
+        ])
+        .is_err());
+        for missing in [
+            &["--ku-ollama-model", "qwen3:8b"][..],
+            &["--ku-ollama-models-dir", "models"][..],
+        ] {
+            let mut args = vec!["--api", "--ku-vault-key-file", "vault.key"];
+            args.extend_from_slice(&["--ku-ollama-executable", "ollama.exe"]);
+            args.extend_from_slice(missing);
+            assert!(start_args(&args).is_err(), "{missing:?}");
+        }
+        assert!(start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "v",
+            "--ku-ollama-model",
+            "m"
+        ])
+        .is_err());
+        let parsed = start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-ollama-executable",
+            "ollama.exe",
+            "--ku-ollama-models-dir",
+            "models",
+            "--ku-ollama-model",
+            "qwen3:8b",
+            "--ku-ollama-model",
+            "qwen3:4b",
+            "--ku-ollama-memory-limit-bytes",
+            "1024",
+        ])
+        .unwrap();
+        let Some(Commands::Start {
+            ku_ollama_executable,
+            ku_ollama_models_dir,
+            ku_ollama_models,
+            ku_ollama_memory_limit_bytes,
+            ..
+        }) = parsed.command
+        else {
+            panic!()
+        };
+        let ollama = start_ku_ollama(
+            ku_ollama_executable,
+            ku_ollama_models_dir,
+            ku_ollama_models,
+            ku_ollama_memory_limit_bytes,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ollama.executable, PathBuf::from("ollama.exe"));
+        assert_eq!(ollama.models_dir, PathBuf::from("models"));
+        assert_eq!(ollama.models, vec!["qwen3:8b", "qwen3:4b"]);
+        assert_eq!(ollama.memory_limit_bytes, 1024);
+        assert!(start_ku_ollama(None, None, vec![], None).unwrap().is_none());
+        let nine = (0..9).map(|i| format!("m{i}")).collect();
+        assert_eq!(
+            start_ku_ollama(Some("o".into()), Some("d".into()), nine, None).err(),
+            Some(KU_OLLAMA_MODEL_LIMIT)
+        );
+        assert_eq!(
+            start_ku_ollama(Some("o".into()), Some("d".into()), vec![" ".into()], None).err(),
+            Some(KU_OLLAMA_MODEL_LIMIT)
+        );
     }
 
     #[test]

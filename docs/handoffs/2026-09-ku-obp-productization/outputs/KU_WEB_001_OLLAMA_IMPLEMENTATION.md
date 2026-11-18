@@ -6,12 +6,20 @@ the shared encoder before displaying an exact private preview. Save is explicit.
 `model_qualified` remains `false`; this is development integration evidence,
 not KU-ENC-003 quality qualification. No private VI/EN holdout was opened.
 
-Current Web entry: **Bản nháp tri thức · xử lý nền** starts durable semantic
+Current Web entry: **Knowledge draft · background job** (formerly *Bản nháp tri
+thức · xử lý nền*; `/ku` UI is English since 2026-11-18) starts durable semantic
 selection work and shows `draft_extracted` / `needs_review`, with semantic and
 factual verification unassessed. These drafts cannot be saved as canonical KU.
-The older **Encode and preview** path is inside **Encode trực tiếp sang KU · luồng
-thử nghiệm cũ**. Use the [manual/resolved path](KU_WEB_001_IMPLEMENTATION.md)
+The older **Encode and preview** path is inside **Encode directly to a KU ·
+earlier experimental flow**. Use the [manual/resolved path](KU_WEB_001_IMPLEMENTATION.md)
 for the supported explicit private save demonstration when lowering is incomplete.
+
+On `onebrain start --api` (instead of `ku_local_web`), the same Ollama section
+maps to `--ku-ollama-executable <ollama.exe> --ku-ollama-models-dir <models>
+--ku-ollama-model qwen3:8b` (repeat the model flag up to 8 times; optional
+`--ku-ollama-memory-limit-bytes`, default 12 GiB), together with
+`--ku-vault-key-file` and the signed Registry flags. Unavailable models are a
+startup warning only; manual editing and saved reads keep working.
 
 ## Run on this Windows host
 

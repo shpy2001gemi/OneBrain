@@ -277,7 +277,13 @@ cargo run -p onebrain-cli -- start --api --data-dir <dataset> \
 
 Không có `--ku-vault-key-file` thì `/ku` vẫn mở nhưng báo `Host: unavailable` và
 `ku_dependency_unavailable` (HTTP 503). Mặc định host CLI chỉ lưu local/private và
-chưa có Ollama draft (dùng `ku_local_web` cho việc này).
+không bật Ollama. Muốn có AI intake/bản nháp nền trên host CLI, thêm cờ opt-in (model
+phải cài sẵn, host không tải model; model lỗi chỉ là cảnh báo, sửa tay và đọc KU vẫn chạy):
+
+```bash
+  --ku-ollama-executable <ollama.exe> --ku-ollama-models-dir <models-dir> \
+  --ku-ollama-model qwen3:8b            # lặp được, 1..8; tùy chọn --ku-ollama-memory-limit-bytes (mặc định 12 GiB)
+```
 
 Để host CLI cũng chia sẻ/duyệt/xem Public KU D-045, build với
 `--features vnext-network-runtime` và thêm cờ opt-in loopback (tắt mặc định; chỉ
@@ -290,8 +296,9 @@ cargo run -p onebrain-cli --features vnext-network-runtime -- start --api ... \
 ```
 
 Host in `Opt-in loopback OBP-RP: node_id=… listen_addr=…` — đó là NodeID/địa chỉ
-mà host bên kia điền vào bước chia sẻ. Đây là demo một máy, không phải
-NAT/production qualification; không có reward.
+mà host bên kia điền vào bước chia sẻ; trang `/ku` cũng hiện NodeID này trong khung
+“Scope and limitations” và badge header (số KU private đã lưu, trạng thái mạng loopback).
+Đây là demo một máy, không phải NAT/production qualification; không có reward.
 
 ### 5.4. Cấu trúc Web Dashboard
 
