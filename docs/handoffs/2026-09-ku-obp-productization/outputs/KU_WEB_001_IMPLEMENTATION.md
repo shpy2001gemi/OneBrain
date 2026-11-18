@@ -502,8 +502,11 @@ the in-process helpers in `onebrain_api::ku_host` (`host_ku_services`,
   capability, and only then commits the public record and durable
   `OutboundTransferIntent` (`delivery: "pending; inspect intent for acknowledgement"`,
   `authorizes_reward: false`).
-- **Sender intent & receiver inspect (`share_intent` / `share_inspect`)**
-  inspect durable outbox state (`claims_network_completion: false`) and
+- **Sender intent & receiver browse/inspect (`share_intent` / `share_list` / `share_inspect`)**
+  inspect durable outbox state (`claims_network_completion: false`), browse/filter
+  accepted Public KUs in `vnext_verified.redb` (`limit` 1..64, optional `query`
+  up to 256 bytes matching folded literal text, Registry labels, or CID/CCID hex,
+  separate from private owned `Saved local knowledge`), and inspect
   accepted Public KU content plus authenticated transport/selector provenance
   (`fidelity: "unassessed"`, `authorizes_reward: false`) through the same
   registered `POST /api/vnext/ku/editor` envelope.

@@ -195,6 +195,24 @@ export interface PublicShareObjectView {
   fidelity: "unassessed";
   authorizes_reward: false;
 }
+export interface PublicShareListInput {
+  query?: string;
+  limit?: number;
+}
+export interface PublicShareListedItem {
+  object_cid: string;
+  semantic: PublicShareSemantic;
+  fidelity: "unassessed";
+  authorizes_reward: false;
+}
+export interface PublicShareListView {
+  event: "public_objects";
+  items: PublicShareListedItem[];
+  has_more: boolean;
+  scope: string;
+  fidelity: "unassessed";
+  authorizes_reward: false;
+}
 export class KuError extends Error {
   readonly failure?: Failure;
   readonly uncertain: boolean;
@@ -346,6 +364,12 @@ export function createKuClient(
         session,
         budget,
         request: { action: "share_inspect", payload },
+      }),
+    shareList: (session: Session, payload: PublicShareListInput = {}) =>
+      request<PublicShareListView>("editor", {
+        session,
+        budget,
+        request: { action: "share_list", payload },
       }),
     invoke: <K extends keyof Operations>(
       session: Session,

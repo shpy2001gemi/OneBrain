@@ -77,6 +77,14 @@ pub struct PublicShareInspect {
 pub struct PublicShareIntent {
     pub intent_id: String,
 }
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicShareList {
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
 /// ARCH-07: lower one claim from the latest revision of a review-job window.
 /// `reviewed` records the user's explicit review; prepare/preview/save stay
 /// separate explicit steps on the fresh reserved `operation_id`.
@@ -113,6 +121,7 @@ pub enum ManualEditorRequest {
     ShareConfirm(PublicShareConfirm),
     ShareInspect(PublicShareInspect),
     ShareIntent(PublicShareIntent),
+    ShareList(PublicShareList),
 }
 #[derive(Serialize)]
 pub struct ManualSource {
@@ -292,7 +301,8 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::SharePrepare(_)
             | ManualEditorRequest::ShareConfirm(_)
             | ManualEditorRequest::ShareInspect(_)
-            | ManualEditorRequest::ShareIntent(_) => Err(unavailable()),
+            | ManualEditorRequest::ShareIntent(_)
+            | ManualEditorRequest::ShareList(_) => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

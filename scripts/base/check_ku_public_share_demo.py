@@ -387,13 +387,36 @@ class Check:
         # Only a Web receiver has the registered operations API (Saved local knowledge).
         if not isinstance(self.receiver, WebReceiver):
             return
-        code, env = self.receiver.api.operation("get", {"object_cid": prepared["public_object_cid"]})
+        pub_cid = prepared["public_object_cid"]
+        sem_cid = prepared["semantic_content_cid"]
+        code, env = self.receiver.api.operation("get", {"object_cid": pub_cid})
         view = payload(env) if ok(code, env) else {}
         self.check(f"receiver{when}: get serves the accepted KU as PUBLIC, same semantic identity",
                    view.get("disclosure_class") == "PUBLIC"
-                   and view.get("semantic_content_cid") == prepared["semantic_content_cid"]
+                   and view.get("semantic_content_cid") == sem_cid
                    and view.get("executable") is False,
                    f"{code} {view.get('disclosure_class') or error_code(env)}")
+        code, env = self.receiver.api.operation("list", {"limit": 64})
+        items = payload(env).get("items", []) if ok(code, env) else None
+        self.check(f"receiver{when}: private Saved local knowledge list stays separate (0 owned items)",
+                   items == [],
+                   f"{code} count={None if items is None else len(items)}")
+        code, env = self.receiver.api.editor("share_list", {})
+        listed_items = payload(env).get("items", []) if ok(code, env) else []
+        listed = next((item for item in listed_items if item.get("object_cid") == pub_cid), None)
+        self.check(f"receiver{when}: share_list browses the accepted Public KU",
+                   listed is not None
+                   and listed.get("semantic", {}).get("semantic_content_cid") == sem_cid
+                   and listed.get("authorizes_reward") is False,
+                   f"{code} count={len(listed_items)}")
+        stmt = (prepared.get("semantic", {}).get("statements") or [{}])[0]
+        query = (stmt.get("text_arguments") or [stmt.get("predicate_ccid", "")])[0][:64]
+        code, env = self.receiver.api.editor("share_list", {"query": query})
+        hits = payload(env).get("items", []) if ok(code, env) else []
+        found = next((item for item in hits if item.get("object_cid") == pub_cid), None)
+        self.check(f"receiver{when}: share_list filter finds the accepted Public KU",
+                   found is not None,
+                   f"{code} hits={len(hits)}")
 
     def check_received(self, view: dict, prepared: dict, sender: str, when: str) -> None:
         self.check(f"receiver inspect{when}: public_object", view.get("event") == "public_object",

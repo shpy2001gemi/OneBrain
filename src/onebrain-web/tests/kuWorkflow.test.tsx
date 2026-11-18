@@ -84,6 +84,11 @@ function fixture(
       | "invalid_public_identity"
       | "invalid_selector"
       | "invalid_public_ku";
+    shareListFailure?:
+      | "public_store_unavailable"
+      | "invalid_public_query"
+      | "invalid_public_list_limit";
+    shareListEmpty?: boolean;
     includePublicSummary?: boolean;
   } = {},
 ) {
@@ -387,6 +392,45 @@ function fixture(
               authorizes_reward: false,
             };
             break;
+          case "share_list": {
+            if (options.shareListFailure)
+              return shareErrorResponse(options.shareListFailure);
+            const rawQuery = String(body.request.payload?.query ?? "")
+              .trim()
+              .toLowerCase();
+            const candidate = {
+              object_cid: publicObject,
+              semantic: {
+                semantic_content_cid: semantic,
+                statements: [
+                  {
+                    predicate_ccid: ccid,
+                    text_arguments: ["Water is a liquid."],
+                  },
+                ],
+                fidelity: "unassessed",
+              },
+              fidelity: "unassessed",
+              authorizes_reward: false,
+            };
+            const matched =
+              !options.shareListEmpty &&
+              (!rawQuery ||
+                publicObject.includes(rawQuery) ||
+                semantic.includes(rawQuery) ||
+                ccid.includes(rawQuery) ||
+                "water is a liquid.".includes(rawQuery));
+            payload = {
+              event: "public_objects",
+              items: matched ? [candidate] : [],
+              has_more: false,
+              scope:
+                "accepted_public_store_only; not adopted into private Saved local knowledge",
+              fidelity: "unassessed",
+              authorizes_reward: false,
+            };
+            break;
+          }
         }
       } else {
         switch (body.request.operation) {
@@ -2449,5 +2493,89 @@ describe("local KU component journey", () => {
     expect(
       f.calls.filter((c) => c.body?.request?.action === "share_intent"),
     ).toHaveLength(count);
+  });
+
+  it("browses and filters accepted Public KUs, prefills step 4 for provenance inspection, and clears stale browse results", async () => {
+    const options: Parameters<typeof fixture>[0] = { emptyCatalog: true };
+    const f = fixture(options);
+    const { container } = render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    const publicObject = "d".repeat(64),
+      selector = "2".repeat(64);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const card = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    expect(card.textContent).toContain(publicObject);
+    expect(card.textContent).toContain("Water is a liquid.");
+    expect(card.textContent).toContain(
+      "accepted_public_store_only; not adopted into private Saved local knowledge",
+    );
+
+    const result = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(result.violations).toEqual([]);
+
+    // Prefill step 4 and inspect authenticated provenance.
+    fireEvent.click(
+      screen.getByRole("button", { name: `Use ${publicObject} in step 4` }),
+    );
+    expect(
+      (
+        screen.getByLabelText(
+          "Accepted Public ObjectCID (64 lowercase hex)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe(publicObject);
+    fireEvent.change(
+      screen.getByLabelText("Accepted selector CID (64 lowercase hex)"),
+      { target: { value: selector } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect accepted Public KU" }),
+    );
+    await screen.findByRole("article", {
+      name: "Accepted Public KU inspection",
+    });
+
+    // Editing the filter clears the previous browse card; unmatched filter shows empty state.
+    fireEvent.change(
+      screen.getByLabelText(
+        "Filter accepted Public KUs (optional text, Registry label, or CID)",
+      ),
+      { target: { value: "steam" } },
+    );
+    expect(
+      screen.queryByRole("article", {
+        name: "Accepted Public KUs in local public store",
+      }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const emptyCard = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    expect(emptyCard.textContent).toContain(
+      "No accepted Public KUs matched in this host's verified public store.",
+    );
+
+    // Subsequent browse failure clears stale results and exposes SHARE_ERROR_FEEDBACK.
+    options.shareListFailure = "public_store_unavailable";
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    await screen.findByRole("heading", {
+      name: "Local canonical public store is currently unavailable",
+    });
+    expect(
+      screen.queryByRole("article", {
+        name: "Accepted Public KUs in local public store",
+      }),
+    ).toBeNull();
   });
 });

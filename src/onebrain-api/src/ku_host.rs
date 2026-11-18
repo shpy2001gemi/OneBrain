@@ -1122,6 +1122,32 @@ mod tests {
         assert_eq!(accepted["fidelity"], "unassessed");
         assert_eq!(accepted["authorizes_reward"], false);
 
+        // Receiver browses/filters accepted Public KUs through registered POST /api/vnext/ku/editor share_list
+        // (including Registry label lookup), while private Saved local knowledge list stays empty.
+        for share_list_payload in [json!({}), json!({ "query": "water" })] {
+            let (status, list_resp) = http_json(
+                receiver_router.clone(),
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(
+                    &receiver_session,
+                    "share_list",
+                    share_list_payload.clone(),
+                )),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{share_list_payload}: {list_resp}");
+            let listed = &list_resp["data"]["payload"];
+            assert_eq!(listed["event"], "public_objects");
+            assert_eq!(listed["has_more"], false);
+            assert_eq!(listed["authorizes_reward"], false);
+            let items = listed["items"].as_array().unwrap();
+            assert_eq!(items.len(), 1, "{share_list_payload}: {listed}");
+            assert_eq!(items[0]["object_cid"], public_cid_hex);
+            assert_eq!(items[0]["semantic"]["semantic_content_cid"], sem_cid_hex);
+        }
+
         // Receiver also serves the accepted Public KU through registered POST /api/vnext/ku/operations.
         let (status, get_resp) = http_json(
             receiver_router.clone(),

@@ -16,12 +16,15 @@ use onebrain_protocol::ReconcileManifestKind;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
-use crate::ku_product::KuServices;
+use crate::concept_registry_runtime::ConceptRegistryReaderLease;
+use crate::ku_product::{KuPublicReader, KuServices};
 use crate::vnext_network_runtime::VNextNetworkRuntime;
 use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
 
 pub const PUBLIC_CONSEQUENCE: &str = "This new object and its semantic content become Public. The recipient may retain and forward it permanently. The private source and original private object are not included. Provenance is authenticated transport only, not original-source, author or fidelity verification.";
 pub const MAX_PREPARED_PUBLIC_KU_SHARES: usize = 16;
+pub const MAX_PUBLIC_KU_LIST_ITEMS: u32 = 64;
+pub const MAX_PUBLIC_KU_QUERY_BYTES: usize = 256;
 
 /// No Clone/Serialize/Debug: possession of this host-local prepared capability
 /// cannot be fabricated from a response or used twice. Restart discards it.
@@ -459,6 +462,113 @@ pub fn inspect_outbound_intent(
     }))
 }
 
+fn fold_query_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for word in text.split_whitespace() {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.extend(word.chars().flat_map(char::to_lowercase));
+    }
+    out
+}
+
+/// Receiver-side D-045 bounded browse/filter of accepted Public KUs in the
+/// node's verified public store (`vnext_verified.redb`). Separate from private
+/// `Saved local knowledge` (`list`/`search`), because receiving a Public KU is
+/// transport storage, never adoption into owned private knowledge.
+pub fn list_accepted_public_kus(
+    public: &dyn KuPublicReader,
+    registry: Option<&ConceptRegistryReaderLease>,
+    query: Option<&str>,
+    limit: Option<u32>,
+) -> Result<serde_json::Value, &'static str> {
+    let limit = limit.unwrap_or(MAX_PUBLIC_KU_LIST_ITEMS);
+    if limit == 0 || limit > MAX_PUBLIC_KU_LIST_ITEMS {
+        return Err("invalid_public_list_limit");
+    }
+    let query = match query {
+        Some(raw) => {
+            if raw.len() > MAX_PUBLIC_KU_QUERY_BYTES {
+                return Err("invalid_public_query");
+            }
+            let folded = fold_query_text(raw);
+            (!folded.is_empty()).then_some(folded)
+        }
+        None => None,
+    };
+    let mut label_ccids = std::collections::BTreeSet::new();
+    if let (Some(text), Some(reg)) = (query.as_deref(), registry) {
+        if let Ok(resolved) = reg.resolve_checked(text) {
+            use ku_core::concept_registry::ResolveResult;
+            let candidates = match resolved {
+                ResolveResult::Found(c) | ResolveResult::Fuzzy(c) => vec![c],
+                ResolveResult::Ambiguous(values) => values,
+                ResolveResult::NotFound => Vec::new(),
+            };
+            for candidate in candidates.into_iter().take(64) {
+                label_ccids.insert(hex(&candidate.ccid));
+            }
+        }
+    }
+    let records = public
+        .list_public_objects()
+        .map_err(|_| "public_store_unavailable")?;
+    let mut items = Vec::new();
+    let mut has_more = false;
+    for (cid, bytes) in records {
+        if ku_core::foundation::ReservedDomain::Object.digest(&bytes) != cid {
+            continue;
+        }
+        let Ok(semantic) = inspect_public_ku(&bytes) else {
+            continue;
+        };
+        let object_cid = hex(&cid);
+        if let Some(ref folded) = query {
+            let cid_match = object_cid.contains(folded.as_str())
+                || semantic["semantic_content_cid"]
+                    .as_str()
+                    .is_some_and(|s| s.contains(folded.as_str()));
+            let stmt_match = semantic["statements"].as_array().is_some_and(|stmts| {
+                stmts.iter().any(|stmt| {
+                    let pred_match = stmt["predicate_ccid"].as_str().is_some_and(|pred| {
+                        pred.contains(folded.as_str()) || label_ccids.contains(pred)
+                    });
+                    let text_match = stmt["text_arguments"].as_array().is_some_and(|args| {
+                        args.iter().any(|arg| {
+                            arg.as_str()
+                                .is_some_and(|t| fold_query_text(t).contains(folded.as_str()))
+                        })
+                    });
+                    pred_match || text_match
+                })
+            });
+            if !cid_match && !stmt_match {
+                continue;
+            }
+        }
+        if items.len() < limit as usize {
+            items.push(serde_json::json!({
+                "object_cid": object_cid,
+                "semantic": semantic,
+                "fidelity": "unassessed",
+                "authorizes_reward": false
+            }));
+        } else {
+            has_more = true;
+            break;
+        }
+    }
+    Ok(serde_json::json!({
+        "event": "public_objects",
+        "items": items,
+        "has_more": has_more,
+        "scope": "accepted_public_store_only; not adopted into private Saved local knowledge",
+        "fidelity": "unassessed",
+        "authorizes_reward": false
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -659,6 +769,94 @@ mod tests {
         assert_eq!(
             coord.prepared_object_cid(&first_id, true),
             Err("prepared_share_missing")
+        );
+    }
+
+    #[test]
+    fn list_accepted_public_kus_filters_bounds_and_skips_non_ku_records() {
+        use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
+        use ku_core::foundation::{AcceptedRecordEntry, InMemoryVerifiedBackend, StoredRecordKind};
+
+        let sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(
+            InMemoryVerifiedBackend::default(),
+        ));
+        let make_public = |pred: u8, text: &str| {
+            let semantic = SemanticFrameSet {
+                statements: vec![StatementFrame {
+                    statement_id: StatementId(0),
+                    operator_or_predicate: ConceptCcid::from_bytes([pred; 16]),
+                    arguments: vec![TermRef::Literal(LiteralValue::Text(
+                        NormalizedText::new(text).unwrap(),
+                    ))],
+                    constraints: vec![],
+                    qualifiers: StatementQualifiers::default(),
+                }],
+            };
+            let normalized =
+                normalize_semantic_content(&semantic, SEMANTIC_CONTENT_PROFILE).unwrap();
+            normalized
+                .semantic
+                .to_knowledge_object(DisclosureClass::Public)
+                .unwrap()
+                .encode(ResourceProfile::ObjectV1)
+                .unwrap()
+        };
+        let (b1, c1) = make_public(7, "Water is a liquid.");
+        let (b2, c2) = make_public(8, "Ice melts at zero.");
+        let mut opaque_obj = SemanticFrameSet {
+            statements: vec![StatementFrame {
+                statement_id: StatementId(0),
+                operator_or_predicate: ConceptCcid::from_bytes([9; 16]),
+                arguments: vec![],
+                constraints: vec![],
+                qualifiers: StatementQualifiers::default(),
+            }],
+        }
+        .to_knowledge_object(DisclosureClass::Public)
+        .unwrap();
+        opaque_obj.kind = ObjectKind(999);
+        let (b_opaque, c_opaque) = opaque_obj.encode(ResourceProfile::ObjectV1).unwrap();
+        for (cid, bytes) in [(c1, b1), (c2, b2), (c_opaque, b_opaque)] {
+            sink.restore_accepted_record(&AcceptedRecordEntry {
+                record_kind: StoredRecordKind::Object,
+                claimed_cid: cid.into_bytes(),
+                canonical_bytes: bytes,
+            })
+            .unwrap();
+        }
+
+        let all = list_accepted_public_kus(&sink, None, None, None).unwrap();
+        assert_eq!(all["event"], "public_objects");
+        assert_eq!(all["has_more"], false);
+        assert_eq!(all["authorizes_reward"], false);
+        assert_eq!(all["fidelity"], "unassessed");
+        let items = all["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(!all.to_string().contains(&hex(c_opaque.as_bytes())));
+
+        let truncated = list_accepted_public_kus(&sink, None, None, Some(1)).unwrap();
+        assert_eq!(truncated["items"].as_array().unwrap().len(), 1);
+        assert_eq!(truncated["has_more"], true);
+
+        let by_text = list_accepted_public_kus(&sink, None, Some("  LIQUID "), None).unwrap();
+        assert_eq!(by_text["items"].as_array().unwrap().len(), 1);
+        assert_eq!(by_text["items"][0]["object_cid"], hex(c1.as_bytes()));
+
+        let by_pred = list_accepted_public_kus(&sink, None, Some(&"08".repeat(16)), None).unwrap();
+        assert_eq!(by_pred["items"].as_array().unwrap().len(), 1);
+        assert_eq!(by_pred["items"][0]["object_cid"], hex(c2.as_bytes()));
+
+        assert_eq!(
+            list_accepted_public_kus(&sink, None, None, Some(0)),
+            Err("invalid_public_list_limit")
+        );
+        assert_eq!(
+            list_accepted_public_kus(&sink, None, None, Some(65)),
+            Err("invalid_public_list_limit")
+        );
+        assert_eq!(
+            list_accepted_public_kus(&sink, None, Some(&"x".repeat(257)), None),
+            Err("invalid_public_query")
         );
     }
 }

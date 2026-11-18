@@ -229,6 +229,23 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
     recovery:
       "Correct the host's system clock to current UTC time, then retry Prepare public share preview or Confirm public share.",
   },
+  invalid_public_query: {
+    title: "Public KU filter exceeds the 256-byte query bound",
+    explanation:
+      "The host rejected browsing accepted Public KUs because the filter string exceeds 256 UTF-8 bytes.",
+    context:
+      "Browsing accepted Public KUs reads only the local verified public store (vnext_verified.redb) and never modifies private Vault artifacts or pending Base operations.",
+    recovery:
+      "Enter at most 256 UTF-8 bytes (a text phrase, Registry concept label, or CID/CCID prefix), or leave the filter empty to list accepted Public KUs.",
+  },
+  invalid_public_list_limit: {
+    title: "Public KU browse limit is outside 1..64",
+    explanation:
+      "The host rejected browsing accepted Public KUs because the requested item limit is 0 or exceeds 64.",
+    context:
+      "Browsing accepted Public KUs is a bounded local read and does not modify private Vault artifacts or pending Base operations.",
+    recovery: "Retry Browse accepted Public KUs with a limit between 1 and 64.",
+  },
 };
 
 export function describeKuError(error: unknown) {

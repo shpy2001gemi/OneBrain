@@ -13,6 +13,9 @@ use crate::base_runtime::BaseServiceError;
 /// Read-only view of the already owned public acceptance store.
 pub trait KuPublicReader: Send + Sync {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError>;
+    fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
+        Ok(Vec::new())
+    }
     fn bind_canonical_path(&self, _path: std::path::PathBuf) {}
     fn set_live_reader(&self, _reader: Option<Arc<dyn KuPublicReader>>) {}
     #[cfg(feature = "vnext-network-runtime")]
@@ -180,6 +183,35 @@ impl KuPublicReader for CanonicalPublicReader {
         Ok(None)
     }
 
+    fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
+        let mut merged: BTreeMap<[u8; 32], Vec<u8>> = BTreeMap::new();
+        if let Some(live) = self.live.lock().map_err(|_| corrupt())?.clone() {
+            for (cid, bytes) in live.list_public_objects()? {
+                merged.entry(cid).or_insert(bytes);
+            }
+        }
+        let paths = self.paths.lock().map_err(|_| corrupt())?.clone();
+        for path in paths {
+            if let Some(live) = lookup_live_public_reader(&path) {
+                for (cid, bytes) in live.list_public_objects()? {
+                    merged.entry(cid).or_insert(bytes);
+                }
+                continue;
+            }
+            if !path.is_file() {
+                continue;
+            }
+            let backend = RedbVerifiedBackend::open(&path).map_err(|_| corrupt())?;
+            let sink = crate::vnext_validated_sink::SharedVNextValidatedSink::new(
+                crate::vnext_validated_sink::VNextValidatedSink::new(backend),
+            );
+            for (cid, bytes) in sink.list_public_objects()? {
+                merged.entry(cid).or_insert(bytes);
+            }
+        }
+        Ok(merged.into_iter().collect())
+    }
+
     fn bind_canonical_path(&self, path: std::path::PathBuf) {
         if let Ok(mut paths) = self.paths.lock() {
             if !paths.contains(&path) {
@@ -222,6 +254,15 @@ impl<B: ku_core::foundation::AtomicVerifiedBackend + Send> KuPublicReader
         self.get_object(ObjectCid::from_bytes(cid))
             .map_err(|_| corrupt())
     }
+
+    fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
+        Ok(self
+            .accepted_objects()
+            .map_err(|_| corrupt())?
+            .into_iter()
+            .map(|entry| (entry.claimed_cid, entry.canonical_bytes))
+            .collect())
+    }
 }
 
 #[cfg(feature = "vnext-network-runtime")]
@@ -229,5 +270,9 @@ impl KuPublicReader for crate::vnext_network_runtime::VNextNetworkRuntime {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError> {
         self.public_object(ObjectCid::from_bytes(cid))
             .map_err(|_| corrupt())
+    }
+
+    fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
+        self.public_objects().map_err(|_| corrupt())
     }
 }

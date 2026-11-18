@@ -17,6 +17,7 @@ import type {
   PublicSharePrepared,
   PublicShareConfirmed,
   PublicShareIntentView,
+  PublicShareListView,
   PublicShareObjectView,
 } from "../api/ku";
 import "./kuWorkflow.css";
@@ -96,6 +97,8 @@ export function KuWorkflowPage({
   const [shareInspectSelector, setShareInspectSelector] = useState("");
   const [shareInspectView, setShareInspectView] =
     useState<PublicShareObjectView>();
+  const [shareListQuery, setShareListQuery] = useState("");
+  const [shareListView, setShareListView] = useState<PublicShareListView>();
   const [error, setError] = useState<ReturnType<typeof describeError>>();
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
@@ -1244,6 +1247,88 @@ export function KuWorkflowPage({
                     ? `Automatic re-check stopped after ${shareIntentAutoCheck.done} of ${recheckLimit} checks because a status request failed. Click Inspect share intent to check again and see the error.`
                     : `Checking this intent again automatically every ${recheckIntervalMs / 1000} s while this page stays open: ${shareIntentAutoCheck.done} of ${recheckLimit} checks done. It stops at a terminal state, after ${recheckLimit} checks, or when you change the intent ID or leave the page. This only reads status; nothing is resent.`}
               </p>
+            )}
+          </article>
+        )}
+        <fieldset disabled={busy || !session}>
+          <legend>
+            Browse accepted Public KUs (receiver local public store)
+          </legend>
+          <label htmlFor="ku-share-list-query">
+            Filter accepted Public KUs (optional text, Registry label, or CID)
+          </label>
+          <input
+            id="ku-share-list-query"
+            className="input"
+            value={shareListQuery}
+            maxLength={256}
+            onChange={(e) => {
+              setShareListQuery(e.target.value);
+              setShareListView(undefined);
+            }}
+          />
+          <button
+            className="btn"
+            onClick={() =>
+              void run(async () => {
+                setShareListView(undefined);
+                const current = await refresh();
+                const trimmed = shareListQuery.trim();
+                const result = await client.shareList(
+                  current,
+                  trimmed ? { query: trimmed } : {},
+                );
+                setShareListView(result.data.payload);
+                setMetadata(result.meta);
+              })
+            }
+          >
+            Browse accepted Public KUs
+          </button>
+        </fieldset>
+        {shareListView && (
+          <article aria-label="Accepted Public KUs in local public store">
+            <h3>Accepted Public KUs in local public store</h3>
+            <p>
+              Scope: {shareListView.scope} · Fidelity:{" "}
+              <strong>{shareListView.fidelity}</strong> · Reward authorized:{" "}
+              {String(shareListView.authorizes_reward)}
+              {shareListView.has_more ? " · Showing first 64 matches" : ""}
+            </p>
+            {shareListView.items.length === 0 ? (
+              <p>
+                No accepted Public KUs matched in this host&apos;s verified
+                public store.
+              </p>
+            ) : (
+              <ul className="ku-results">
+                {shareListView.items.map((item) => (
+                  <li key={item.object_cid}>
+                    <p className="ku-id">
+                      Public ObjectCID: {item.object_cid}
+                      <br />
+                      SemanticContentCID:{" "}
+                      {item.semantic.semantic_content_cid}
+                    </p>
+                    {item.semantic.statements.map((stmt, idx) => (
+                      <p key={idx} className="ku-id">
+                        Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                        {stmt.text_arguments.filter(Boolean).join(", ")}
+                      </p>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setShareInspectCid(item.object_cid);
+                        setShareInspectView(undefined);
+                      }}
+                    >
+                      Use {item.object_cid} in step 4
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </article>
         )}

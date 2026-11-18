@@ -71,6 +71,17 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .map_err(|error| error.to_string())
     }
 
+    pub fn accepted_objects(
+        &self,
+    ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .accepted_entries(ku_core::foundation::StoredRecordKind::Object)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn accepted_record_snapshot(
         &self,
     ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {

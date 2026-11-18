@@ -6,7 +6,64 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — repeatable check with a second `ku_local_web` receiver (2026-11-18)
+## Latest follow-up — receiver browse and filter of accepted Public KUs (`share_list`) on `/ku` Web (2026-11-18)
+
+Agent pick (h) on 2026-11-18 at the owner's request, closing the receiver UX gap
+found in (d) below while preserving the private/public adoption boundary tested
+in `ku_host::tests` (`Saved local knowledge` `list`/`search` stays strictly
+scoped to the principal's private owned store, `private_owned_store_only`).
+
+- Rust ([public_reader.rs](../../../../src/onebrain-node/src/ku_product/public_reader.rs),
+  [vnext_validated_sink.rs](../../../../src/onebrain-node/src/vnext_validated_sink.rs),
+  [vnext_network_runtime.rs](../../../../src/onebrain-node/src/vnext_network_runtime.rs),
+  [ku_manual.rs](../../../../src/onebrain-node/src/ku_manual.rs),
+  [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs),
+  [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs)):
+  `KuPublicReader::list_public_objects` enumerates accepted `DisclosureClass::Public`
+  objects in deterministic CID order from either the live `VNextNetworkRuntime`
+  or the committed on-disk `vnext_verified.redb` (without opening a second redb
+  handle while a live runtime owns the store or creating the file when absent).
+  `POST /api/vnext/ku/editor` adds `share_list` (`{query?, limit?}`, `limit`
+  `1..=64` default 64, `query` up to 256 UTF-8 bytes matching folded literal
+  text, active Concept Registry resolved candidate CCIDs, or CID/CCID hex),
+  returning `{event: "public_objects", items, has_more, scope:
+  "accepted_public_store_only; not adopted into private Saved local knowledge",
+  fidelity: "unassessed", authorizes_reward: false}`. Non-KU and opaque records
+  in `vnext_verified.redb` are skipped cleanly.
+- Web ([ku.ts](../../../../src/onebrain-web/src/api/ku.ts),
+  [kuFeedback.ts](../../../../src/onebrain-web/src/pages/kuFeedback.ts),
+  [KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx)):
+  `createKuClient.shareList`, `SHARE_ERROR_FEEDBACK` entries for
+  `invalid_public_query` / `invalid_public_list_limit`, and a `Browse accepted
+  Public KUs (receiver local public store)` fieldset above step 4 that lists/filters
+  accepted Public KUs (showing statement text, CCID, CIDs, and explicit
+  non-adoption scope) with a one-click `Use <cid> in step 4` button that
+  prefills `Accepted Public ObjectCID` for transport provenance inspection.
+- Checks: `cargo test -p onebrain-node --lib --features vnext-network-runtime
+  ku_public_share` 6/6; `cargo test -p onebrain-api --lib --features
+  vnext-network-runtime ku_host` 3/3 (including HTTP `share_list` unfiltered +
+  `"water"` filter while receiver private `list` stays empty); `cargo check -p
+  onebrain-node --lib` PASS; `npm run test:ku` 140/140 (10 files, new browse/filter/
+  prefill/cleanup/axe test), `npm run build`, `npm run lint` (0 errors) PASS.
+- Live (Windows, fresh `Documents/OneBrainLocal/peer-mvp-20261118/browse/`
+  outside Git, sender port 4397, receiver port 4398):
+  [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  `--receiver-kind web` **36/36** (verifies private `list` = 0 items, `share_list`
+  unfiltered + filtered = 1 item before and after restart, `get` = `PUBLIC`,
+  `share_inspect` authenticated sender provenance, re-confirm `RouteUpdated`);
+  peer-mode regression **28/28**; browser agent on receiver `:4398/ku` (throwaway
+  token deleted after run): `Saved local knowledge` 0 items → `Browse accepted
+  Public KUs` shows `32f3b411…9161` + `MVP demo 2026-09-30: Water is a liquid.`
+  without typing any CID → filter `"water"` clears stale card then returns the
+  same item → `Use … in step 4` prefills step 4 → selector 64×`2` shows
+  authenticated sender `4ea81249…8061`. Original dataset SHA-256 (247 files)
+  unchanged.
+
+Not covered: explicit adoption of a received Public KU into private owned
+knowledge, Ollama and D-045 share on `onebrain start --api`, `vite preview`
+opt-out, non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — repeatable check with a second `ku_local_web` receiver (2026-11-18)
 
 Owner chose (d) on 2026-11-18.
 
@@ -1291,9 +1348,10 @@ the API on the origin that served the page (see the
 To make the receiver a second `/ku` Web host, write a second `ku_local_web`
 config (fresh `data_dir`, its own Vault key and port, same Registry, opt-in
 `"network"` block, `sources` may be omitted) and add `--receiver-kind web`. The
-helper then inspects the receiver through `share_inspect` and `get` (`PUBLIC`),
-the same calls as fieldset `4. Inspect accepted Public KU` on the receiver's
-`/ku` page, which you can open on the receiver's port afterwards. A
+helper then inspects the receiver through `share_list`, `share_inspect`, `get`
+(`PUBLIC`), and private `list` isolation (0 owned items), the same calls as
+`Browse accepted Public KUs` and fieldset `4. Inspect accepted Public KU` on the
+receiver's `/ku` page, which you can open on the receiver's port afterwards. A
 `ku_peer_demo` config must be UTF-8 without a BOM (Windows PowerShell 5
 `Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
 

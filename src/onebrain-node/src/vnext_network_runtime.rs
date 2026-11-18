@@ -881,6 +881,35 @@ impl VNextNetworkRuntime {
         Ok(Some(bytes))
     }
 
+    /// Deterministic CID-ordered scan of accepted `DisclosureClass::Public`
+    /// objects through the existing acceptance owner (D-045 demo).
+    pub fn public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, VNextNetworkRuntimeError> {
+        let entries = self
+            .validated_sink
+            .accepted_objects()
+            .map_err(VNextNetworkRuntimeError::Storage)?;
+        let mut out = Vec::new();
+        for entry in entries {
+            let Ok(object) = ku_core::foundation::decode_knowledge_object(
+                &entry.canonical_bytes,
+                ku_core::foundation::ResourceProfile::ObjectV1,
+                &[ku_core::foundation::KnownObjectKind::new(
+                    ku_core::foundation::ObjectKind(2),
+                    1,
+                )],
+                &[],
+            ) else {
+                continue;
+            };
+            if object.cid().into_bytes() == entry.claimed_cid
+                && object.disclosure() == ku_core::foundation::DisclosureClass::Public
+            {
+                out.push((entry.claimed_cid, entry.canonical_bytes));
+            }
+        }
+        Ok(out)
+    }
+
     /// P5 and platform adapters may share the already-bound OBP endpoint with
     /// authenticated relay control so the relay-observed NAT mapping belongs
     /// to the same direct listener. No private key or route authority crosses

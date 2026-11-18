@@ -310,7 +310,9 @@ fn public_share_error(code: &'static str) -> BaseServiceError {
         | "invalid_selector"
         | "invalid_namespace"
         | "invalid_public_identity"
-        | "invalid_intent_identity" => BaseErrorCodeV1::InvalidRequest,
+        | "invalid_intent_identity"
+        | "invalid_public_query"
+        | "invalid_public_list_limit" => BaseErrorCodeV1::InvalidRequest,
         "prepared_share_missing"
         | "saved_ku_not_accessible"
         | "public_object_not_found"
@@ -478,11 +480,50 @@ impl KuStore {
                 }
                 return Ok(Resp::PublicShare(status));
             }
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::ShareList(input) => {
+                let public = self
+                    .public
+                    .as_ref()
+                    .ok_or_else(|| public_share_error("public_store_unavailable"))?;
+                let lease = if input.query.as_deref().is_some_and(|q| !q.trim().is_empty()) {
+                    self.registry.as_ref().map(|r| r.reader_lease())
+                } else {
+                    None
+                };
+                if let Some(raw_limit) = input.limit {
+                    if raw_limit == 0
+                        || raw_limit > crate::ku_public_share::MAX_PUBLIC_KU_LIST_ITEMS
+                    {
+                        return Err(public_share_error("invalid_public_list_limit"));
+                    }
+                }
+                let limit = Some(
+                    input
+                        .limit
+                        .unwrap_or(crate::ku_public_share::MAX_PUBLIC_KU_LIST_ITEMS)
+                        .min(budget.max_items),
+                );
+                let listed = crate::ku_public_share::list_accepted_public_kus(
+                    public.as_ref(),
+                    lease.as_ref(),
+                    input.query.as_deref(),
+                    limit,
+                )
+                .map_err(public_share_error)?;
+                if serde_json::to_vec(&listed).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(listed));
+            }
             #[cfg(not(feature = "vnext-network-runtime"))]
             Req::SharePrepare(_)
             | Req::ShareConfirm(_)
             | Req::ShareInspect(_)
-            | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
+            | Req::ShareIntent(_)
+            | Req::ShareList(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
             other => return self.inputs.editor(principal, other, budget),
         };

@@ -30,6 +30,7 @@ a closed tagged union using `action` and `payload`:
 | share_confirm | `{prepared_id,confirm_public}` | `{event:"share_confirmed",intent_id,public_object_cid,outbox,delivery,authorizes_reward:false}` |
 | share_intent | `{intent_id}` | `{event:"intent",intent_id,public_object_cid,state,terminal_sequence,claims_network_completion:false}` |
 | share_inspect | `{object_cid,selector}` | `{event:"public_object",object_cid,canonical_base64,semantic,authenticated_source_peers,provenance,fidelity:"unassessed",authorizes_reward:false}` |
+| share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
 
 Catalog returns only the authenticated principal's host-admitted sources (at most
 64, labels at most 128 UTF-8 bytes). Resolve accepts at most 256 UTF-8 bytes and
@@ -95,7 +96,7 @@ readable with their original profile and state.
 
 Under D-045 (`INT-KU-OBP-001`), the same authenticated `POST /api/vnext/ku/editor`
 envelope projects explicit Public KU sharing (`share_prepare`, `share_confirm`,
-`share_intent`, `share_inspect`) without adding unregistered HTTP routes or enabling
+`share_intent`, `share_inspect`, `share_list`) without adding unregistered HTTP routes or enabling
 networking by default. `share_prepare` constructs a new `DisclosureClass::Public`
 manual kernel (one resolved predicate + one text literal, same `SemanticContentCID`,
 new `public_object_cid`) in a bounded in-memory coordinator (max 16 prepared items,
@@ -115,6 +116,10 @@ without treating acknowledgement as adoption, Use, verification or reward, and
 re-reads only an exact `Pending` view a bounded number of times, read-only), and
 `share_inspect` inspects an accepted Public KU and its authenticated transport/selector
 provenance (`fidelity: "unassessed"`, `authorizes_reward: false`) on the receiver;
+`share_list` browses and filters accepted Public KUs in the host's verified public store
+(`limit` 1..64 default 64, optional `query` up to 256 UTF-8 bytes matching folded literal
+text, Registry concept labels, or CID/CCID hex) while keeping private `Saved local knowledge`
+(`list`/`search`) scoped to owned private artifacts only (`not adopted into private Saved local knowledge`);
 accepted Public KUs are also readable through registered `POST /api/vnext/ku/operations`
 `get` and `export` (`mode: "canonical_public_exchange"`). The `/ku` Web client
 (`createKuClient`) and workspace (`KuWorkflowPage`) project these four actions
