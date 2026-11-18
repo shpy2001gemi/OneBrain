@@ -6,7 +6,62 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — CLI `--api-token-file`, redacted token banner & CLI+Ollama D-045 verification (2026-11-19)
+## Latest follow-up — client CLI `--api-token-file` & Desktop `/ku` editor parity (2026-11-19)
+
+Owner selected sequential execution of (q) → (r1) on 2026-11-19:
+
+- **(q) Shared `--api-token-file <PATH>` on client CLI subcommands (`448074f`):**
+  - Extracted shared `resolve_client_api_token` / `resolve_client_api_token_with_env`
+    and `load_api_token_file` in [main.rs](../../../../src/onebrain-cli/src/main.rs)
+    and wired `--api-token-file <PATH>` (`global = true`, conflicts with `--api-token`
+    at both same-level clap parse and split parent/subcommand argv, overrides
+    `ONEBRAIN_API_TOKEN`, fails closed with `api_token_unreadable` /
+    `api_token_too_large` / `api_token_invalid` without falling back to the
+    environment or leaking private paths/bytes) across `onebrain ku`
+    ([ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs)), `onebrain obp`
+    ([obp.rs](../../../../src/onebrain-cli/src/cli/obp.rs)), and
+    `onebrain need` / `pomv` / `vnext`
+    ([vnext.rs](../../../../src/onebrain-cli/src/cli/vnext.rs)). Updated
+    [SETUP_GUIDE.md](../../../SETUP_GUIDE.md) §4.1 and §7.2.
+  - Checks: `onebrain-cli` 50/50 + 51/51 (`vnext-network-runtime`) + 60/60
+    (`vnext-outbound-first`), `--no-default-features` check, `rustfmt --check`
+    on touched files, live CLI smoke (missing-file refusal without leaking canary,
+    split-level conflict refusal, live `onebrain vnext status --api-token-file`
+    overriding `ONEBRAIN_API_TOKEN` against loopback `onebrain start --api`).
+- **(r1) Offline `share_list` without `vnext-network-runtime` & Desktop `/ku` editor parity (`9f8bc2b`):**
+  - Found that stock `onebrain-desktop` (`default = []`, without
+    `vnext-network-runtime`) already served `get`, `export`
+    (`canonical_public_exchange`), `workspace_summary` and `saved_semantic` over
+    `CanonicalPublicReader`, while `share_list` (`Browse accepted Public KUs`)
+    returned `503 capability_disabled` (`ku_public_share_network_unavailable`)
+    only because pure local `list_accepted_public_kus` / `inspect_public_ku`
+    lived in feature-gated `ku_public_share`.
+  - Moved `inspect_public_ku` and `list_accepted_public_kus` to
+    [public_reader.rs](../../../../src/onebrain-node/src/ku_product/public_reader.rs)
+    (re-exported in [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs))
+    and enabled `Req::ShareList` unconditionally in
+    [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs) (keeping
+    `annotate_accepted_selectors` when a live `VNextNetworkRuntime` is active),
+    synchronizing [KU_LOCAL_EDITOR_PROFILE_V1.md](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md).
+  - Locked Desktop parity in
+    [lifecycle.rs](../../../../src/onebrain-desktop/tests/lifecycle.rs) and
+    [ku_host.rs](../../../../src/onebrain-api/src/ku_host.rs) across stock
+    local-only Desktop (including `Origin: tauri://localhost` CORS and restart)
+    and opt-in `VNextProductRuntime` Desktop (sender/receiver `workspace_summary`,
+    `saved_semantic`, `share_list` with `accepted_selectors`, `VNextRuntimeLane::Network`
+    kill/reenable, and local-only receiver restart): `onebrain-desktop --test lifecycle`
+    **9/9** + **10/10** (`vnext-network-runtime`) + **12/12**
+    (`vnext-outbound-first`), `ku_public_share` **6/6**, `ku_host` **1/1** +
+    **3/3** (`vnext-network-runtime`), `onebrain-node --no-default-features`,
+    `check_node_layering.py`, `validate_ku_product_contract.py` and
+    `validate_vnext_contracts.py` PASS.
+
+Not covered: `/ku` share combined with vNext product lanes on CLI, creating a
+new manual private draft prefilled from an accepted Public KU on `/ku` Web
+(needs explicit owner boundary decision), `KU-SEM-001` semantic defects,
+non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — CLI `--api-token-file`, redacted token banner & CLI+Ollama D-045 verification (2026-11-19)
 
 Owner selected sequential execution of (n) → (o) on 2026-11-18/19:
 
@@ -1995,6 +2050,22 @@ Broader provisioning/composition remains open.
   or unmount), 2026-11-09. Commit/push `164d973` under D-050; `npm run test:ku`
   124/124 (`kuWorkflow.test.tsx` 42/42), `npm run build`, `npm run lint`, vNext
   validator and whitespace PASS.
+
+- [x] Add shared `--api-token-file <PATH>` across client CLI commands
+  (`onebrain ku`/`obp`/`need`/`pomv`/`vnext`; conflicts with `--api-token`
+  including split parent/subcommand argv, overrides `ONEBRAIN_API_TOKEN`,
+  redacted file/bound errors), 2026-11-19. Commit/push `448074f` under D-050;
+  `onebrain-cli` 50/50 + 51/51 (`vnext-network-runtime`) + 60/60
+  (`vnext-outbound-first`), `--no-default-features`, rustfmt, live smoke PASS.
+
+- [x] Unlock offline `share_list` without `vnext-network-runtime` and lock
+  `onebrain-desktop` `/ku` editor parity (`workspace_summary`, `saved_semantic`,
+  `share_list`) across stock local-only Desktop (+Tauri CORS/restart) and opt-in
+  `VNextProductRuntime` (+`Network` lane kill/reenable + local-only restart),
+  2026-11-19. Commit/push `9f8bc2b` under D-050; `onebrain-desktop --test lifecycle`
+  9/9 + 10/10 (`vnext-network-runtime`) + 12/12 (`vnext-outbound-first`),
+  `ku_public_share` 6/6, `ku_host` 1/1 + 3/3 feature, node `--no-default-features`,
+  layering and KU/vNext validators PASS.
 
 Preserve Registry trust and private source/key custody. Saved-artifact inspect
 state synchronization with the D-045 section (`shareConfirmed` cleanup and
