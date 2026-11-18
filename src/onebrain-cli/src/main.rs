@@ -426,6 +426,9 @@ async fn main() {
                 None
             };
             match network_start {
+                None if ku_network_bind.is_some() => println!(
+                    "  Node networking: off (no vNext lane requested; legacy TCP listener disabled); /ku opt-in loopback OBP-RP starts below"
+                ),
                 None => println!(
                     "  Networking: off (no vNext lane requested; legacy TCP listener disabled)"
                 ),

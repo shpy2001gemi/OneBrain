@@ -6,7 +6,47 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — opt-in loopback network for `/ku` on `onebrain start --api` (2026-11-18)
+## Latest follow-up — browser click-through of `/ku` on the CLI host with `--ku-network-bind` (2026-11-18)
+
+Owner chose (k) on 2026-11-18: click the D-045 flow in a real browser with
+`onebrain start --api --ku-network-bind` as the sender, closing the "browser on
+the CLI host" gap of (i) below. Demo check plus one startup-label fix; no
+runtime, route or Web change.
+
+- Setup (Windows, `Documents/OneBrainLocal/peer-mvp-20261118/cli-browser/` outside
+  Git): sender = `onebrain start --api` (port 4431) on a fresh copy of the
+  dataset with `--ku-network-bind 127.0.0.1:0` and the rebuilt `dist`; receiver =
+  fresh `ku_local_web` (port 4432, new random Vault key, opt-in `"network"`). One
+  throwaway loopback API token for both, deleted after the run.
+- Browser agent, sender `:4431/ku`: token gate → `Host: active · Registry: ready`
+  → `Saved local knowledge` 1 item → inspect → prepare with the receiver NodeID/
+  address/selector 64×`2`/namespace 64×`3` (preview: predicate + `MVP demo
+  2026-09-30: Water is a liquid.`, Public CID `32f3b411…9161`, `Enqueued: false ·
+  Payload sent: false`, public/permanent text) → explicit confirm → `Outbox:
+  Added` → `Inspect share intent` = `Acknowledged`, `Claims network completion:
+  false`. Receiver `:4432/ku`: `Saved local knowledge` 0 items → `Browse accepted
+  Public KUs` lists `32f3b411…9161` (also with filter `"water"`) → `Use … in step 4`
+  → inspect shows `Authenticated source peers: a356f7c5…d7c7` (the CLI sender
+  NodeID), `Fidelity: unassessed · Reward authorized: false`. No API/console errors.
+- Restart both hosts on the same dirs: same NodeIDs; receiver `share_list` still
+  returns 1 item with the non-adoption scope. Original dataset SHA-256 (247
+  files) unchanged.
+- Fix in [main.rs](../../../../src/onebrain-cli/src/main.rs): with
+  `--ku-network-bind` the startup banner no longer says `Networking: off` without
+  qualification; it prints `Node networking: off (…); /ku opt-in loopback OBP-RP
+  starts below` (seen live on restart). CLI 46/46 + 47/47 feature, fmt PASS.
+
+UX findings (not fixed, candidates for later MVP items): `Saved local knowledge`
+cards and `Inspect saved artifact` show only CIDs/base64, not the statement text;
+the section-2 `Public share intent recorded` card keeps `Delivery: pending;
+inspect intent for acknowledgement` after section 3 shows `Acknowledged`;
+`Use … in step 4` fills the CID but not the selector; header badges show `0 KUs ·
+0 peers` on `/ku` hosts; the two draft sections at the top are Vietnamese while
+the rest of `/ku` is English; `onebrain start --api` prints the API token on
+stdout (existing behavior). Not covered: Ollama on the CLI host, vNext lanes with
+`/ku` share, non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — opt-in loopback network for `/ku` on `onebrain start --api` (2026-11-18)
 
 Owner chose (i) on 2026-11-18. Closes the CLI-host gap left by (f) below, where
 D-045 share on `onebrain start --api` was refused with
