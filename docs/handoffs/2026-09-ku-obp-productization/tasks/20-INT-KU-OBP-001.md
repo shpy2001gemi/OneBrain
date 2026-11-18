@@ -6,7 +6,55 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — local two-node rerun on current main and repeatable check (2026-11-18)
+## Latest follow-up — D-045 demo through the real `/ku` Web buttons (2026-11-18)
+
+Owner chose option (a) on 2026-11-18 after the helper rerun below: drive the
+same local two-node topology through the real `/ku` page instead of the API.
+
+- Topology: fresh copy of the local dataset as sender `data_dir`
+  (`ku_local_web --features vnext-network-runtime`, opt-in loopback
+  `"network"` block, model-free config) + fresh isolated `ku_peer_demo`
+  receiver; `src/onebrain-web` rebuilt with `npm run build` on main `b6dd326`.
+  A browser agent clicked the page; the owner typed the API token into the
+  AuthGate himself (the agent never read or typed it). Receiver inspection used
+  its stdin `inspect` command, because a `ku_peer_demo` receiver has no Web.
+- Path on the page: `Saved local knowledge` search `water` → inspect the saved
+  `Private / LOCAL_ONLY` KU (`MVP demo 2026-09-30: Water is a liquid.`) →
+  `1. Prepare a Public KU share preview` (recipient NodeID, loopback address,
+  selector 64×`2`, namespace 64×`3`) → preview shows Public CID
+  `32f3b411…9161` (same as 2026-10-01 and the helper rerun), `Enqueued: false ·
+  Payload sent: false` and the Public/permanent consequence → `Confirm public
+  share` is disabled until `confirm_public` is ticked → confirm gives
+  `Outbox: Added`, `Reward authorized: false` → `3. Inspect outbound share
+  intent` shows `Acknowledged` (terminal sequence 1, `claims_network_completion:
+  false`) with the transport-receipt-only explanation.
+- Receiver: `event=public_object`, same Public CID, canonical bytes and
+  SemanticContentCID `03479711…54ac`, the sender NodeID in
+  `authenticated_source_peers`, `fidelity=unassessed`, `authorizes_reward=false`.
+- Restart of both processes (same data dirs, same NodeIDs, new receiver
+  address): receiver still returns the same Public object; on the reloaded page
+  the intent is still `Acknowledged`, the saved KU is still `Private /
+  LOCAL_ONLY`, and a fresh prepare/confirm to the new address reuses the same
+  intent with `Outbox: RouteUpdated`. Original dataset SHA-256 (247 files)
+  unchanged; run dir `Documents/OneBrainLocal/peer-mvp-20261118/web/` outside Git.
+
+Found during the run (not fixed, no runtime/Web code changed):
+
+- The built Web calls `VITE_API_BASE` from `src/onebrain-web/.env`
+  (`http://127.0.0.1:4280`), not the origin that served the page. A
+  `ku_local_web` host on any other port serves `/ku` but the AuthGate reports
+  `Cannot connect. Check token and ensure the node is running.` even with the
+  right token. Run the Web demo with the sender on port 4280 (or rebuild with a
+  matching `VITE_API_BASE`). The helper above talks to the API directly and is
+  not affected.
+- After `RouteUpdated` for an intent that is already `Acknowledged`, the
+  confirm card still says `Delivery: pending; inspect intent for
+  acknowledgement`; `Inspect share intent` shows the real state.
+
+Not covered: a second `ku_local_web` receiver with fieldset `4. Inspect accepted
+Public KU`, non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — local two-node rerun on current main and repeatable check (2026-11-18)
 
 Owner chose this MVP item on 2026-11-18 (after ARCH-13): rerun the D-045
 contributor demo on the local Windows machine; no VPS. The last live run was the
@@ -1081,7 +1129,10 @@ topology check, then run
 `python scripts/base/check_ku_public_share_demo.py --sender-config <sender.json> --receiver-config <right.json>`.
 It runs prepare → confirm → `Acknowledged` → receiver inspect → restart/retry
 and prints PASS/FAIL per step plus `SUMMARY n/n passed` (exit 0 only if all pass).
-Stop any host already using the sender's port first.
+Stop any host already using the sender's port first. To click the same flow in
+`/ku` Web instead, run the sender on port 4280: the built Web calls
+`VITE_API_BASE` from `src/onebrain-web/.env`, not the serving origin (see the
+[Web-button run](#latest-follow-up--d-045-demo-through-the-real-ku-web-buttons-2026-11-18)).
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API
