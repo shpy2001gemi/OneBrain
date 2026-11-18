@@ -1752,14 +1752,9 @@ async fn create_base_archive_bytes(
     state: &AppState,
     password: Vec<u8>,
 ) -> Result<Vec<u8>, onebrain_node::BaseServiceError> {
-    use onebrain_base_contract::{
-        ArchiveCapabilityHandleV1, ArchiveCredentialKindV1, ArchiveSinkBeginV1,
-        ArchiveSinkHandleV1, ArchiveSinkReadV1, BaseCommandV1, BaseConfirmRequestV1,
-        BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseOperationKindV1,
-        BasePrepareRequestV1, BaseRequestV1, BoundedSecretIngressV1, CreateArchiveCommandV1,
-        ResourceBudgetV1,
-    };
-    use onebrain_node::{BaseManagementResponseV1, BaseManagementScope, BaseResponseV1};
+    use onebrain_base_contract::BaseErrorCodeV1;
+    use onebrain_node::base_archive_file::{create_base_archive, BoundedVecSink};
+    use onebrain_node::BaseManagementScope;
 
     let services = state.base_services().await.ok_or_else(|| {
         onebrain_node::BaseServiceError::new(
@@ -1774,161 +1769,23 @@ async fn create_base_archive_bytes(
         ])
         .await?;
     let management = state.base_management(management_id).await?;
-    let operation = async {
-        let reservation = match services
-            .invoke(BaseRequestV1::ReserveOperation(
-                BaseOperationKindV1::CreateArchive,
-            ))
-            .await?
-        {
-            BaseResponseV1::Reserved(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_reserve_response",
-                ))
-            }
-        };
-        let sink = match management
-            .invoke(BaseManagementRequestV1::ArchiveSinkBegin(
-                ArchiveSinkBeginV1 {
-                    reservation_id: reservation,
-                    max_total_bytes: BASE_ARCHIVE_PROJECTION_MAX_BYTES,
-                },
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::ArchiveSink(value) => value,
-            _ => return Err(base_projection_internal("unexpected_archive_sink_response")),
-        };
-        let sink_id = *sink.as_bytes();
-        let secret = match management
-            .invoke(BaseManagementRequestV1::ArchiveSecretRegister(
-                BoundedSecretIngressV1::try_new(ArchiveCredentialKindV1::Password, password)
-                    .map_err(|_| {
-                        onebrain_node::BaseServiceError::new(
-                            BaseErrorCodeV1::InvalidRequest,
-                            "invalid_archive_secret",
-                        )
-                    })?,
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::ArchiveSecret(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_secret_response",
-                ))
-            }
-        };
-        let prepared = match services
-            .invoke(BaseRequestV1::Prepare(BasePrepareRequestV1 {
-                reservation_id: reservation,
-                command: BaseCommandV1::CreateArchive(CreateArchiveCommandV1 {
-                    sink: ArchiveSinkHandleV1::from_opaque_bytes(sink_id),
-                    secret,
-                    budget: ResourceBudgetV1::try_new(1, 1_048_576, 1_000_000).map_err(|_| {
-                        base_projection_internal("compiled_archive_budget_is_invalid")
-                    })?,
-                }),
-            }))
-            .await?
-        {
-            BaseResponseV1::Prepared(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_prepare_response",
-                ))
-            }
-        };
-        let receipt = match services
-            .invoke(BaseRequestV1::Confirm(BaseConfirmRequestV1 {
-                operation_id: prepared.operation_id,
-                idempotency_key: BaseIdempotencyKey(random_projection_id()?),
-            }))
-            .await?
-        {
-            BaseResponseV1::Receipt(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_confirm_response",
-                ))
-            }
-        };
-        if let Some(error) = receipt.error {
-            return Err(onebrain_node::BaseServiceError::new(
-                error,
-                "base_archive_create_failed",
-            ));
-        }
-        if receipt.result.len() != 64 || receipt.result[..32] != sink_id {
-            return Err(onebrain_node::BaseServiceError::new(
-                BaseErrorCodeV1::CorruptState,
-                "archive_create_receipt_binding_mismatch",
-            ));
-        }
-
-        let mut archive = Vec::new();
-        let mut offset = 0u64;
-        loop {
-            let (chunk_offset, bytes, eof) = match management
-                .invoke(BaseManagementRequestV1::ArchiveSinkRead(
-                    ArchiveSinkReadV1 {
-                        handle: ArchiveSinkHandleV1::from_opaque_bytes(sink_id),
-                        offset,
-                        max_bytes: 1_048_576,
-                    },
-                ))
-                .await?
-            {
-                BaseManagementResponseV1::ArchiveChunk { offset, bytes, eof } => {
-                    (offset, bytes, eof)
-                }
-                _ => {
-                    return Err(base_projection_internal(
-                        "unexpected_archive_chunk_response",
-                    ))
-                }
-            };
-            if chunk_offset != offset || (bytes.is_empty() && !eof) {
-                return Err(onebrain_node::BaseServiceError::new(
-                    BaseErrorCodeV1::CorruptState,
-                    "archive_sink_non_contiguous",
-                ));
-            }
-            let next = archive.len().checked_add(bytes.len()).ok_or_else(|| {
-                onebrain_node::BaseServiceError::new(
-                    BaseErrorCodeV1::ResourceExhausted,
-                    "archive_response_size_overflow",
-                )
-            })?;
-            if next as u64 > BASE_ARCHIVE_PROJECTION_MAX_BYTES {
-                return Err(onebrain_node::BaseServiceError::new(
-                    BaseErrorCodeV1::ResourceExhausted,
-                    "archive_response_exceeds_bound",
-                ));
-            }
-            archive.extend_from_slice(&bytes);
-            offset = next as u64;
-            if eof {
-                break;
-            }
-        }
-        match management
-            .invoke(BaseManagementRequestV1::ArchiveSinkCommit(
-                ArchiveCapabilityHandleV1::from_opaque_bytes(sink_id),
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::CapabilityClosed => Ok(archive),
-            _ => Err(base_projection_internal(
-                "unexpected_archive_commit_response",
-            )),
-        }
-    }
+    // Shared node-owned archive flow (same as the CLI file facade); this host
+    // only owns the REST management session and the bounded response buffer.
+    let mut sink = BoundedVecSink {
+        bytes: Vec::new(),
+        max_bytes: BASE_ARCHIVE_PROJECTION_MAX_BYTES,
+    };
+    let operation = create_base_archive(
+        &services,
+        &management,
+        password,
+        BASE_ARCHIVE_PROJECTION_MAX_BYTES,
+        &mut sink,
+    )
     .await;
     let close = state.close_base_management(management_id).await;
     match (operation, close) {
-        (Ok(archive), Ok(_)) => Ok(archive),
+        (Ok(_), Ok(_)) => Ok(sink.bytes),
         (Err(error), _) | (Ok(_), Err(error)) => Err(error),
     }
 }
@@ -1939,14 +1796,11 @@ async fn restore_base_archive_bytes(
     archive: Vec<u8>,
     password: Vec<u8>,
 ) -> Result<[u8; 32], onebrain_node::BaseServiceError> {
-    use onebrain_base_contract::{
-        ArchiveCapabilityHandleV1, ArchiveChunkV1, ArchiveCredentialKindV1, ArchiveSourceBeginV1,
-        ArchiveSourceHandleV1, ArchiveSourcePushV1, BaseCommandV1, BaseConfirmRequestV1,
-        BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseOperationKindV1,
-        BasePrepareRequestV1, BaseRequestV1, BoundedSecretIngressV1, ResourceBudgetV1,
-        RestoreArchiveCommandV1,
+    use onebrain_base_contract::BaseErrorCodeV1;
+    use onebrain_node::base_archive_file::{
+        reconcile_restored_archive, restore_base_archive, SliceSource,
     };
-    use onebrain_node::{BaseManagementResponseV1, BaseManagementScope, BaseResponseV1};
+    use onebrain_node::BaseManagementScope;
 
     let services = state.base_services().await.ok_or_else(|| {
         onebrain_node::BaseServiceError::new(
@@ -1961,135 +1815,13 @@ async fn restore_base_archive_bytes(
         ])
         .await?;
     let management = state.base_management(management_id).await?;
-    let operation = async {
-        let reservation = match services
-            .invoke(BaseRequestV1::ReserveOperation(
-                BaseOperationKindV1::RestoreArchive,
-            ))
-            .await?
-        {
-            BaseResponseV1::Reserved(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_restore_reserve_response",
-                ))
-            }
-        };
-        let source = match management
-            .invoke(BaseManagementRequestV1::ArchiveSourceBegin(
-                ArchiveSourceBeginV1 {
-                    reservation_id: reservation,
-                    declared_total_bytes: archive.len() as u64,
-                },
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::ArchiveSource(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_source_response",
-                ))
-            }
-        };
-        let source_id = *source.as_bytes();
-        let mut offset = 0u64;
-        for chunk in archive.chunks(1_048_576) {
-            match management
-                .invoke(BaseManagementRequestV1::ArchiveSourcePush(
-                    ArchiveSourcePushV1 {
-                        handle: ArchiveSourceHandleV1::from_opaque_bytes(source_id),
-                        offset,
-                        chunk: ArchiveChunkV1::try_from_bytes(chunk.to_vec()).map_err(|_| {
-                            base_projection_internal("bounded_archive_chunk_is_invalid")
-                        })?,
-                    },
-                ))
-                .await?
-            {
-                BaseManagementResponseV1::ArchiveCapability(_) => {}
-                _ => {
-                    return Err(base_projection_internal(
-                        "unexpected_archive_source_push_response",
-                    ))
-                }
-            }
-            offset = offset.checked_add(chunk.len() as u64).ok_or_else(|| {
-                onebrain_node::BaseServiceError::new(
-                    BaseErrorCodeV1::ResourceExhausted,
-                    "archive_upload_offset_overflow",
-                )
-            })?;
-        }
-        match management
-            .invoke(BaseManagementRequestV1::ArchiveSourceSeal(
-                ArchiveCapabilityHandleV1::from_opaque_bytes(source_id),
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::ArchiveSource(handle) if handle.as_bytes() == &source_id => {}
-            _ => return Err(base_projection_internal("unexpected_archive_seal_response")),
-        }
-        let secret = match management
-            .invoke(BaseManagementRequestV1::ArchiveSecretRegister(
-                BoundedSecretIngressV1::try_new(ArchiveCredentialKindV1::Password, password)
-                    .map_err(|_| {
-                        onebrain_node::BaseServiceError::new(
-                            BaseErrorCodeV1::InvalidRequest,
-                            "invalid_archive_secret",
-                        )
-                    })?,
-            ))
-            .await?
-        {
-            BaseManagementResponseV1::ArchiveSecret(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_archive_secret_response",
-                ))
-            }
-        };
-        let prepared = match services
-            .invoke(BaseRequestV1::Prepare(BasePrepareRequestV1 {
-                reservation_id: reservation,
-                command: BaseCommandV1::RestoreArchive(RestoreArchiveCommandV1 {
-                    source: ArchiveSourceHandleV1::from_opaque_bytes(source_id),
-                    secret,
-                    budget: ResourceBudgetV1::try_new(1, 1_048_576, 1_000_000).map_err(|_| {
-                        base_projection_internal("compiled_archive_budget_is_invalid")
-                    })?,
-                }),
-            }))
-            .await?
-        {
-            BaseResponseV1::Prepared(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_restore_prepare_response",
-                ))
-            }
-        };
-        let receipt = match services
-            .invoke(BaseRequestV1::Confirm(BaseConfirmRequestV1 {
-                operation_id: prepared.operation_id,
-                idempotency_key: BaseIdempotencyKey(random_projection_id()?),
-            }))
-            .await?
-        {
-            BaseResponseV1::Receipt(value) => value,
-            _ => {
-                return Err(base_projection_internal(
-                    "unexpected_restore_confirm_response",
-                ))
-            }
-        };
-        if let Some(error) = receipt.error {
-            return Err(onebrain_node::BaseServiceError::new(
-                error,
-                "base_archive_restore_failed",
-            ));
-        }
-        Ok(prepared.operation_id.0)
-    }
+    let operation = restore_base_archive(
+        &services,
+        &management,
+        password,
+        archive.len() as u64,
+        &mut SliceSource { bytes: &archive },
+    )
     .await;
     let _ = state.close_base_management(management_id).await;
     let operation_id = operation?;
@@ -2099,45 +1831,8 @@ async fn restore_base_archive_bytes(
             "base_runtime_missing_after_restore",
         )
     })?;
-    match refreshed
-        .invoke(BaseRequestV1::Reconcile(
-            onebrain_base_contract::BaseOperationId(operation_id),
-        ))
-        .await?
-    {
-        BaseResponseV1::Reconciled(result)
-            if result.receipt.error.is_none() && !result.receipt.reconcile_required =>
-        {
-            Ok(operation_id)
-        }
-        BaseResponseV1::Reconciled(_) => Err(onebrain_node::BaseServiceError::new(
-            BaseErrorCodeV1::UnknownOutcome,
-            "base_restore_reconcile_required",
-        )),
-        _ => Err(base_projection_internal(
-            "unexpected_restore_reconcile_response",
-        )),
-    }
-}
-
-#[cfg(feature = "base-v1")]
-fn base_projection_internal(reason: &'static str) -> onebrain_node::BaseServiceError {
-    onebrain_node::BaseServiceError::new(
-        onebrain_base_contract::BaseErrorCodeV1::InternalError,
-        reason,
-    )
-}
-
-#[cfg(feature = "base-v1")]
-fn random_projection_id() -> Result<[u8; 32], onebrain_node::BaseServiceError> {
-    use rand::RngCore;
-
-    let mut id = [0; 32];
-    rand::rngs::OsRng.fill_bytes(&mut id);
-    if id == [0; 32] {
-        return Err(base_projection_internal("projection_entropy_returned_zero"));
-    }
-    Ok(id)
+    reconcile_restored_archive(&refreshed, operation_id).await?;
+    Ok(operation_id.0)
 }
 
 #[cfg(feature = "base-v1")]
