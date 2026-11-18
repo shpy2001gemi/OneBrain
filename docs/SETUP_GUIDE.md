@@ -264,6 +264,9 @@ hoặc `ku_local_web` phục vụ Web và API trên cùng một cổng, cổng n
 Khi xem bằng `npm run preview` (API ở cổng khác), build với
 `VITE_API_SAME_ORIGIN=false` để dùng `VITE_API_BASE` (mặc định `http://127.0.0.1:4280`).
 Chế độ `npm run dev` luôn dùng `VITE_API_BASE`.
+Trang `/ku` (Local KU workspace) cần host `ku_local_web`; trên `onebrain start --api`
+trang vẫn mở nhưng báo `Host: unavailable` và `ku_dependency_unavailable` (HTTP 503),
+vì host CLI chưa nối KU runtime.
 
 ### 5.4. Cấu trúc Web Dashboard
 

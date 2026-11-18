@@ -6,7 +6,33 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `/ku` Web uses the serving origin and an honest re-confirm Delivery line (2026-11-18)
+## Latest follow-up — `onebrain start --api` serves the new Web on its own origin (2026-11-18)
+
+Owner chose (e) on 2026-11-18: check the same-origin fix below on the normal
+CLI host, not only on `ku_local_web`. No runtime/Web code changed.
+
+- Topology (Windows, main `11599c1`): `src/onebrain-web` rebuilt with
+  `npm run build`; `cargo build -p onebrain-cli` (default `base-v1`);
+  `onebrain start --api --api-port 4392 --port 4252 --concept-registry-mode
+  disabled` on a fresh empty data dir
+  `Documents/OneBrainLocal/peer-mvp-20261118/start-api/` (outside Git) with a
+  random throwaway token (deleted after the run). Nothing listened on 4280. The
+  host auto-detected `src/onebrain-web/dist` and served it on 4392.
+- Browser agent: a wrong token gives `GET :4392/api/status` 403 and the AuthGate
+  text `Cannot connect…`; the right token gives 200 and the setup wizard. All
+  page requests went to `http://127.0.0.1:4392` (plus Google Fonts), none to
+  4280. Same-origin works on `onebrain start --api`.
+- Finding: `/ku` loads on this host but shows `Host: unavailable` and
+  `Local operation could not finish` (`GET /api/vnext/ku/status` 503
+  `ku_dependency_unavailable`), because the CLI host does not wire the KU
+  runtime; `/ku` needs `ku_local_web`. The page labels this honestly.
+  [SETUP_GUIDE §5.3](../../../SETUP_GUIDE.md) now says so.
+
+Not covered: `vite preview` with the opt-out, a second `ku_local_web` receiver,
+non-loopback/NAT/Linux/macOS. Wiring the KU runtime into `onebrain start --api`
+is a possible follow-up, not started. Parent task stays Merged.
+
+## Earlier follow-up — `/ku` Web uses the serving origin and an honest re-confirm Delivery line (2026-11-18)
 
 Owner chose (a)+(b) on 2026-11-18 from the two findings of the Web-button run
 below.
@@ -1174,7 +1200,7 @@ and prints PASS/FAIL per step plus `SUMMARY n/n passed` (exit 0 only if all pass
 Stop any host already using the sender's port first. To click the same flow in
 `/ku` Web instead, open `/ku` on the sender's own port: a production build calls
 the API on the origin that served the page (see the
-[serving-origin follow-up](#latest-follow-up--ku-web-uses-the-serving-origin-and-an-honest-re-confirm-delivery-line-2026-11-18)).
+[serving-origin follow-up](#earlier-follow-up--ku-web-uses-the-serving-origin-and-an-honest-re-confirm-delivery-line-2026-11-18)).
 
 1. Follow the linked manual-host instructions: obtain a complete signed activated
    Registry and its trusted public key, provide your own binary Vault key and API
