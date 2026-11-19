@@ -329,6 +329,17 @@ python scripts/base/bootstrap_ku_dev_demo.py --check-only          # chỉ kiể
 python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry
 ```
 
+Linux/macOS (Ubuntu/Debian mới không có lệnh `python`; cần thêm `build-essential`
+cho Rust và Node.js 20.19+/22.12+ cho Vite 8):
+
+```bash
+python3 scripts/base/bootstrap_ku_dev_demo.py --check-only
+python3 scripts/base/bootstrap_ku_dev_demo.py --demo-root ~/OneBrainLocal/dev-demo --dev-demo-registry
+```
+
+Các bước tiếp được in theo shell của nền tảng: PowerShell trên Windows, POSIX shell
+(`python3`, `&&`, quote kiểu `sh`) ở nơi khác, dán nguyên dòng chạy được.
+
 Lệnh tạo: Registry tổng hợp **DEV-ONLY** (water, liquid, solid, gas, ice, sun, earth,
 cat, tree + nhãn tiếng Việt; signer DEV sinh từ OS random, chỉ giữ trong bộ nhớ rồi
 bỏ), Vault key + API token (`prepare_ku_local_secrets.py`), nguồn private mẫu

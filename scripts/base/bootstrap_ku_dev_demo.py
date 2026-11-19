@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -106,9 +107,16 @@ def check_prerequisites(runner: Runner = default_runner) -> list[Prerequisite]:
     checks.append(Prerequisite("cargo (Rust toolchain)", ok,
                                detail if ok else f"{detail}; install Rust from https://rustup.rs",
                                True))
+    if default_posix():
+        ok, detail = _tool_version("cc", runner)
+        checks.append(Prerequisite(
+            "cc (C linker for Rust builds)", ok,
+            detail if ok else f"{detail}; install build-essential (Debian/Ubuntu) or the Xcode "
+            "Command Line Tools (macOS)", False))
     ok, detail = _tool_version("npm", runner)
     checks.append(Prerequisite("npm (Node.js, builds /ku Web)", ok,
-                               detail if ok else f"{detail}; install Node.js 18+ to build the Web",
+                               detail if ok else f"{detail}; install Node.js 20.19+ or 22.12+ "
+                               "(Vite 8) to build the Web",
                                False))
     has_dist = (WEB_DIST / "index.html").is_file()
     checks.append(Prerequisite(
@@ -319,7 +327,26 @@ def ps_quote(arg: str) -> str:
     return "'" + arg.replace("'", "''") + "'"
 
 
-def cli_host_command(config: dict) -> str:
+def default_posix() -> bool:
+    """Printed commands target POSIX shells everywhere except native Windows."""
+    return os.name != "nt"
+
+
+def sh_quote(arg: str, posix: bool | None = None) -> str:
+    """Quote for the shell the next steps are printed for (POSIX sh or PowerShell)."""
+    if posix is None:
+        posix = default_posix()
+    return shlex.quote(arg) if posix else ps_quote(arg)
+
+
+def python_command(posix: bool | None = None) -> str:
+    """``python3`` on POSIX (fresh Ubuntu/Debian/macOS ship no ``python``), else ``python``."""
+    if posix is None:
+        posix = default_posix()
+    return "python3" if posix else "python"
+
+
+def cli_host_command(config: dict, posix: bool | None = None) -> str:
     """``onebrain start --api`` from the same host.json fields (``onebrain-cli``).
 
     Mirrors ``check_ku_public_share_demo.build_cli_host_args``: the token stays in
@@ -338,12 +365,18 @@ def cli_host_command(config: dict) -> str:
         args += ["--web-dir", config["web_dir"]]
     features = " --features vnext-network-runtime" if config.get("network") else ""
     return (f"cargo run --locked --manifest-path src/Cargo.toml -p onebrain-cli{features} -- "
-            + " ".join(ps_quote(arg) for arg in args))
+            + " ".join(sh_quote(arg, posix) for arg in args))
 
 
-def print_next_steps(plan: Plan) -> None:
+def print_next_steps(plan: Plan, posix: bool | None = None) -> None:
+    if posix is None:
+        posix = default_posix()
     root = plan.demo_root
     features = " --features vnext-network-runtime" if plan.with_receiver else ""
+
+    def q(path: Path) -> str:
+        return sh_quote(path.as_posix(), posix)
+
     print("\nku_dev_demo_bootstrap_ready: wrote " + ", ".join(plan.hosts)
           + f" under {root.as_posix()}")
     if plan.dev_registry:
@@ -351,15 +384,17 @@ def print_next_steps(plan: Plan) -> None:
               "CCIDs incompatible with real releases; saved KUs are demo data).")
         print("  Concepts: water, liquid, solid, gas, ice, sun, earth, cat, tree "
               "(+ Vietnamese labels).")
-    print("\nNext steps (PowerShell, from the repository root):")
+    shell = "POSIX shell" if posix else "PowerShell"
+    print(f"\nNext steps ({shell}, from the repository root):")
     step = 1
     if not (WEB_DIST / "index.html").is_file():
-        print(f"  {step}. Build the Web once:  Push-Location src/onebrain-web; npm ci; "
-              "npm run build; Pop-Location")
+        build = ("(cd src/onebrain-web && npm ci && npm run build)" if posix else
+                 "Push-Location src/onebrain-web; npm ci; npm run build; Pop-Location")
+        print(f"  {step}. Build the Web once:  {build}")
         step += 1
     host_step = step
     print(f"  {step}. Start the host:  cargo run --locked --manifest-path src/Cargo.toml "
-          f"-p onebrain-api{features} --example ku_local_web -- {(root / 'host.json').as_posix()}")
+          f"-p onebrain-api{features} --example ku_local_web -- {q(root / 'host.json')}")
     step += 1
     print(f"  {step}. Open http://127.0.0.1:{plan.port}/ku and sign in with the token from "
           f"{(root / 'sender' / 'secrets' / 'api-token.txt').as_posix()} "
@@ -371,21 +406,22 @@ def print_next_steps(plan: Plan) -> None:
     step += 1
     sender = json.loads((root / "host.json").read_text(encoding="utf-8"))
     print(f"  {step}. Optional CLI host instead of step {host_step} (same data, port and /ku; "
-          "the host runs until you stop it):  " + cli_host_command(sender))
+          "the host runs until you stop it):  " + cli_host_command(sender, posix))
     if plan.with_receiver:
         step += 1
-        configs = (f"--sender-config {(root / 'host.json').as_posix()} "
-                   f"--receiver-config {(root / 'receiver.json').as_posix()}")
+        then = " && " if posix else "; "
+        check = f"{python_command(posix)} scripts/base/check_ku_public_share_demo.py"
+        configs = (f"--sender-config {q(root / 'host.json')} "
+                   f"--receiver-config {q(root / 'receiver.json')}")
         print(f"  {step}. Two-node share check (stop any host from steps {host_step}/{step - 1} "
               "first; the check starts both hosts itself). --seed-sample-ku explicitly saves the "
               "sample KU through the /ku button API only if nothing is saved yet:")
         print("     Web hosts:  cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api "
-              "--features vnext-network-runtime --example ku_local_web; then "
-              f"python scripts/base/check_ku_public_share_demo.py {configs} "
-              "--receiver-kind web --skip-cli-client --seed-sample-ku")
+              f"--features vnext-network-runtime --example ku_local_web{then}"
+              f"{check} {configs} --receiver-kind web --skip-cli-client --seed-sample-ku")
         print("     CLI hosts + onebrain ku get/export:  cargo build --locked --manifest-path "
-              "src/Cargo.toml -p onebrain-cli --features vnext-network-runtime; then "
-              f"python scripts/base/check_ku_public_share_demo.py {configs} "
+              f"src/Cargo.toml -p onebrain-cli --features vnext-network-runtime{then}"
+              f"{check} {configs} "
               "--sender-kind cli --receiver-kind cli --require-cli-client --seed-sample-ku")
     print("  Keep the same demo root, Vault keys and data_dir on restart. Delete the whole demo "
           "root to discard the demo; it is unrelated to any real dataset.")

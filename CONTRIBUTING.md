@@ -40,6 +40,11 @@ python scripts/base/bootstrap_ku_dev_demo.py --check-only
 python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry
 ```
 
+On Linux/macOS use `python3` (fresh Ubuntu/Debian ship no `python`) and a demo root
+such as `~/OneBrainLocal/dev-demo`; Rust needs a C toolchain (`build-essential`) and
+the Web build needs Node.js 20.19+/22.12+. The printed next steps follow the
+platform shell (PowerShell on Windows, POSIX `sh` elsewhere) and paste as-is.
+
 It never prints secrets, overwrites files, saves/shares a KU or starts a host. It
 also prints an equivalent `onebrain start --api` (`-p onebrain-cli`) host command
 for the same data and `/ku`. Add `--with-receiver` for a second host config and

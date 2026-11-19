@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -141,17 +142,52 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
                                  "--with-receiver"], FakeRunner())
         self.assertEqual(code, 0, err)
         cfg = json.loads((root / "host.json").read_text("utf-8"))
-        command = boot.cli_host_command(cfg)
         expected = demo.build_cli_host_args(Path("onebrain"), cfg)[1:]
-        self.assertTrue(command.endswith(" -- " + " ".join(boot.ps_quote(a) for a in expected)))
-        self.assertIn("--ku-source 'Dev demo sample: water=", command)
-        self.assertNotIn("--api-token ", command)
+        for posix, quote in ((False, boot.ps_quote), (True, shlex.quote)):
+            command = boot.cli_host_command(cfg, posix=posix)
+            self.assertTrue(command.endswith(" -- " + " ".join(quote(a) for a in expected)))
+            self.assertIn("--ku-source 'Dev demo sample: water=", command)
+            self.assertNotIn("--api-token ", command)
+        # A POSIX shell splits the printed command back into exactly the share-check argv.
+        posix_cmd = boot.cli_host_command(cfg, posix=True)
+        self.assertEqual(shlex.split(posix_cmd.split(" -- ", 1)[1]), expected)
         self.assertEqual(boot.ps_quote("it's x"), "'it''s x'")
         self.assertEqual(boot.ps_quote("C:/a/b.json"), "C:/a/b.json")
+        self.assertEqual(boot.sh_quote("it's x", posix=True), "'it'\"'\"'s x'")
         no_net = dict(cfg)
         no_net.pop("network")
         self.assertNotIn("--ku-network-bind", boot.cli_host_command(no_net))
         self.assertNotIn("vnext-network-runtime", boot.cli_host_command(no_net))
+
+    def test_next_steps_match_the_printing_platform_shell(self):
+        root = self.tmp / "demo root"  # a space must survive copy-paste in both shells
+        code, _, err = run_main(["--demo-root", str(root), "--dev-demo-registry",
+                                 "--with-receiver"], FakeRunner())
+        self.assertEqual(code, 0, err)
+        plan = boot.Plan(root.resolve(), True, root / "registry", root / "k.txt", 4280, True,
+                         4281, ["host.json", "receiver.json"])
+        outputs = {}
+        for posix in (True, False):
+            stdout = io.StringIO()
+            with patch.object(boot, "WEB_DIST", self.tmp / "no-dist"), \
+                    contextlib.redirect_stdout(stdout):
+                boot.print_next_steps(plan, posix=posix)
+            outputs[posix] = stdout.getvalue()
+        host_json = (root.resolve() / "host.json").as_posix()
+        posix_out, ps_out = outputs[True], outputs[False]
+        self.assertIn("Next steps (POSIX shell", posix_out)
+        self.assertIn("(cd src/onebrain-web && npm ci && npm run build)", posix_out)
+        self.assertIn("--example ku_local_web -- " + shlex.quote(host_json), posix_out)
+        self.assertIn("--example ku_local_web && python3 scripts/base/check_ku_public_share_demo"
+                      ".py --sender-config " + shlex.quote(host_json), posix_out)
+        self.assertNotIn("Push-Location", posix_out)
+        self.assertIn("Next steps (PowerShell", ps_out)
+        self.assertIn("Push-Location src/onebrain-web; npm ci; npm run build; Pop-Location", ps_out)
+        self.assertIn("--example ku_local_web -- " + boot.ps_quote(host_json), ps_out)
+        self.assertIn("--example ku_local_web; python scripts/base/check_ku_public_share_demo.py",
+                      ps_out)
+        self.assertNotIn("&&", ps_out)
+        self.assertNotIn(TOKEN_CANARY, posix_out + ps_out)
 
     def test_registry_mode_is_explicit(self):
         root = self.tmp / "demo"
@@ -216,6 +252,21 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("[FAIL] cargo", out)
         self.assertIn("ku_dev_demo_prerequisites_missing", err)
+
+    def test_posix_check_warns_when_no_c_linker_without_failing(self):
+        stdout = io.StringIO()
+        which = lambda tool: None if tool == "cc" else f"/usr/bin/{tool}"
+        with patch.object(boot, "default_posix", return_value=True), \
+                patch.object(boot.shutil, "which", side_effect=which), \
+                contextlib.redirect_stdout(stdout):
+            code = boot.main(["--check-only"], FakeRunner())
+        self.assertEqual(code, 0)
+        self.assertIn("[WARN] cc (C linker for Rust builds) (optional): not found on PATH; "
+                      "install build-essential", stdout.getvalue())
+        with patch.object(boot, "default_posix", return_value=False), \
+                patch.object(boot.shutil, "which", side_effect=which):
+            names = [check.name for check in boot.check_prerequisites(FakeRunner())]
+        self.assertNotIn("cc (C linker for Rust builds)", names)
 
     def test_real_registry_mode_validates_key_and_runs_read_only_status(self):
         registry = self.tmp / "registry"
