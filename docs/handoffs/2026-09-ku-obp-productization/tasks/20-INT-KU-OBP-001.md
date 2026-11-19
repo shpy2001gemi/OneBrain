@@ -6,7 +6,30 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — path filter for the first-run CI job covers the /ku surfaces (2026-11-19)
+## Latest follow-up — Web/Web CI check seeds on the Web host (2026-11-19)
+
+Owner picked (t9) on 2026-11-19; commit `beb94dc` (fast-forwarded to main):
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)** job
+  `linux-two-node` now bootstraps a **second, separate** DEV-ONLY demo root
+  (`$RUNNER_TEMP/ku web demo`, also with a space) and runs the printed `Web hosts:`
+  line from that bootstrap, so the Web/Web check starts with nothing saved and its
+  `--seed-sample-ku` saves the sample KU through the `ku_local_web` host's `/ku`
+  button API (reserve → draft → preview → explicit save, `published=false`). Both the
+  CLI/CLI and Web/Web steps `tee` their output and fail unless their own
+  `[PASS] seed: explicit save committed privately` line appears, so a silent
+  "already seeded" skip can no longer pass. CONTRIBUTING and SETUP_GUIDE §5.3 say so.
+- Checks: `workflow_dispatch` on the branch, run 44488228752 (`beb94dc`): CLI/CLI
+  **52/52** (seed on the CLI host), Web/Web **46/46** (seed on the Web host: 6 seed
+  checks committed, `state=committed`), job 2m2s; Ubuntu/Windows unit + `--check-only`
+  success.
+
+Not covered: macOS, Linux desktop native, GUI click-through; the second bootstrap
+reuses the already-built Registry/source examples (cheap). Same DEV-ONLY/no-qualification
+limits; the GitHub path filter is still unconfirmed by a commit touching only a newly
+listed path (this commit changes the workflow file again).
+
+## Earlier follow-up — path filter for the first-run CI job covers the /ku surfaces (2026-11-19)
 
 Owner picked (t8) on 2026-11-19; commit `bfcb728` (fast-forwarded to main):
 
