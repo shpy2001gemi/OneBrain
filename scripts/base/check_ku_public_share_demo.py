@@ -10,15 +10,21 @@ authenticated ``POST /api/vnext/ku/editor`` share actions:
   started from the same config fields (data_dir, port, api_token_file,
   registry_root/public key, vault_key_file, sources, ollama, web_dir, network);
 * receiver: an isolated ``ku_peer_demo`` (no Registry, Vault key or API token),
-  or with ``--receiver-kind web`` a second ``ku_local_web`` host (its own data
-  dir, port and opt-in ``"network"`` block). A Web receiver is inspected through
-  its authenticated ``share_inspect`` editor action and ``get`` operation, the
-  same calls as fieldset ``4. Inspect accepted Public KU`` on its ``/ku`` page.
+  with ``--receiver-kind web`` a second ``ku_local_web`` host, or with
+  ``--receiver-kind cli`` a second ``onebrain start --api --ku-network-bind``
+  host (its own data dir, port, Vault key, API token file and opt-in
+  ``"network"`` block). A Web or CLI receiver is inspected through its
+  authenticated ``share_inspect`` / ``share_list`` editor actions, ``get``
+  operation, client CLI ``onebrain ku get`` / ``export`` with
+  ``--api-token-file`` (when ``onebrain`` is built or ``--require-cli-client``
+  is passed), and a final local-only offline receiver restart.
 
 It checks prepare (nothing enqueued) -> refused ``confirm_public=false`` ->
 explicit confirm -> ``Acknowledged`` intent -> receiver inspection of the same
 Public CID/bytes with authenticated sender provenance, then restarts both
-processes and checks durability and the idempotent same-intent retry.
+processes and checks durability, idempotent same-intent retry, and (for Web/CLI
+receivers) offline local-only ``workspace_summary`` / ``share_list`` /
+``saved_semantic`` / ``onebrain ku`` reads with ``share_inspect`` failing closed.
 
 API tokens are read from each ``ku_local_web`` config's ``api_token_file`` and
 are never printed. Private ObjectCIDs are never printed. Use a COPY of your dataset as the
@@ -31,9 +37,11 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -49,6 +57,7 @@ DEFAULT_CLI = REPO / "src" / "target" / "debug" / f"onebrain{EXE}"
 SELECTOR = "2" * 64
 NAMESPACE = "3" * 64
 BUDGET = {"max_items": 64, "max_bytes": 1048576, "max_work_units": 1000000}
+IGNORED_ENV_TOKEN = "ignored-env-token-when-api-token-file-is-set-012345"
 
 
 class Proc:
@@ -135,6 +144,9 @@ class Api:
         self.base = f"http://127.0.0.1:{self.port}/api/vnext/ku"
         self._token = Path(cfg["api_token_file"]).read_text(encoding="utf-8").strip()
 
+    def contains_token(self, *texts: str) -> bool:
+        return bool(self._token) and any(self._token in (text or "") for text in texts)
+
     def call(self, path: str, payload=None) -> tuple[int, dict]:
         req = urllib.request.Request(
             f"{self.base}/{path}",
@@ -163,40 +175,51 @@ class Api:
                                         "request": {"operation": op, "payload": payload}})
 
 
-def start_web_host(exe: Path, config: Path, port: int, name: str) -> tuple[Proc, str, str]:
+def start_web_host(exe: Path, config: Path, api: Api, name: str,
+                   *, with_network: bool = True) -> tuple[Proc, str, str]:
     """Start ``ku_local_web`` and return (process, node_id, listen_addr)."""
     proc = Proc([str(exe), str(config)], name)
-    return wait_host_ready(proc, port)
+    return wait_host_ready(proc, api, with_network=with_network)
 
 
-def wait_host_ready(proc: Proc, port: int) -> tuple[Proc, str, str]:
-    line = proc.next_line(lambda l: "Opt-in loopback OBP-RP:" in l, 300)
-    fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
+def wait_host_ready(proc: Proc, api: Api, *, with_network: bool = True) -> tuple[Proc, str, str]:
+    if with_network:
+        line = proc.next_line(lambda l: "Opt-in loopback OBP-RP:" in l, 300)
+        fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
+        node_id, listen_addr = fields["node_id"], fields["listen_addr"]
+    else:
+        proc.next_line(lambda l: "Local KU: http://127.0.0.1:" in l, 300)
+        node_id, listen_addr = "", ""
     for _ in range(240):
+        if proc.p.poll() is not None:
+            raise RuntimeError(f"{proc.name} exited with code {proc.p.returncode} "
+                               "before /api/vnext/ku/status became ready")
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/ku", timeout=2)
-            break
+            code, env = api.call("status")
+            if ok(code, env):
+                return proc, node_id, listen_addr
         except Exception:
-            time.sleep(0.5)
-    return proc, fields["node_id"], fields["listen_addr"]
+            pass
+        time.sleep(0.5)
+    raise TimeoutError(f"{proc.name}: /api/vnext/ku/status not ready within 120s")
 
 
-def start_cli_host(exe: Path, cfg: dict, name: str) -> tuple[Proc, str, str]:
-    """Start ``onebrain start --api`` from the same ``ku_local_web`` JSON fields.
+def build_cli_host_args(exe: Path, cfg: dict, *, with_network: bool = True) -> list[str]:
+    """Build ``onebrain start --api`` argv from ``ku_local_web`` JSON fields.
 
-    Uses ``--api-token-file`` and ``--ku-network-bind`` (binary built with
-    ``--features vnext-network-runtime``), plus ``--ku-ollama-*`` if ``ollama``
-    is configured. The token stays in ``api_token_file`` (never passed on argv
-    or printed). stdin stays open because the REPL exits on EOF.
+    Uses ``--api-token-file`` (and ``--ku-network-bind`` when ``with_network`` is
+    True), plus ``--ku-ollama-*`` if ``ollama`` is configured. The token stays in
+    ``api_token_file`` (never passed on argv or printed).
     """
-    network = cfg["network"]
     args = [str(exe), "start", "--data-dir", str(cfg["data_dir"]), "--api",
             "--api-port", str(int(cfg.get("port", 4280))),
             "--api-token-file", str(cfg["api_token_file"]),
             "--concept-registry-release-root", str(cfg["registry_root"]),
             "--concept-registry-release-public-key", cfg["registry_public_key"],
-            "--ku-vault-key-file", str(cfg["vault_key_file"]),
-            "--ku-network-bind", network["bind_addr"]]
+            "--ku-vault-key-file", str(cfg["vault_key_file"])]
+    if with_network:
+        network = cfg["network"]
+        args += ["--ku-network-bind", network["bind_addr"]]
     for source in cfg.get("sources", []):
         args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
     ollama = cfg.get("ollama") or {}
@@ -209,8 +232,47 @@ def start_cli_host(exe: Path, cfg: dict, name: str) -> tuple[Proc, str, str]:
             args += ["--ku-ollama-memory-limit-bytes", str(ollama["memory_limit_bytes"])]
     if cfg.get("web_dir"):
         args += ["--web-dir", str(cfg["web_dir"])]
-    proc = Proc(args, name, stdin=True)
-    return wait_host_ready(proc, int(cfg.get("port", 4280)))
+    return args
+
+
+def start_cli_host(exe: Path, cfg: dict, api: Api, name: str,
+                   *, with_network: bool = True) -> tuple[Proc, str, str]:
+    """Start ``onebrain start --api``; stdin stays open because the REPL exits on EOF."""
+    proc = Proc(build_cli_host_args(exe, cfg, with_network=with_network), name, stdin=True)
+    return wait_host_ready(proc, api, with_network=with_network)
+
+
+def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
+               timeout: float = 60) -> tuple[int, dict, str, str]:
+    """Invoke ``onebrain ku`` with ``--api-token-file`` overriding ``ONEBRAIN_API_TOKEN``."""
+    argv = [
+        str(cli_exe),
+        "ku",
+        "--api-url", f"http://127.0.0.1:{port}",
+        "--api-token-file", str(token_file),
+        *sub_args,
+    ]
+    if "--api-token" in argv:
+        raise AssertionError("raw --api-token must never be passed on argv")
+    env = dict(os.environ)
+    env["ONEBRAIN_API_TOKEN"] = IGNORED_ENV_TOKEN
+    completed = subprocess.run(
+        argv,
+        cwd=REPO,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        timeout=timeout,
+    )
+    parsed = {}
+    if completed.stdout.strip():
+        try:
+            parsed = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            parsed = {}
+    return completed.returncode, parsed, completed.stdout, completed.stderr
 
 
 class PeerReceiver:
@@ -238,21 +300,46 @@ class PeerReceiver:
         return self.proc is not None and self.proc.p.returncode is not None
 
 
-class WebReceiver:
-    """Second ``ku_local_web`` receiver inspected through its authenticated API."""
-
-    kind = "ku_local_web"
+class HostReceiver:
+    """Second ``ku_local_web`` or ``onebrain start --api`` receiver."""
 
     def __init__(self, args: argparse.Namespace):
         self.args = args
+        self.is_cli = args.receiver_kind == "cli"
+        self.kind = "onebrain start --api" if self.is_cli else "ku_local_web"
         self.cfg = load_host_config(args.receiver_config, "receiver")
         self.api = Api(self.cfg)
         self.proc: Proc | None = None
+        self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
+
+    def _cleanup_temp(self) -> None:
+        if self._temp_dir is not None:
+            self._temp_dir.cleanup()
+            self._temp_dir = None
 
     def start(self) -> tuple[str, str]:
-        self.proc, node_id, addr = start_web_host(self.args.receiver_exe or self.args.web_exe,
-                                                  self.args.receiver_config, self.api.port, "receiver")
+        self._cleanup_temp()
+        if self.is_cli:
+            exe = self.args.receiver_exe or self.args.cli_exe
+            self.proc, node_id, addr = start_cli_host(exe, self.cfg, self.api, "receiver")
+        else:
+            exe = self.args.receiver_exe or self.args.web_exe
+            self.proc, node_id, addr = start_web_host(exe, self.args.receiver_config, self.api, "receiver")
         return node_id, addr
+
+    def start_local_only(self) -> None:
+        self._cleanup_temp()
+        if self.is_cli:
+            exe = self.args.receiver_exe or self.args.cli_exe
+            self.proc, _, _ = start_cli_host(exe, self.cfg, self.api, "receiver-local", with_network=False)
+        else:
+            self._temp_dir = tempfile.TemporaryDirectory(prefix="ku_receiver_local_")
+            local_cfg = dict(self.cfg)
+            local_cfg.pop("network", None)
+            cfg_path = Path(self._temp_dir.name) / "receiver-local-only.json"
+            cfg_path.write_text(json.dumps(local_cfg), encoding="utf-8")
+            exe = self.args.receiver_exe or self.args.web_exe
+            self.proc, _, _ = start_web_host(exe, cfg_path, self.api, "receiver-local", with_network=False)
 
     def inspect(self, public_cid: str) -> dict:
         # Same call as the receiver page's fieldset 4; poll briefly for arrival.
@@ -267,9 +354,13 @@ class WebReceiver:
     def stop(self) -> None:
         if self.proc:
             self.proc.stop(graceful=False)
+        self._cleanup_temp()
 
     def stopped(self) -> bool:
         return self.proc is not None and self.proc.p.returncode is not None
+
+
+WebReceiver = HostReceiver
 
 
 class Check:
@@ -278,11 +369,31 @@ class Check:
         self.cfg = load_host_config(args.sender_config, "sender")
         self.api = Api(self.cfg)
         self.port = self.api.port
-        self.receiver = WebReceiver(args) if args.receiver_kind == "web" else PeerReceiver(args)
-        if isinstance(self.receiver, WebReceiver) and self.receiver.api.port == self.port:
+        self.receiver = HostReceiver(args) if args.receiver_kind in ("web", "cli") else PeerReceiver(args)
+        if isinstance(self.receiver, HostReceiver) and self.receiver.api.port == self.port:
             raise SystemExit("receiver config must use a different port than the sender")
+        self.cli_client_exe = (args.receiver_exe
+                               if args.receiver_kind == "cli" and args.receiver_exe
+                               else args.cli_exe)
+        self.cli_client_enabled = self._resolve_cli_client_enabled()
         self.results: list[dict] = []
         self.web: Proc | None = None
+
+    def _resolve_cli_client_enabled(self) -> bool:
+        if not isinstance(self.receiver, HostReceiver) or self.args.skip_cli_client:
+            return False
+        required = (self.args.require_cli_client
+                    or self.args.sender_kind == "cli"
+                    or self.args.receiver_kind == "cli")
+        if self.cli_client_exe.is_file():
+            return True
+        if required:
+            raise SystemExit(f"CLI binary not found: {self.cli_client_exe} "
+                             "(build -p onebrain-cli --features vnext-network-runtime)")
+        print("[INFO] skipping optional onebrain ku CLI client checks "
+              "(--cli-exe not built; pass --require-cli-client or build -p onebrain-cli)",
+              flush=True)
+        return False
 
     # ---- reporting -------------------------------------------------------
     def check(self, name: str, ok, detail: str = "") -> bool:
@@ -293,10 +404,10 @@ class Check:
     # ---- processes ---------------------------------------------------------
     def start_web(self) -> tuple[str, str]:
         if self.args.sender_kind == "cli":
-            self.web, node_id, addr = start_cli_host(self.args.cli_exe, self.cfg, "sender")
+            self.web, node_id, addr = start_cli_host(self.args.cli_exe, self.cfg, self.api, "sender")
         else:
             self.web, node_id, addr = start_web_host(self.args.web_exe, self.args.sender_config,
-                                                     self.port, "sender")
+                                                     self.api, "sender")
         return node_id, addr
 
     # ---- authenticated sender KU API ---------------------------------------
@@ -416,6 +527,7 @@ class Check:
             self.check_delivery_note(retried, " (re-confirm)")
         code, env = self.operation("get", {"object_cid": private_cid})
         self.check("private KU readable after restart", ok(code, env))
+        self.check_receiver_local_only_offline(prepared)
 
     def check_delivery_note(self, confirmed: dict, when: str) -> None:
         # Only a newly Added intent is pending at confirmation; a reused intent
@@ -428,8 +540,8 @@ class Check:
                    f"outbox={outbox} delivery={delivery!r}")
 
     def check_receiver_public_get(self, prepared: dict, when: str) -> None:
-        # Only a Web receiver has the registered operations API (Saved local knowledge).
-        if not isinstance(self.receiver, WebReceiver):
+        # Only a Web/CLI host receiver has the registered operations and editor API.
+        if not isinstance(self.receiver, HostReceiver):
             return
         pub_cid = prepared["public_object_cid"]
         sem_cid = prepared["semantic_content_cid"]
@@ -451,6 +563,7 @@ class Check:
         self.check(f"receiver{when}: share_list browses the accepted Public KU",
                    listed is not None
                    and listed.get("semantic", {}).get("semantic_content_cid") == sem_cid
+                   and SELECTOR in (listed.get("accepted_selectors") or [])
                    and listed.get("authorizes_reward") is False,
                    f"{code} count={len(listed_items)}")
         stmt = (prepared.get("semantic", {}).get("statements") or [{}])[0]
@@ -461,6 +574,102 @@ class Check:
         self.check(f"receiver{when}: share_list filter finds the accepted Public KU",
                    found is not None,
                    f"{code} hits={len(hits)}")
+        self.check_receiver_cli_client(prepared, when)
+
+    def check_receiver_cli_client(self, prepared: dict, when: str) -> None:
+        if not self.cli_client_enabled or not isinstance(self.receiver, HostReceiver):
+            return
+        pub_cid = prepared["public_object_cid"]
+        sem_cid = prepared["semantic_content_cid"]
+        canonical = base64.b64decode(prepared["canonical_base64"])
+        token_file = Path(self.receiver.cfg["api_token_file"])
+        port = self.receiver.api.port
+
+        rc, get_env, get_out, get_err = run_ku_cli(
+            self.cli_client_exe, port, token_file, ["get", "--object-cid", pub_cid])
+        get_view = payload(get_env) if rc == 0 and ok(200, get_env) else {}
+        self.check(
+            f"receiver{when}: onebrain ku get --api-token-file reads PUBLIC KU without leaking token",
+            rc == 0
+            and get_view.get("object_cid") == pub_cid
+            and get_view.get("disclosure_class") == "PUBLIC"
+            and get_view.get("artifact_validity") == "accepted_known"
+            and get_view.get("semantic_content_cid") == sem_cid
+            and get_view.get("canonical_bytes") == prepared["canonical_base64"]
+            and get_view.get("executable") is False
+            and "fidelity_unassessed" in (get_view.get("limitations") or [])
+            and not self.receiver.api.contains_token(get_out, get_err),
+            f"rc={rc} disclosure={get_view.get('disclosure_class')}",
+        )
+
+        with tempfile.TemporaryDirectory(prefix="ku_cli_export_") as tmp:
+            req_path = Path(tmp) / "export.json"
+            req_path.write_text(json.dumps({
+                "mode": "canonical_public_exchange",
+                "object_cids": [pub_cid],
+            }), encoding="utf-8")
+            rc, exp_env, exp_out, exp_err = run_ku_cli(
+                self.cli_client_exe, port, token_file, ["export", "--payload-file", str(req_path)])
+        exp_view = payload(exp_env) if rc == 0 and ok(200, exp_env) else {}
+        records_b64 = exp_view.get("public_records")
+        records = base64.b64decode(records_b64) if isinstance(records_b64, str) else b""
+        self.check(
+            f"receiver{when}: onebrain ku export --api-token-file exports canonical_public_exchange bytes",
+            rc == 0
+            and exp_view.get("mode") == "canonical_public_exchange"
+            and exp_view.get("object_cids") == [pub_cid]
+            and exp_view.get("requires_base_management") is False
+            and exchange_contains_public_record(records, pub_cid, canonical)
+            and not self.receiver.api.contains_token(exp_out, exp_err),
+            f"rc={rc} exchange_bytes={len(records)}",
+        )
+
+    def check_receiver_local_only_offline(self, prepared: dict) -> None:
+        if not isinstance(self.receiver, HostReceiver):
+            return
+        pub_cid = prepared["public_object_cid"]
+        sem_cid = prepared["semantic_content_cid"]
+        if self.web:
+            self.web.stop(graceful=False)
+            self.web = None
+        self.receiver.stop()
+        self.receiver.start_local_only()
+        code, env = self.receiver.api.editor("workspace_summary", {})
+        summary = payload(env) if ok(code, env) else {}
+        self.check(
+            "receiver (local-only offline): workspace_summary reports network disabled and 0 private KUs",
+            summary.get("private_saved") == 0 and summary.get("network") == {"enabled": False},
+            f"{code} network={summary.get('network')}",
+        )
+        code, env = self.receiver.api.editor("share_list", {})
+        listed_items = payload(env).get("items", []) if ok(code, env) else []
+        listed = next((item for item in listed_items if item.get("object_cid") == pub_cid), None)
+        self.check(
+            "receiver (local-only offline): share_list browses committed Public KU without network",
+            listed is not None
+            and listed.get("semantic", {}).get("semantic_content_cid") == sem_cid
+            and "accepted_selectors" not in listed
+            and listed.get("authorizes_reward") is False,
+            f"{code} count={len(listed_items)}",
+        )
+        code, env = self.receiver.api.editor("saved_semantic", {"object_cids": [pub_cid]})
+        sem_items = payload(env).get("items", []) if ok(code, env) else []
+        self.check(
+            "receiver (local-only offline): saved_semantic resolves committed Public KU statement",
+            len(sem_items) == 1
+            and sem_items[0].get("semantic", {}).get("statements") == prepared["semantic"]["statements"],
+            f"{code} count={len(sem_items)}",
+        )
+        code, env = self.receiver.api.editor("share_inspect", {
+            "object_cid": pub_cid, "selector": SELECTOR})
+        limitations = ((env.get("error") or {}).get("failure") or {}).get("limitations") or []
+        self.check(
+            "receiver (local-only offline): share_inspect fails closed without network runtime",
+            code == 503 and error_code(env) == "capability_disabled"
+            and "ku_public_share_network_unavailable" in limitations,
+            f"{code} {error_code(env)}",
+        )
+        self.check_receiver_cli_client(prepared, " (local-only offline)")
 
     def check_received(self, view: dict, prepared: dict, sender: str, when: str) -> None:
         self.check(f"receiver inspect{when}: public_object", view.get("event") == "public_object",
@@ -501,17 +710,41 @@ def error_code(env: dict):
     return error.get("code")
 
 
+def exchange_contains_public_record(records: bytes, pub_cid: str, canonical: bytes) -> bool:
+    """Verify OBXV1 canonical_public_exchange framing and exact exported object bytes."""
+    if not records.startswith(b"OBXV1\n"):
+        return False
+    lines = [line for line in records[len(b"OBXV1\n"):].splitlines() if line]
+    if len(lines) < 2:
+        return False
+    try:
+        footer = json.loads(lines[-1].decode("utf-8")).get("footer") or {}
+        if footer.get("version") != 1 or int(footer.get("count", 0)) < 1:
+            return False
+        for raw_line in lines[:-1]:
+            rec = json.loads(raw_line.decode("utf-8"))
+            if (rec.get("version") == 1
+                    and rec.get("class") == "vnext-public"
+                    and rec.get("cid") == pub_cid
+                    and bytes.fromhex(rec.get("canonical_hex", "")) == canonical):
+                return True
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return False
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sender-config", required=True, type=Path,
                         help="ku_local_web host JSON with an opt-in \"network\" block")
     parser.add_argument("--receiver-config", required=True, type=Path,
                         help="ku_peer_demo JSON (data_dir, bind_addr 127.0.0.1:0, network_opt_in), "
-                             "or with --receiver-kind web a second ku_local_web host JSON")
-    parser.add_argument("--receiver-kind", choices=("peer", "web"), default="peer",
-                        help="peer: ku_peer_demo (default); web: second ku_local_web host")
+                             "or with --receiver-kind web/cli a second ku_local_web host JSON")
+    parser.add_argument("--receiver-kind", choices=("peer", "web", "cli"), default="peer",
+                        help="peer: ku_peer_demo (default); web: second ku_local_web host; "
+                             "cli: second onebrain start --api --ku-network-bind host")
     parser.add_argument("--receiver-exe", type=Path,
-                        help="ku_local_web binary for --receiver-kind web (default: --web-exe)")
+                        help="receiver binary override (--web-exe for web, --cli-exe for cli)")
     parser.add_argument("--sender-kind", choices=("web", "cli"), default="web",
                         help="web: ku_local_web (default); cli: onebrain start --api "
                              "--ku-network-bind built from the same sender JSON fields")
@@ -519,6 +752,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="onebrain binary built with --features vnext-network-runtime")
     parser.add_argument("--web-exe", type=Path, default=DEFAULT_WEB)
     parser.add_argument("--peer-exe", type=Path, default=DEFAULT_PEER)
+    cli_group = parser.add_mutually_exclusive_group()
+    cli_group.add_argument("--require-cli-client", action="store_true",
+                           help="require onebrain ku get/export --api-token-file checks on web/cli receivers")
+    cli_group.add_argument("--skip-cli-client", action="store_true",
+                           help="skip onebrain ku client CLI checks on web/cli receivers")
     parser.add_argument("--ack-timeout", type=int, default=60, help="seconds to wait for Acknowledged")
     parser.add_argument("--result", type=Path, help="optional JSON file for the check list")
     args = parser.parse_args(argv)

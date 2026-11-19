@@ -300,6 +300,22 @@ cargo run -p onebrain-cli --features vnext-network-runtime -- start --api ... \
 Host in `Opt-in loopback OBP-RP: node_id=… listen_addr=…` — đó là NodeID/địa chỉ
 mà host bên kia điền vào bước chia sẻ; trang `/ku` cũng hiện NodeID này trong khung
 “Scope and limitations” và badge header (số KU private đã lưu, trạng thái mạng loopback).
+Trên host nhận (kể cả sau khi khởi động lại ở chế độ local-only offline không bật
+`--ku-network-bind`), client CLI cũng đọc và xuất Public KU đã nhận bằng
+`--api-token-file`:
+
+```bash
+cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
+  --api-token-file <api-token.txt> get --object-cid <64-hex-public-cid>
+
+# export.json: {"mode":"canonical_public_exchange","object_cids":["<64-hex-public-cid>"]}
+cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
+  --api-token-file <api-token.txt> export --payload-file <export.json>
+```
+
+Script kiểm tra lặp lại hai tiến trình `python scripts/base/check_ku_public_share_demo.py`
+hỗ trợ `--sender-kind web|cli` và `--receiver-kind peer|web|cli` (tự kiểm chứng luôn
+`onebrain ku get`/`export --api-token-file` và chế độ offline trên receiver Web/CLI).
 Đây là demo một máy, không phải NAT/production qualification; không có reward.
 
 ### 5.4. Cấu trúc Web Dashboard

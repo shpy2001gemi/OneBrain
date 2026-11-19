@@ -61,16 +61,23 @@ or (2) through the isolated `ku_peer_demo` helper processes alongside the local
 custody host. To check path (1) end to end on one machine, run
 [check_ku_public_share_demo.py](scripts/base/check_ku_public_share_demo.py)
 against a copy of your dataset (instructions in the linked task-20 section);
-`--receiver-kind web` makes the receiver a second `/ku` Web host, and
-`--sender-kind cli` makes the sender `onebrain start --api` (`--api-token-file`,
-`--ku-network-bind`, plus `--ku-ollama-*` if `"ollama"` is configured).
+`--receiver-kind web` makes the receiver a second `/ku` Web host,
+`--receiver-kind cli` makes the receiver a second `onebrain start --api
+--ku-network-bind` host, and `--sender-kind cli` makes the sender
+`onebrain start --api` (`--api-token-file`, `--ku-network-bind`, plus
+`--ku-ollama-*` if `"ollama"` is configured). On Web and CLI receivers, when
+`onebrain` is built (or `--require-cli-client` is passed), the helper also
+verifies `onebrain ku get` and `onebrain ku export` (`canonical_public_exchange`)
+with `--api-token-file` plus local-only offline receiver reads (`share_list`,
+`workspace_summary`, `saved_semantic`, and fail-closed `share_inspect`).
 Networking remains opt-in (default off), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
 literal. Registry and local-secret provisioning remain operator prerequisites,
 described in the linked run instructions. A bounded first contribution is
-improving an expired-preparation (`prepared_share_missing` /
-`public_ku_consent_expired`) or setup error so a newcomer knows the next required
-action. Report the exact step
+simplifying a first-run Registry/host setup step, reproducing one semantic defect
+from the [KU-SEM-001 backlog](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md),
+or fixing one CLI/Desktop/platform parity gap so a newcomer has a clearer path.
+Report the exact step
 that fails, expected/actual behavior and your platform; a small public reproduction
 is more useful than a large private trace. Never commit private inputs or keys.
 
