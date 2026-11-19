@@ -356,9 +356,12 @@ host CLI thay thế (`cargo run -p onebrain-cli ... -- start --api --api-token-f
 ku get/export`; build `-p onebrain-cli --features vnext-network-runtime`). Cờ
 tường minh `--seed-sample-ku` chỉ khi sender chưa có KU nào sẽ lưu riêng tư KU mẫu
 qua đúng API của nút `/ku` (reserve → draft → preview → save, `published=false`);
-không có cờ này thì phải tự lưu KU trước. CI nhẹ
+không có cờ này thì phải tự lưu KU trước. CI
 [ku-dev-demo-scripts.yml](../.github/workflows/ku-dev-demo-scripts.yml) chạy unit
-test các script và `--check-only` trên Ubuntu/Windows (không build Rust, không host).
+test các script và `--check-only` trên Ubuntu/Windows, cộng job Linux chạy lại
+đúng first run này (build Web, bootstrap DEV-ONLY vào demo root tạm có dấu cách,
+chạy nguyên văn dòng check CLI/CLI được in ra, gồm `cargo build` + `--seed-sample-ku`);
+job đó cũng chạy hằng tuần để bắt lệch runtime.
 
 Giới hạn: Registry DEV-ONLY **không** phải trust Registry của operator, CCID không
 tương thích với bản phát hành thật, KU lưu trên đó chỉ là dữ liệu demo. Không có

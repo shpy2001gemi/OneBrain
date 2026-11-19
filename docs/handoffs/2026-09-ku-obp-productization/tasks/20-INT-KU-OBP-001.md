@@ -6,7 +6,31 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Linux fresh-clone run & POSIX-correct bootstrap next steps (2026-11-19)
+## Latest follow-up — Linux first-run two-node CI job (2026-11-19)
+
+Owner picked (t6) on 2026-11-19; commits `dbe30dd` + `af5586c` (fast-forwarded to main):
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)** gains
+  job `linux-two-node` (ubuntu-latest, Node 22, Python 3.13, stable Rust,
+  `CARGO_PROFILE_DEV_DEBUG=0`, rust-cache saved only on main): `npm ci && npm run build`,
+  `--check-only`, DEV-ONLY bootstrap `--dev-demo-registry --with-receiver` into a
+  throwaway `$RUNNER_TEMP/ku dev demo` (space on purpose), then the **printed** CLI/CLI
+  share-check line (`cargo build -p onebrain-cli --features vnext-network-runtime &&
+  python3 scripts/base/check_ku_public_share_demo.py ... --sender-kind cli --receiver-kind
+  cli --require-cli-client --seed-sample-ku`) extracted from the bootstrap output and run
+  verbatim with `bash -c`. Weekly schedule (Mon 03:17 UTC) catches runtime drift; same
+  path filters otherwise. Nothing is uploaded; DEV-ONLY data is discarded with the runner.
+- Actions bumped to Node 24 majors (`checkout@v5`, `setup-python@v6`, `setup-node@v5`),
+  removing the Node 20 deprecation annotations. CONTRIBUTING and SETUP_GUIDE §5.3 mention it.
+- Checks: `workflow_dispatch` on the branch, run 44481363562: Linux job **52/52** (cold
+  build, no cache; whole job 2m40s; `src/target` 1.7G), unit/`--check-only` on Ubuntu +
+  Windows success; run 44481868132 after the bump (`af5586c`): Linux **52/52** (2m20s),
+  all three jobs success, no Node 20 deprecation annotation.
+
+Not covered: Web-host (`web→web`) path in CI, macOS, GUI click-through. A CI runner is not
+platform/NAT/production qualification; DEV-ONLY Registry stays non-operator trust.
+
+## Earlier follow-up — Linux fresh-clone run & POSIX-correct bootstrap next steps (2026-11-19)
 
 Owner delegated the choice again on 2026-11-19; the agent picked (t5), commit/push `c2c6f7a`:
 
