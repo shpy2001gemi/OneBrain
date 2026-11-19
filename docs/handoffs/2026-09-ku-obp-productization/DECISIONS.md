@@ -1,5 +1,20 @@
 # Decisions and claim boundary
 
+## D-056 — Opt-in DEV-ONLY synthetic Registry for first-run contributor bootstrap
+
+On 2026-11-19 the owner chose task 20.C first-run (one bootstrap command with
+prerequisite checks and readable errors) and then the recommended Registry
+option: add an explicit `--dev-demo-registry` mode that creates, outside the
+repository, a tiny synthetic signed and activated Concept Registry (water, liquid
+and a few other concepts) signed by a fresh OS-random DEV signer that is held in
+memory and discarded. It is labeled DEV-ONLY: not operator Registry trust, CCIDs
+incompatible with real releases, and saved KUs are demo data. The bootstrap also
+creates secrets, a sample private source and host config so `/ku` runs from a
+fresh clone. Without that flag the default still requires an independently
+trusted, operator-supplied real Registry. This narrows the earlier "no bundled
+fake Registry" statement to the real-host path only; no Registry is committed,
+and real Registry distribution, trust and production gates are unchanged.
+
 ## D-055 — Mechanical mobile authority repin for the ARCH-11 blob-store move
 
 On 2026-11-09 ARCH-11 slice 3 (`2149c8f`) moved `blob_storage.rs`/`blob_layout.rs`

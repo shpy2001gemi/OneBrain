@@ -6,7 +6,46 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — D-045 `--receiver-kind cli`, client CLI `--api-token-file` & offline receiver checks (2026-11-19)
+## Latest follow-up — first-run one-command bootstrap with opt-in DEV-ONLY Registry (2026-11-19)
+
+Owner selected (t1) task 20.C first-run on 2026-11-19 and, for the Registry
+blocker, the opt-in DEV-ONLY synthetic Registry (D-056), commit/push `1c804b4`:
+
+- **[bootstrap_ku_dev_demo.py](../../../../scripts/base/bootstrap_ku_dev_demo.py)**
+  (stdlib only): `--check-only` prerequisite table (Python 3.10+, cargo required;
+  npm and built Web dist optional with the build command); then, under a new
+  `--demo-root` outside the repository, composes the existing tools: DEV-ONLY
+  Registry (or read-only `concept_registry_release status` for a real
+  `--registry-root` + `--registry-public-key-file`), `prepare_ku_local_secrets.py`,
+  sample source `Water is a liquid.` via `ku_manual_source`, and BOM-less
+  `host.json`; `--with-receiver` adds `receiver.json` plus opt-in loopback
+  `"network"` blocks. Prints next commands; never prints token/key, overwrites,
+  saves/shares a KU or starts a host. Failures report `ku_dev_demo_*` codes and
+  retain the partial demo root. Neither mode flag → `ku_dev_demo_registry_required`.
+- **[concept_registry_dev_demo.rs](../../../../src/ku-core/examples/concept_registry_dev_demo.rs)**:
+  builds a 9-concept/18-label OBR (EN + VI labels, dev-only CCID domain), packages
+  it with the shared signer/verifier, activates it, re-verifies, then writes the
+  public key; the OS-random signer is never persisted. Refuses existing targets.
+- Docs: [SETUP_GUIDE](../../../SETUP_GUIDE.md) §5.3 one-command subsection,
+  [CONTRIBUTING](../../../../CONTRIBUTING.md) fastest first run, and the
+  [manual host guide](../outputs/KU_WEB_001_IMPLEMENTATION.md#run-the-local-mvp) shortcut note.
+- Checks (Windows, 19/11, base `96ececf`): example tests **2/2**, bootstrap unit
+  tests **7/7** (+ secrets 4 / share-check 4 unchanged = 15/15), scoped rustfmt;
+  two live bootstraps into `%TEMP%` with real cargo (`--with-receiver`) PASS; live
+  `ku_local_web` (`vnext-network-runtime`) from the generated `host.json`: Registry
+  loaded 9 concepts/18 labels, `/ku` 200, catalog shows the sample source,
+  `water`/`nước`/`Mặt Trời` resolve (unknown → 0), wrong token 403, the same API
+  calls as the `/ku` buttons draft → preview `ready` → explicit save `committed`,
+  `published=false`; then `check_ku_public_share_demo.py --receiver-kind web
+  --skip-cli-client` on the generated configs **40/40 PASS** (restart/offline
+  included). KU/vNext validators PASS.
+
+Not covered: the `onebrain` CLI client and `--sender-kind cli` on the dev demo
+(debug `onebrain` not rebuilt after the cache cleanup), live GUI click-through,
+Linux/macOS run of the bootstrap, real Registry distribution. DEV-ONLY Registry is
+not operator trust; parent task stays Merged.
+
+## Earlier follow-up — D-045 `--receiver-kind cli`, client CLI `--api-token-file` & offline receiver checks (2026-11-19)
 
 Owner selected (s) on 2026-11-19 (`de3bcb9`):
 
@@ -2121,6 +2160,13 @@ Broader provisioning/composition remains open.
   (`CONTRIBUTING.md`, `SETUP_GUIDE.md` §5.3), 2026-11-19. Commit/push `de3bcb9`
   under D-050; unit 4/4, live `cli→cli` 46/46 + `web→web` 46/46 + `web→peer` 28/28
   (247-file dataset SHA-256 unchanged), KU/vNext validators PASS.
+
+- [x] One-command first-run bootstrap (`scripts/base/bootstrap_ku_dev_demo.py`)
+  with prerequisite check and opt-in DEV-ONLY synthetic Registry
+  (`concept_registry_dev_demo`, D-056), secrets, sample source and host/receiver
+  config; real-Registry mode keeps operator trust. 2026-11-19, commit/push
+  `1c804b4` under D-050; example 2/2, unit 7/7, live bootstrap + host
+  save + `--receiver-kind web` share check 40/40 PASS.
 
 Preserve Registry trust and private source/key custody. Saved-artifact inspect
 state synchronization with the D-045 section (`shareConfirmed` cleanup and
