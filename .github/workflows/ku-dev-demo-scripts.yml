@@ -1,12 +1,20 @@
 name: KU dev demo scripts
 
-# Light first-run guard (task 20.C, D-056): stdlib-only unit tests of the
-# DEV-ONLY bootstrap, secret helper and two-node share-check helper, plus the
-# bootstrap prerequisite check. No Rust build, host, Registry or secret is
-# created here; the live two-node checks stay local (see CONTRIBUTING.md).
+# First-run guard (task 20.C, D-056).
+# - `scripts`: stdlib-only unit tests of the DEV-ONLY bootstrap, secret helper
+#   and two-node share-check helper, plus the bootstrap prerequisite check
+#   (Ubuntu + Windows; no Rust build, host, Registry or secret).
+# - `linux-two-node` (t6): the contributor first run on a fresh Linux checkout:
+#   Web build, DEV-ONLY bootstrap into a throwaway demo root (with a space) under
+#   RUNNER_TEMP, then the printed CLI/CLI two-node share-check line run verbatim
+#   (cargo build + --seed-sample-ku). The DEV-ONLY Registry, keys, token and KU
+#   are disposable demo data, never uploaded; this is not operator trust nor
+#   platform/NAT/production qualification. Weekly schedule catches runtime drift.
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
   pull_request:
     paths:
       - "scripts/base/bootstrap_ku_dev_demo.py"
@@ -55,3 +63,57 @@ jobs:
 
       - name: Bootstrap prerequisite check (writes nothing)
         run: python scripts/base/bootstrap_ku_dev_demo.py --check-only
+
+  linux-two-node:
+    name: Linux first run + CLI/CLI two-node share check (DEV-ONLY)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: never
+      # Smaller target dir and faster cold build; applies to every cargo call here.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/onebrain-web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the /ku Web once
+        working-directory: src/onebrain-web
+        run: npm ci && npm run build
+
+      - name: Prerequisite check (writes nothing)
+        run: python3 scripts/base/bootstrap_ku_dev_demo.py --check-only
+
+      - name: DEV-ONLY bootstrap with receiver (throwaway demo root with a space)
+        run: |
+          python3 scripts/base/bootstrap_ku_dev_demo.py --dev-demo-registry --with-receiver \
+            --demo-root "$RUNNER_TEMP/ku dev demo" | tee "$RUNNER_TEMP/bootstrap.out"
+
+      - name: Run the printed CLI/CLI two-node share check verbatim
+        run: |
+          cmd=$(sed -n 's/^ *CLI hosts + onebrain ku get\/export:  //p' "$RUNNER_TEMP/bootstrap.out")
+          test -n "$cmd" || { echo "printed CLI/CLI check line not found"; exit 1; }
+          printf 'Running: %s\n' "$cmd"
+          bash -c "$cmd"
+
+      - name: Disk usage
+        if: always()
+        run: df -h / && du -sh src/target 2>/dev/null || true
