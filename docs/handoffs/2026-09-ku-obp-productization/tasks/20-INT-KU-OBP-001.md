@@ -6,7 +6,46 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — client CLI `--api-token-file` & Desktop `/ku` editor parity (2026-11-19)
+## Latest follow-up — D-045 `--receiver-kind cli`, client CLI `--api-token-file` & offline receiver checks (2026-11-19)
+
+Owner selected (s) on 2026-11-19 (`de3bcb9`):
+
+- **Expanded repeatable two-node check ([check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)):**
+  - Added `--receiver-kind cli` (`HostReceiver` over `onebrain start --api --ku-network-bind`
+    alongside `--receiver-kind web` and `peer`), authenticated `/api/vnext/ku/status`
+    readiness polling (works both with `web_dir` and API-only), and `--require-cli-client` /
+    `--skip-cli-client` controls.
+  - Wired live client CLI verification on Web and CLI receivers (`onebrain ku get
+    --object-cid <public_cid>` and `onebrain ku export --payload-file <export.json>`
+    for `canonical_public_exchange`) using `--api-token-file <receiver.api_token_file>`
+    with a dummy `ONEBRAIN_API_TOKEN` in the child environment to prove `--api-token-file`
+    precedence, `OBXV1` canonical exchange framing + exact object byte equality, and
+    token redaction across argv/stdout/stderr.
+  - Added a final local-only offline receiver restart on Web and CLI receivers (omitting
+    `"network"` / `--ku-network-bind`) verifying `workspace_summary`
+    (`network: {"enabled": false}`, `private_saved: 0`), offline `share_list`
+    (without `accepted_selectors`), offline `saved_semantic`, fail-closed
+    `share_inspect` (`503 capability_disabled` / `ku_public_share_network_unavailable`),
+    and offline `onebrain ku get`/`export --api-token-file`.
+  - Added synthetic unit tests in
+    [test_check_ku_public_share_demo.py](../../../../scripts/base/test_check_ku_public_share_demo.py)
+    (**4/4 PASS**) and refreshed contributor guidance in
+    [CONTRIBUTING.md](../../../../CONTRIBUTING.md),
+    [SETUP_GUIDE.md](../../../SETUP_GUIDE.md) §5.3, and
+    [Run the local-to-peer manual concept (D-045)](#run-the-local-to-peer-manual-concept-d-045).
+  - Live checks on isolated `%TEMP%` copies (throwaway tokens/keys cleaned up on exit;
+    original 247-file dataset and `peer-mvp-20261118` SHA-256 100% unchanged):
+    `--sender-kind cli --receiver-kind cli --require-cli-client` (with `qwen3:8b`
+    configured on sender) **46/46 PASS**, `--sender-kind web --receiver-kind web
+    --require-cli-client` **46/46 PASS**, and `--sender-kind web --receiver-kind peer`
+    **28/28 PASS**; `validate_ku_product_contract.py` and `validate_vnext_contracts.py` PASS.
+
+Not covered: `/ku` share combined with vNext product lanes on CLI, creating a
+new manual private draft prefilled from an accepted Public KU on `/ku` Web
+(needs explicit owner boundary decision), `KU-SEM-001` semantic defects,
+non-loopback/NAT/Linux/macOS. Parent task stays Merged.
+
+## Earlier follow-up — client CLI `--api-token-file` & Desktop `/ku` editor parity (2026-11-19)
 
 Owner selected sequential execution of (q) → (r1) on 2026-11-19:
 
@@ -1644,20 +1683,27 @@ Stop any host already using the sender's port first. To click the same flow in
 `/ku` Web instead, open `/ku` on the sender's own port: a production build calls
 the API on the origin that served the page (see the
 [serving-origin follow-up](#earlier-follow-up--ku-web-uses-the-serving-origin-and-an-honest-re-confirm-delivery-line-2026-11-18)).
-To make the receiver a second `/ku` Web host, write a second `ku_local_web`
-config (fresh `data_dir`, its own Vault key and port, same Registry, opt-in
-`"network"` block, `sources` may be omitted) and add `--receiver-kind web`. The
-helper then inspects the receiver through `share_list`, `share_inspect`, `get`
-(`PUBLIC`), and private `list` isolation (0 owned items), the same calls as
-`Browse accepted Public KUs` and fieldset `4. Inspect accepted Public KU` on the
-receiver's `/ku` page, which you can open on the receiver's port afterwards. A
-`ku_peer_demo` config must be UTF-8 without a BOM (Windows PowerShell 5
-`Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
-To use `onebrain start --api` as the sender instead, build it with
+To make the receiver a second `/ku` Web or CLI host, write a second `ku_local_web`
+config (fresh `data_dir`, its own Vault key, API token file and port, same Registry,
+opt-in `"network"` block, `sources` may be omitted) and add `--receiver-kind web`
+(second `ku_local_web`) or `--receiver-kind cli` (second `onebrain start --api
+--ku-network-bind`). The helper inspects the receiver through `share_list`
+(`accepted_selectors` while network is active), `share_inspect`, `get` (`PUBLIC`),
+and private `list` isolation (0 owned items), runs `onebrain ku get` and
+`onebrain ku export` (`canonical_public_exchange`) with `--api-token-file`
+overriding `ONEBRAIN_API_TOKEN` when `onebrain` is built (or `--require-cli-client`
+is passed; use `--skip-cli-client` to omit), and finishes by restarting the receiver
+in local-only offline mode (no `"network"` / `--ku-network-bind`) to verify
+`workspace_summary` (`network.enabled: false`), offline `share_list` and
+`saved_semantic`, fail-closed `share_inspect` (`503 capability_disabled` /
+`ku_public_share_network_unavailable`), and offline `onebrain ku get`/`export
+--api-token-file`. A `ku_peer_demo` config must be UTF-8 without a BOM (Windows
+PowerShell 5 `Set-Content -Encoding UTF8` adds one; `ku_local_web` accepts it).
+To use `onebrain start --api` as the sender (or `--receiver-kind cli`), build it with
 `cargo build --locked --manifest-path src/Cargo.toml -p onebrain-cli --features vnext-network-runtime`
 (add `--config 'profile.dev.package.sha2.opt-level=3'` in debug builds if the
 sender JSON enables `"ollama"`) and add `--sender-kind cli` (optional
-`--cli-exe`): the helper starts it from the same sender JSON fields with
+`--cli-exe` / `--receiver-exe`): the helper starts it from the same JSON fields with
 `--api-token-file <api_token_file>`, `--ku-network-bind <network.bind_addr>`,
 and `--ku-ollama-*` when `"ollama"` is present, keeping the token out of CLI
 arguments and stdout.
@@ -2066,6 +2112,15 @@ Broader provisioning/composition remains open.
   9/9 + 10/10 (`vnext-network-runtime`) + 12/12 (`vnext-outbound-first`),
   `ku_public_share` 6/6, `ku_host` 1/1 + 3/3 feature, node `--no-default-features`,
   layering and KU/vNext validators PASS.
+
+- [x] Extend `check_ku_public_share_demo.py` with `--receiver-kind cli`, client CLI
+  `onebrain ku get`/`export` (`canonical_public_exchange`, `OBXV1`) `--api-token-file`
+  verification overriding `ONEBRAIN_API_TOKEN`, and local-only offline receiver
+  restart checks (`workspace_summary`, `share_list`, `saved_semantic`, fail-closed
+  `share_inspect`), plus synthetic unit tests and contributor doc refresh
+  (`CONTRIBUTING.md`, `SETUP_GUIDE.md` §5.3), 2026-11-19. Commit/push `de3bcb9`
+  under D-050; unit 4/4, live `cli→cli` 46/46 + `web→web` 46/46 + `web→peer` 28/28
+  (247-file dataset SHA-256 unchanged), KU/vNext validators PASS.
 
 Preserve Registry trust and private source/key custody. Saved-artifact inspect
 state synchronization with the D-045 section (`shareConfirmed` cleanup and
