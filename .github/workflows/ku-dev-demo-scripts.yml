@@ -8,7 +8,10 @@ name: KU dev demo scripts
 #   Web build, DEV-ONLY bootstrap into a throwaway demo root (with a space) under
 #   RUNNER_TEMP, then the printed CLI/CLI two-node share-check line run verbatim
 #   (cargo build + --seed-sample-ku), then the printed Web/Web line (t7: build the
-#   ku_local_web example + --receiver-kind web --skip-cli-client). The DEV-ONLY Registry, keys, token and KU
+#   ku_local_web example + --receiver-kind web --skip-cli-client). t9: the Web/Web
+#   line runs on a second, separate throwaway demo root so its --seed-sample-ku
+#   saves through the Web host; both steps fail unless their own seed passed.
+#   The DEV-ONLY Registry, keys, token and KU
 #   are disposable demo data, never uploaded; this is not operator trust nor
 #   platform/NAT/production qualification. Weekly schedule catches runtime drift.
 # - Path filter (t8): besides the scripts/workflow, also runs when the surfaces
@@ -136,19 +139,30 @@ jobs:
           python3 scripts/base/bootstrap_ku_dev_demo.py --dev-demo-registry --with-receiver \
             --demo-root "$RUNNER_TEMP/ku dev demo" | tee "$RUNNER_TEMP/bootstrap.out"
 
-      - name: Run the printed CLI/CLI two-node share check verbatim
+      - name: Run the printed CLI/CLI two-node share check verbatim (seeds on the CLI host)
         run: |
           cmd=$(sed -n 's/^ *CLI hosts + onebrain ku get\/export:  //p' "$RUNNER_TEMP/bootstrap.out")
           test -n "$cmd" || { echo "printed CLI/CLI check line not found"; exit 1; }
           printf 'Running: %s\n' "$cmd"
-          bash -c "$cmd"
+          bash -c "$cmd" | tee "$RUNNER_TEMP/check-cli.out"
+          grep -q '^\[PASS\] seed: explicit save committed privately' "$RUNNER_TEMP/check-cli.out" \
+            || { echo "CLI/CLI check did not seed the sample KU on the CLI host"; exit 1; }
 
-      - name: Run the printed Web/Web two-node share check verbatim
+      # t9: a second, separate throwaway demo root so the Web/Web check starts with
+      # nothing saved and --seed-sample-ku saves through the Web host's /ku API.
+      - name: DEV-ONLY bootstrap with receiver for the Web/Web check (separate demo root)
         run: |
-          cmd=$(sed -n 's/^ *Web hosts:  //p' "$RUNNER_TEMP/bootstrap.out")
+          python3 scripts/base/bootstrap_ku_dev_demo.py --dev-demo-registry --with-receiver \
+            --demo-root "$RUNNER_TEMP/ku web demo" | tee "$RUNNER_TEMP/bootstrap-web.out"
+
+      - name: Run the printed Web/Web two-node share check verbatim (seeds on the Web host)
+        run: |
+          cmd=$(sed -n 's/^ *Web hosts:  //p' "$RUNNER_TEMP/bootstrap-web.out")
           test -n "$cmd" || { echo "printed Web/Web check line not found"; exit 1; }
           printf 'Running: %s\n' "$cmd"
-          bash -c "$cmd"
+          bash -c "$cmd" | tee "$RUNNER_TEMP/check-web.out"
+          grep -q '^\[PASS\] seed: explicit save committed privately' "$RUNNER_TEMP/check-web.out" \
+            || { echo "Web/Web check did not seed the sample KU on the Web host"; exit 1; }
 
       - name: Disk usage
         if: always()

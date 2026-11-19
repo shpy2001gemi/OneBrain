@@ -361,7 +361,9 @@ không có cờ này thì phải tự lưu KU trước. CI
 test các script và `--check-only` trên Ubuntu/Windows, cộng job Linux chạy lại
 đúng first run này (build Web, bootstrap DEV-ONLY vào demo root tạm có dấu cách,
 chạy nguyên văn dòng check CLI/CLI được in ra, gồm `cargo build` + `--seed-sample-ku`,
-rồi dòng check Web/Web được in ra, gồm build example `ku_local_web`);
+rồi dòng check Web/Web được in ra, gồm build example `ku_local_web`, chạy trên demo
+root tạm thứ hai bootstrap riêng để `--seed-sample-ku` lưu KU mẫu qua Web host; mỗi
+bước fail nếu seed của chính nó không PASS);
 workflow tự chạy khi PR/push vào main đổi các script/workflow đó, `/ku` Web
 (`src/onebrain-web`, trừ Markdown), example `ku_local_web` + file host/API `/ku`
 dùng chung, hoặc `onebrain start`/`onebrain ku` của CLI; các crate runtime sâu hơn
