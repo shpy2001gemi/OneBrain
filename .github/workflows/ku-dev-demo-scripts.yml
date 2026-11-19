@@ -11,6 +11,12 @@ name: KU dev demo scripts
 #   ku_local_web example + --receiver-kind web --skip-cli-client). The DEV-ONLY Registry, keys, token and KU
 #   are disposable demo data, never uploaded; this is not operator trust nor
 #   platform/NAT/production qualification. Weekly schedule catches runtime drift.
+# - Path filter (t8): besides the scripts/workflow, also runs when the surfaces
+#   the two-node checks exercise change: the /ku Web (src/onebrain-web, not
+#   Markdown), the ku_local_web example and the /ku host/API files it shares
+#   with `onebrain start --api`, and the CLI `start` entry point + `onebrain ku`.
+#   Deeper runtime crates (onebrain-node, ku-*), Cargo.lock and everything else
+#   rely on the weekly schedule or workflow_dispatch (~2-3 min per run).
 
 on:
   workflow_dispatch:
@@ -25,6 +31,17 @@ on:
       - "scripts/base/check_ku_public_share_demo.py"
       - "scripts/base/test_check_ku_public_share_demo.py"
       - ".github/workflows/ku-dev-demo-scripts.yml"
+      - "src/onebrain-web/**"
+      - "!src/onebrain-web/**/*.md"
+      - "src/onebrain-api/Cargo.toml"
+      - "src/onebrain-api/examples/ku_local_web.rs"
+      - "src/onebrain-api/src/ku_api.rs"
+      - "src/onebrain-api/src/ku_host.rs"
+      - "src/onebrain-api/src/server.rs"
+      - "src/onebrain-cli/Cargo.toml"
+      - "src/onebrain-cli/src/main.rs"
+      - "src/onebrain-cli/src/cli/ku.rs"
+      - "src/onebrain-cli/src/cli/ku/**"
   push:
     branches: [main]
     paths:
@@ -35,6 +52,17 @@ on:
       - "scripts/base/check_ku_public_share_demo.py"
       - "scripts/base/test_check_ku_public_share_demo.py"
       - ".github/workflows/ku-dev-demo-scripts.yml"
+      - "src/onebrain-web/**"
+      - "!src/onebrain-web/**/*.md"
+      - "src/onebrain-api/Cargo.toml"
+      - "src/onebrain-api/examples/ku_local_web.rs"
+      - "src/onebrain-api/src/ku_api.rs"
+      - "src/onebrain-api/src/ku_host.rs"
+      - "src/onebrain-api/src/server.rs"
+      - "src/onebrain-cli/Cargo.toml"
+      - "src/onebrain-cli/src/main.rs"
+      - "src/onebrain-cli/src/cli/ku.rs"
+      - "src/onebrain-cli/src/cli/ku/**"
 
 permissions:
   contents: read
