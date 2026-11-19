@@ -362,7 +362,10 @@ test các script và `--check-only` trên Ubuntu/Windows, cộng job Linux chạ
 đúng first run này (build Web, bootstrap DEV-ONLY vào demo root tạm có dấu cách,
 chạy nguyên văn dòng check CLI/CLI được in ra, gồm `cargo build` + `--seed-sample-ku`,
 rồi dòng check Web/Web được in ra, gồm build example `ku_local_web`);
-job đó cũng chạy hằng tuần để bắt lệch runtime.
+workflow tự chạy khi PR/push vào main đổi các script/workflow đó, `/ku` Web
+(`src/onebrain-web`, trừ Markdown), example `ku_local_web` + file host/API `/ku`
+dùng chung, hoặc `onebrain start`/`onebrain ku` của CLI; các crate runtime sâu hơn
+dựa vào lần chạy hằng tuần để bắt lệch runtime (hoặc chạy tay `workflow_dispatch`).
 
 Giới hạn: Registry DEV-ONLY **không** phải trust Registry của operator, CCID không
 tương thích với bản phát hành thật, KU lưu trên đó chỉ là dữ liệu demo. Không có

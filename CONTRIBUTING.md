@@ -56,7 +56,10 @@ only when nothing is saved yet. The
 [ku-dev-demo-scripts](.github/workflows/ku-dev-demo-scripts.yml) workflow runs the
 script unit tests and `--check-only` on Ubuntu and Windows, plus a Linux job that
 repeats this first run (Web build, DEV-ONLY bootstrap, the printed CLI/CLI and
-Web/Web share checks run verbatim). For a real Registry, pass
+Web/Web share checks run verbatim). It triggers on changes to those scripts, the
+`/ku` Web, `ku_local_web` and the shared `/ku` host/API files, or the CLI
+`start`/`ku` commands, and weekly for deeper runtime drift; run it manually with
+`workflow_dispatch` when you touch other runtime crates. For a real Registry, pass
 `--registry-root` and `--registry-public-key-file` instead of `--dev-demo-registry`.
 Details: [SETUP_GUIDE](docs/SETUP_GUIDE.md) and the
 [manual host guide](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#run-the-local-mvp).

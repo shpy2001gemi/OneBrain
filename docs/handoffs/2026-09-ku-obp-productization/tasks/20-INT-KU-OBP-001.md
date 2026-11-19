@@ -6,7 +6,35 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Web/Web two-node share check in the Linux CI job (2026-11-19)
+## Latest follow-up — path filter for the first-run CI job covers the /ku surfaces (2026-11-19)
+
+Owner picked (t8) on 2026-11-19; commit `bfcb728` (fast-forwarded to main):
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)**
+  `pull_request` and `push` (main) path filters, kept identical, now also list the
+  surfaces the two-node checks exercise: `src/onebrain-web/**` except Markdown, the
+  `ku_local_web` example plus the `/ku` host/API files it shares with `onebrain start
+  --api` (`onebrain-api` `Cargo.toml`, `ku_api.rs`, `ku_host.rs`, `server.rs`) and the
+  CLI `start` entry point plus `onebrain ku` (`onebrain-cli` `Cargo.toml`, `main.rs`,
+  `cli/ku.rs`, `cli/ku/**`). Deeper runtime crates (`onebrain-node`, `ku-*`) and
+  `Cargo.lock` stay on the weekly schedule or `workflow_dispatch`; the header comment,
+  CONTRIBUTING and SETUP_GUIDE §5.3 say so.
+- Cost estimate: 15 of the 85 first-parent main commits in the last 30 days touched
+  the new paths, so about 15 extra runs a month at ~2.5 min (`concurrency` cancels
+  superseded runs).
+- Checks: local YAML parse + glob sanity script (push == PR lists; every positive
+  pattern matches ≥1 tracked file, 109 files selected, 0 Web Markdown; probes:
+  `src/onebrain-web/src/App.tsx` runs, `src/onebrain-node/src/lib.rs`, `cli/obp.rs`,
+  `obp_api.rs`, `docs/SETUP_GUIDE.md`, `src/onebrain-web/README.md` skip);
+  `workflow_dispatch` on the branch, run 44486026050 (`bfcb728`): Linux CLI/CLI
+  **52/52**, Web/Web **39/39**, job 1m50s (warm rust-cache); Ubuntu/Windows unit +
+  `--check-only` success.
+
+Not covered: no run was triggered by a commit that touches only a newly listed path
+(the workflow file itself changed in this commit), so GitHub's real filter matching is
+verified only when the next such commit lands. Same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — Web/Web two-node share check in the Linux CI job (2026-11-19)
 
 Owner picked (t7) on 2026-11-19; commit `5803bef` (fast-forwarded to main):
 
