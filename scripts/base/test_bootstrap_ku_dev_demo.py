@@ -127,6 +127,31 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
             self.assertNotEqual(sender[key], receiver[key])
         self.assertIn("--receiver-kind web", out)
         self.assertIn("vnext-network-runtime", out)
+        # CLI host and CLI/CLI share check variants are printed; secrets never are.
+        self.assertIn("-p onebrain-cli --features vnext-network-runtime -- start", out)
+        self.assertIn("--sender-kind cli --receiver-kind cli --require-cli-client "
+                      "--seed-sample-ku", out)
+        self.assertIn("--skip-cli-client --seed-sample-ku", out)
+        self.assertNotIn(TOKEN_CANARY, out + err)
+
+    def test_cli_host_command_matches_share_check_argv(self):
+        from scripts.base import check_ku_public_share_demo as demo
+        root = self.tmp / "demo"
+        code, _, err = run_main(["--demo-root", str(root), "--dev-demo-registry",
+                                 "--with-receiver"], FakeRunner())
+        self.assertEqual(code, 0, err)
+        cfg = json.loads((root / "host.json").read_text("utf-8"))
+        command = boot.cli_host_command(cfg)
+        expected = demo.build_cli_host_args(Path("onebrain"), cfg)[1:]
+        self.assertTrue(command.endswith(" -- " + " ".join(boot.ps_quote(a) for a in expected)))
+        self.assertIn("--ku-source 'Dev demo sample: water=", command)
+        self.assertNotIn("--api-token ", command)
+        self.assertEqual(boot.ps_quote("it's x"), "'it''s x'")
+        self.assertEqual(boot.ps_quote("C:/a/b.json"), "C:/a/b.json")
+        no_net = dict(cfg)
+        no_net.pop("network")
+        self.assertNotIn("--ku-network-bind", boot.cli_host_command(no_net))
+        self.assertNotIn("vnext-network-runtime", boot.cli_host_command(no_net))
 
     def test_registry_mode_is_explicit(self):
         root = self.tmp / "demo"

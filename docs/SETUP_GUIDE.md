@@ -336,9 +336,18 @@ bỏ), Vault key + API token (`prepare_ku_local_secrets.py`), nguồn private m�
 (build Web nếu thiếu, `cargo run ... --example ku_local_web -- <host.json>`, mở
 `http://127.0.0.1:4280/ku`, token đọc tại `sender/secrets/api-token.txt`, tự
 preview rồi bấm **Save exact preview privately**). Lệnh không in token/key, không
-ghi đè file, không lưu/chia sẻ KU và không khởi động host. Thêm `--with-receiver`
+ghi đè file, không lưu/chia sẻ KU và không khởi động host. Bước in ra cũng có lệnh
+host CLI thay thế (`cargo run -p onebrain-cli ... -- start --api --api-token-file
+... --ku-source ... --web-dir ...`, cùng dữ liệu/cổng/`/ku`). Thêm `--with-receiver`
 để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai, rồi chạy
-`check_ku_public_share_demo.py --receiver-kind web` sau khi đã lưu KU.
+`check_ku_public_share_demo.py` với `--receiver-kind web` (host Web) hoặc
+`--sender-kind cli --receiver-kind cli --require-cli-client` (host CLI + `onebrain
+ku get/export`; build `-p onebrain-cli --features vnext-network-runtime`). Cờ
+tường minh `--seed-sample-ku` chỉ khi sender chưa có KU nào sẽ lưu riêng tư KU mẫu
+qua đúng API của nút `/ku` (reserve → draft → preview → save, `published=false`);
+không có cờ này thì phải tự lưu KU trước. CI nhẹ
+[ku-dev-demo-scripts.yml](../.github/workflows/ku-dev-demo-scripts.yml) chạy unit
+test các script và `--check-only` trên Ubuntu/Windows (không build Rust, không host).
 
 Giới hạn: Registry DEV-ONLY **không** phải trust Registry của operator, CCID không
 tương thích với bản phát hành thật, KU lưu trên đó chỉ là dữ liệu demo. Không có

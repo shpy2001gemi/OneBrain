@@ -57,6 +57,9 @@ Registry, invented governance, source reference or production fixture.
 > `ku_manual_source` and this host config, then prints the start commands. Use it
 > only for local demos; with `--registry-root`/`--registry-public-key-file` it
 > composes the same files around your real, already activated Registry instead.
+> It also prints the equivalent `onebrain start --api` host command and, with
+> `--with-receiver`, Web and CLI two-node check commands (explicit
+> `--seed-sample-ku` saves the sample KU only when nothing is saved yet).
 > See [SETUP_GUIDE](../../../SETUP_GUIDE.md).
 
 Prepare these actual host inputs outside the repository:

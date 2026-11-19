@@ -1,0 +1,57 @@
+name: KU dev demo scripts
+
+# Light first-run guard (task 20.C, D-056): stdlib-only unit tests of the
+# DEV-ONLY bootstrap, secret helper and two-node share-check helper, plus the
+# bootstrap prerequisite check. No Rust build, host, Registry or secret is
+# created here; the live two-node checks stay local (see CONTRIBUTING.md).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/base/bootstrap_ku_dev_demo.py"
+      - "scripts/base/test_bootstrap_ku_dev_demo.py"
+      - "scripts/base/prepare_ku_local_secrets.py"
+      - "scripts/base/test_prepare_ku_local_secrets.py"
+      - "scripts/base/check_ku_public_share_demo.py"
+      - "scripts/base/test_check_ku_public_share_demo.py"
+      - ".github/workflows/ku-dev-demo-scripts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/base/bootstrap_ku_dev_demo.py"
+      - "scripts/base/test_bootstrap_ku_dev_demo.py"
+      - "scripts/base/prepare_ku_local_secrets.py"
+      - "scripts/base/test_prepare_ku_local_secrets.py"
+      - "scripts/base/check_ku_public_share_demo.py"
+      - "scripts/base/test_check_ku_public_share_demo.py"
+      - ".github/workflows/ku-dev-demo-scripts.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ku-dev-demo-scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    name: Bootstrap and share-check helpers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Unit tests (synthetic; no host or dataset)
+        run: python -m unittest scripts.base.test_bootstrap_ku_dev_demo scripts.base.test_prepare_ku_local_secrets scripts.base.test_check_ku_public_share_demo
+
+      - name: Bootstrap prerequisite check (writes nothing)
+        run: python scripts/base/bootstrap_ku_dev_demo.py --check-only

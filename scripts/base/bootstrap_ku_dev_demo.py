@@ -312,6 +312,35 @@ def bootstrap(plan: Plan, runner: Runner = default_runner) -> None:
         plan.hosts.append("receiver.json")
 
 
+def ps_quote(arg: str) -> str:
+    """Quote one argument for a copy-pasteable PowerShell command line."""
+    if arg and re.fullmatch(r"[A-Za-z0-9_./:=+@,-]+", arg):
+        return arg
+    return "'" + arg.replace("'", "''") + "'"
+
+
+def cli_host_command(config: dict) -> str:
+    """``onebrain start --api`` from the same host.json fields (``onebrain-cli``).
+
+    Mirrors ``check_ku_public_share_demo.build_cli_host_args``: the token stays in
+    ``api_token_file`` and the Vault key in ``vault_key_file`` (paths only).
+    """
+    args = ["start", "--data-dir", config["data_dir"], "--api",
+            "--api-port", str(config["port"]), "--api-token-file", config["api_token_file"],
+            "--concept-registry-release-root", config["registry_root"],
+            "--concept-registry-release-public-key", config["registry_public_key"],
+            "--ku-vault-key-file", config["vault_key_file"]]
+    if config.get("network"):
+        args += ["--ku-network-bind", config["network"]["bind_addr"]]
+    for source in config.get("sources", []):
+        args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
+    if config.get("web_dir"):
+        args += ["--web-dir", config["web_dir"]]
+    features = " --features vnext-network-runtime" if config.get("network") else ""
+    return (f"cargo run --locked --manifest-path src/Cargo.toml -p onebrain-cli{features} -- "
+            + " ".join(ps_quote(arg) for arg in args))
+
+
 def print_next_steps(plan: Plan) -> None:
     root = plan.demo_root
     features = " --features vnext-network-runtime" if plan.with_receiver else ""
@@ -339,15 +368,25 @@ def print_next_steps(plan: Plan) -> None:
     print(f"  {step}. In /ku pick the source 'Dev demo sample: water', resolve 'water', enter "
           "the text 'Water is a liquid.', inspect the preview, then click "
           "'Save exact preview privately'. Nothing is saved or shared automatically.")
+    step += 1
+    sender = json.loads((root / "host.json").read_text(encoding="utf-8"))
+    print(f"  {step}. Optional CLI host instead of step {host_step} (same data, port and /ku; "
+          "the host runs until you stop it):  " + cli_host_command(sender))
     if plan.with_receiver:
         step += 1
-        print(f"  {step}. Two-node share check after saving (stop the step-{host_step} host "
-              "first; the check starts both hosts itself): "
-              "cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api "
+        configs = (f"--sender-config {(root / 'host.json').as_posix()} "
+                   f"--receiver-config {(root / 'receiver.json').as_posix()}")
+        print(f"  {step}. Two-node share check (stop any host from steps {host_step}/{step - 1} "
+              "first; the check starts both hosts itself). --seed-sample-ku explicitly saves the "
+              "sample KU through the /ku button API only if nothing is saved yet:")
+        print("     Web hosts:  cargo build --locked --manifest-path src/Cargo.toml -p onebrain-api "
               "--features vnext-network-runtime --example ku_local_web; then "
-              "python scripts/base/check_ku_public_share_demo.py "
-              f"--sender-config {(root / 'host.json').as_posix()} "
-              f"--receiver-config {(root / 'receiver.json').as_posix()} --receiver-kind web")
+              f"python scripts/base/check_ku_public_share_demo.py {configs} "
+              "--receiver-kind web --skip-cli-client --seed-sample-ku")
+        print("     CLI hosts + onebrain ku get/export:  cargo build --locked --manifest-path "
+              "src/Cargo.toml -p onebrain-cli --features vnext-network-runtime; then "
+              f"python scripts/base/check_ku_public_share_demo.py {configs} "
+              "--sender-kind cli --receiver-kind cli --require-cli-client --seed-sample-ku")
     print("  Keep the same demo root, Vault keys and data_dir on restart. Delete the whole demo "
           "root to discard the demo; it is unrelated to any real dataset.")
 

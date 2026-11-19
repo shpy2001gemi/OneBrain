@@ -67,6 +67,9 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
             "require_cli_client": False,
             "skip_cli_client": False,
             "ack_timeout": 5,
+            "seed_sample_ku": False,
+            "seed_predicate_label": "water",
+            "seed_text": "Water is a liquid.",
             "result": None,
         }
         defaults.update(overrides)
@@ -280,6 +283,76 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
 
             self.assertEqual(len(check.results), 4)
             self.assertTrue(all(r["pass"] for r in check.results), check.results)
+
+    def test_seed_sample_ku_uses_button_api_sequence_and_stops_on_ambiguity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            sender_path, receiver_path, _ = self._write_host_configs(root)
+            op = "ee" * 32
+            source_ref = {"kind": "source", "id": "ff" * 32}
+            calls: list[tuple] = []
+
+            def make_editor(candidates):
+                def fake_editor(action, req):
+                    calls.append(("editor", action, req))
+                    if action == "catalog":
+                        return 200, {"ok": True, "data": {"payload": {
+                            "sources": [{"source_ref": source_ref, "label": "note"}]}}}
+                    if action == "resolve":
+                        return 200, {"ok": True, "data": {"payload": {"candidates": candidates}}}
+                    if action == "draft":
+                        return 200, {"ok": True, "data": {"payload": {"draft": True}}}
+                    raise AssertionError(f"unexpected editor action {action}")
+                return fake_editor
+
+            def fake_operation(name, req):
+                calls.append(("operation", name, req))
+                if name == "prepare":
+                    self.assertEqual(req, {"draft": True})
+                    return 200, {"ok": True, "data": {"payload": {
+                        "validity": "ready", "object_cids": ["11" * 32]}}}
+                if name == "save":
+                    return 200, {"ok": True, "data": {"payload": {
+                        "state": "committed", "published": False, "authorizes_reward": False}}}
+                raise AssertionError(f"unexpected operation {name}")
+
+            def fake_call(path, req=None):
+                calls.append(("call", path, req))
+                return 200, {"ok": True, "data": {"payload": {"operation_id": op}}}
+
+            check = demo.Check(self._make_args(
+                sender_path, receiver_path, skip_cli_client=True, seed_sample_ku=True,
+                seed_predicate_label="water", seed_text="Water is a liquid."))
+            with patch.object(check.api, "editor", side_effect=make_editor([{"ccid": "c1"}])), \
+                    patch.object(check.api, "operation", side_effect=fake_operation), \
+                    patch.object(check.api, "call", side_effect=fake_call), \
+                    patch.object(check.api, "session", return_value={"s": 1}), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                check.seed_sample_ku()
+            self.assertEqual([c[1] for c in calls],
+                             ["catalog", "resolve", "reservations", "draft", "prepare", "save"])
+            draft = calls[3][2]
+            self.assertEqual((draft["operation_id"], draft["idempotency_key"]), (op, op))
+            self.assertEqual(draft["source_ref"], source_ref)
+            self.assertEqual(draft["selected_ccid"], "c1")
+            self.assertEqual(calls[5][2], {"operation_id": op, "idempotency_key": op,
+                                           "object_cids": ["11" * 32]})
+            self.assertEqual(len(check.results), 6)
+            self.assertTrue(all(r["pass"] for r in check.results), check.results)
+
+            # Ambiguous label: nothing is reserved, drafted or saved.
+            calls.clear()
+            check_amb = demo.Check(self._make_args(
+                sender_path, receiver_path, skip_cli_client=True, seed_sample_ku=True,
+                seed_predicate_label="water", seed_text="Water is a liquid."))
+            with patch.object(check_amb.api, "editor",
+                              side_effect=make_editor([{"ccid": "c1"}, {"ccid": "c2"}])), \
+                    patch.object(check_amb.api, "operation", side_effect=fake_operation), \
+                    patch.object(check_amb.api, "call", side_effect=fake_call), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                check_amb.seed_sample_ku()
+            self.assertEqual([c[1] for c in calls], ["catalog", "resolve"])
+            self.assertFalse(check_amb.results[-1]["pass"])
 
 
 if __name__ == "__main__":

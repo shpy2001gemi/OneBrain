@@ -29,7 +29,11 @@ receivers) offline local-only ``workspace_summary`` / ``share_list`` /
 API tokens are read from each ``ku_local_web`` config's ``api_token_file`` and
 are never printed. Private ObjectCIDs are never printed. Use a COPY of your dataset as the
 sender ``data_dir`` and a fresh, separate receiver ``data_dir``: the opt-in
-network runtime writes node state under each.
+network runtime writes node state under each. For a disposable demo dataset with
+no saved KU yet (e.g. ``bootstrap_ku_dev_demo.py --dev-demo-registry
+--with-receiver``), the explicit ``--seed-sample-ku`` flag first saves one private
+sample KU through the same reserve -> ``draft`` -> preview -> ``save`` calls as
+the ``/ku`` buttons.
 This is a concept check on one host, not NAT/production/model qualification.
 """
 from __future__ import annotations
@@ -428,6 +432,10 @@ class Check:
 
         code, env = self.operation("list", {"limit": 64})
         items = payload(env).get("items", []) if code == 200 else []
+        if not items and self.args.seed_sample_ku:
+            self.seed_sample_ku()
+            code, env = self.operation("list", {"limit": 64})
+            items = payload(env).get("items", []) if code == 200 else []
         self.check("list saved local KUs", items, f"count={len(items)}")
 
         prepared, private_cid = None, None
@@ -528,6 +536,52 @@ class Check:
         code, env = self.operation("get", {"object_cid": private_cid})
         self.check("private KU readable after restart", ok(code, env))
         self.check_receiver_local_only_offline(prepared)
+
+    def seed_sample_ku(self) -> None:
+        """Explicit opt-in: save one private sample KU through the ``/ku`` button API.
+
+        Same calls as the ``/ku`` manual path (reserve -> ``draft`` -> ``prepare``
+        preview -> explicit ``save``) on the first configured source. Intended for
+        disposable demo datasets such as the DEV-ONLY bootstrap; the KU is
+        LOCAL_ONLY (``published=false``) and nothing is shared by this step.
+        """
+        code, env = self.editor("catalog", {})
+        sources = payload(env).get("sources", []) if ok(code, env) else []
+        if not self.check("seed: catalog lists a configured source", sources,
+                          f"{code} count={len(sources)}"):
+            return
+        code, env = self.editor("resolve", {"label": self.args.seed_predicate_label})
+        candidates = payload(env).get("candidates", []) if ok(code, env) else []
+        if not self.check("seed: predicate label resolves to exactly one concept",
+                          len(candidates) == 1,
+                          f"label={self.args.seed_predicate_label!r} candidates={len(candidates)}"):
+            return
+        code, env = self.api.call("reservations", {"session": self.api.session()})
+        op = payload(env).get("operation_id") if ok(code, env) else None
+        if not self.check("seed: operation reserved", op, f"{code} {error_code(env) or ''}".rstrip()):
+            return
+        code, env = self.editor("draft", {
+            "operation_id": op, "idempotency_key": op,
+            "source_ref": sources[0]["source_ref"],
+            "predicate_label": self.args.seed_predicate_label,
+            "selected_ccid": candidates[0]["ccid"],
+            "argument_text": self.args.seed_text})
+        if not self.check("seed: manual draft accepted", ok(code, env),
+                          f"{code} {error_code(env) or ''}".rstrip()):
+            return
+        code, env = self.operation("prepare", payload(env))
+        prepared = payload(env) if ok(code, env) else {}
+        cids = prepared.get("object_cids") or []
+        if not self.check("seed: preview prepared", cids,
+                          f"{code} validity={prepared.get('validity')} {error_code(env) or ''}".rstrip()):
+            return
+        code, env = self.operation("save", {"operation_id": op, "idempotency_key": op,
+                                            "object_cids": cids})
+        receipt = payload(env) if ok(code, env) else {}
+        self.check("seed: explicit save committed privately (published=false)",
+                   receipt.get("state") == "committed" and receipt.get("published") is False
+                   and receipt.get("authorizes_reward") is False,
+                   f"{code} state={receipt.get('state')} {error_code(env) or ''}".rstrip())
 
     def check_delivery_note(self, confirmed: dict, when: str) -> None:
         # Only a newly Added intent is pending at confirmation; a reused intent
@@ -757,6 +811,14 @@ def main(argv: list[str] | None = None) -> int:
                            help="require onebrain ku get/export --api-token-file checks on web/cli receivers")
     cli_group.add_argument("--skip-cli-client", action="store_true",
                            help="skip onebrain ku client CLI checks on web/cli receivers")
+    parser.add_argument("--seed-sample-ku", action="store_true",
+                        help="explicit opt-in for disposable demo datasets (e.g. the DEV-ONLY "
+                             "bootstrap): if the sender has no saved KU, save one private sample "
+                             "via reserve -> draft -> preview -> save on its first source")
+    parser.add_argument("--seed-predicate-label", default="water",
+                        help="Registry label for --seed-sample-ku (default: water)")
+    parser.add_argument("--seed-text", default="Water is a liquid.",
+                        help="text literal for --seed-sample-ku (default: 'Water is a liquid.')")
     parser.add_argument("--ack-timeout", type=int, default=60, help="seconds to wait for Acknowledged")
     parser.add_argument("--result", type=Path, help="optional JSON file for the check list")
     args = parser.parse_args(argv)
