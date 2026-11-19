@@ -318,6 +318,35 @@ hỗ trợ `--sender-kind web|cli` và `--receiver-kind peer|web|cli` (tự ki�
 `onebrain ku get`/`export --api-token-file` và chế độ offline trên receiver Web/CLI).
 Đây là demo một máy, không phải NAT/production qualification; không có reward.
 
+#### Chạy `/ku` lần đầu từ fresh clone bằng một lệnh (D-056)
+
+Host `/ku` bắt buộc có Concept Registry đã ký + kích hoạt; repo không phát hành
+Registry thật. Để contributor thử ngay, lệnh bootstrap kiểm tra prerequisite rồi tạo
+toàn bộ đầu vào demo **ngoài repo** (thư mục `--demo-root` phải chưa tồn tại):
+
+```powershell
+python scripts/base/bootstrap_ku_dev_demo.py --check-only          # chỉ kiểm tra Python/cargo/npm/Web dist
+python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry
+```
+
+Lệnh tạo: Registry tổng hợp **DEV-ONLY** (water, liquid, solid, gas, ice, sun, earth,
+cat, tree + nhãn tiếng Việt; signer DEV sinh từ OS random, chỉ giữ trong bộ nhớ rồi
+bỏ), Vault key + API token (`prepare_ku_local_secrets.py`), nguồn private mẫu
+`Water is a liquid.` (`ku_manual_source`) và `host.json`; sau đó in các bước tiếp
+(build Web nếu thiếu, `cargo run ... --example ku_local_web -- <host.json>`, mở
+`http://127.0.0.1:4280/ku`, token đọc tại `sender/secrets/api-token.txt`, tự
+preview rồi bấm **Save exact preview privately**). Lệnh không in token/key, không
+ghi đè file, không lưu/chia sẻ KU và không khởi động host. Thêm `--with-receiver`
+để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai, rồi chạy
+`check_ku_public_share_demo.py --receiver-kind web` sau khi đã lưu KU.
+
+Giới hạn: Registry DEV-ONLY **không** phải trust Registry của operator, CCID không
+tương thích với bản phát hành thật, KU lưu trên đó chỉ là dữ liệu demo. Không có
+`--dev-demo-registry` thì lệnh vẫn đòi Registry thật đã xác minh/kích hoạt:
+`--registry-root <root> --registry-public-key-file <key.txt>` (chạy `status` chỉ đọc
+trước khi tạo secrets/nguồn/config). Lỗi có mã `ku_dev_demo_*` kèm hướng dẫn; thư
+mục demo dở dang được giữ lại, thử lại với `--demo-root` mới.
+
 ### 5.4. Cấu trúc Web Dashboard
 
 ```

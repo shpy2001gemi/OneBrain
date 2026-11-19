@@ -47,7 +47,17 @@ It has no dependency on OBP or a model. AI remains visibly unqualified.
 
 This is an opt-in integration host, **not a self-provisioning installation**.
 It requires operator-controlled custody and Registry inputs. There is no bundled
-fake Registry, invented governance, source reference or production fixture.
+Registry, invented governance, source reference or production fixture.
+
+> **Local demo shortcut (D-056):** `python scripts/base/bootstrap_ku_dev_demo.py
+> --demo-root <new dir outside Git> --dev-demo-registry` checks prerequisites and
+> creates, outside the repository, a DEV-ONLY synthetic signed/activated Registry
+> (self-issued signer discarded; not operator trust; CCIDs incompatible with real
+> releases), new secrets via the helper below, a sample source via
+> `ku_manual_source` and this host config, then prints the start commands. Use it
+> only for local demos; with `--registry-root`/`--registry-public-key-file` it
+> composes the same files around your real, already activated Registry instead.
+> See [SETUP_GUIDE](../../../SETUP_GUIDE.md).
 
 Prepare these actual host inputs outside the repository:
 

@@ -24,11 +24,28 @@ The primary MVP surface is local Web backed by the Rust node/API. You need the
 Rust toolchain, Node/npm and the prerequisites declared by the existing host
 instructions. Python is used by contract checks and the optional
 [new-dataset secret helper](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#provision-secrets-for-a-new-dataset).
-This is not yet a one-command
-installation: the integration host currently needs a signed Registry, local Vault
-key/API token and host configuration outside Git. Simplifying that setup is part
-of the MVP contributor-entry work; do not invent production trust or use secrets
-from another contributor's machine.
+This is not yet a production installation: a real integration host needs a
+signed Registry, local Vault key/API token and host configuration outside Git.
+Do not invent production trust or use secrets from another contributor's machine.
+
+**Fastest first run (fresh clone, DEV-ONLY, D-056):** one command checks the
+prerequisites and creates every demo input outside the repository — a DEV-ONLY
+synthetic signed Registry (a few concepts such as `water`/`liquid`; self-issued
+signer discarded after activation; not operator trust; CCIDs incompatible with
+real releases), a new Vault key/API token, a private sample source and `host.json`
+— then prints the exact commands to start `/ku`:
+
+```powershell
+python scripts/base/bootstrap_ku_dev_demo.py --check-only
+python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry
+```
+
+It never prints secrets, overwrites files, saves/shares a KU or starts a host. Add
+`--with-receiver` for a second host config and opt-in loopback network blocks used
+by `check_ku_public_share_demo.py --receiver-kind web`. For a real Registry, pass
+`--registry-root` and `--registry-public-key-file` instead of `--dev-demo-registry`.
+Details: [SETUP_GUIDE](docs/SETUP_GUIDE.md) and the
+[manual host guide](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#run-the-local-mvp).
 
 After cloning your fork, these commands build the Web UI and the current host
 example from the repository root (PowerShell; add `--features vnext-network-runtime`
@@ -72,9 +89,10 @@ with `--api-token-file` plus local-only offline receiver reads (`share_list`,
 `workspace_summary`, `saved_semantic`, and fail-closed `share_inspect`).
 Networking remains opt-in (default off), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
-literal. Registry and local-secret provisioning remain operator prerequisites,
-described in the linked run instructions. A bounded first contribution is
-simplifying a first-run Registry/host setup step, reproducing one semantic defect
+literal. Real Registry and local-secret provisioning remain operator prerequisites,
+described in the linked run instructions; the DEV-ONLY bootstrap above is only for
+local demos. A bounded first contribution is
+simplifying another first-run setup step, reproducing one semantic defect
 from the [KU-SEM-001 backlog](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md),
 or fixing one CLI/Desktop/platform parity gap so a newcomer has a clearer path.
 Report the exact step
