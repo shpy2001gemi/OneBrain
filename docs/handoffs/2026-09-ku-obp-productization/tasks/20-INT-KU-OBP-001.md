@@ -34,7 +34,8 @@ Owner delegated the choice on 2026-11-19; the agent picked (t4), commit/push `ec
   demo (no reseed, existing intent) **45/45 PASS**; the printed CLI host command
   started from PowerShell: `/ku` 200, authenticated status 200. KU/vNext validators PASS.
 
-Not covered: GitHub run of the new workflow (only after push), live GUI
+GitHub Actions run 44477846492 (push `14bb63a`): ubuntu-latest and windows-latest
+success. Not covered: live GUI
 click-through, macOS, `--check-only` with cargo inside WSL (cargo absent there;
 reported FAIL as designed). DEV-ONLY Registry remains non-operator trust; parent
 task stays Merged.
