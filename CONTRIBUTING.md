@@ -55,8 +55,8 @@ opt-in loopback network blocks, then run `check_ku_public_share_demo.py` with
 only when nothing is saved yet. The
 [ku-dev-demo-scripts](.github/workflows/ku-dev-demo-scripts.yml) workflow runs the
 script unit tests and `--check-only` on Ubuntu and Windows, plus a Linux job that
-repeats this first run (Web build, DEV-ONLY bootstrap, the printed CLI/CLI share
-check run verbatim). For a real Registry, pass
+repeats this first run (Web build, DEV-ONLY bootstrap, the printed CLI/CLI and
+Web/Web share checks run verbatim). For a real Registry, pass
 `--registry-root` and `--registry-public-key-file` instead of `--dev-demo-registry`.
 Details: [SETUP_GUIDE](docs/SETUP_GUIDE.md) and the
 [manual host guide](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#run-the-local-mvp).

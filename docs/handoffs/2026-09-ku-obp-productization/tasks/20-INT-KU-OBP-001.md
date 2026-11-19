@@ -6,7 +6,28 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Linux first-run two-node CI job (2026-11-19)
+## Latest follow-up — Web/Web two-node share check in the Linux CI job (2026-11-19)
+
+Owner picked (t7) on 2026-11-19; commit `5803bef` (fast-forwarded to main):
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)** job
+  `linux-two-node` gains a step after the CLI/CLI check: it extracts the **printed**
+  `Web hosts:` line from the bootstrap output (`cargo build -p onebrain-api --features
+  vnext-network-runtime --example ku_local_web && python3
+  scripts/base/check_ku_public_share_demo.py ... --receiver-kind web --skip-cli-client
+  --seed-sample-ku`) and runs it verbatim with `bash -c` on the same spaced demo root.
+  Job renamed "Linux first run + CLI/CLI and Web/Web two-node share checks (DEV-ONLY)".
+  CONTRIBUTING and SETUP_GUIDE §5.3 mention both lines.
+- Checks: `workflow_dispatch` on the branch, run 44483151237 (`5803bef`): Linux job
+  CLI/CLI **52/52** (seeds the sample KU), then Web/Web **39/39** (no reseed because the
+  sender already holds the KU; no CLI client checks by design); whole job 2m15s,
+  `src/target` 2.2G; Ubuntu/Windows unit + `--check-only` success.
+
+Not covered: the Web/Web step does not exercise seeding on a Web host (same `/ku` button
+API, already seeded by the CLI step), macOS, GUI click-through. A CI runner is not
+platform/NAT/production qualification; DEV-ONLY Registry stays non-operator trust.
+
+## Earlier follow-up — Linux first-run two-node CI job (2026-11-19)
 
 Owner picked (t6) on 2026-11-19; commits `dbe30dd` + `af5586c` (fast-forwarded to main):
 

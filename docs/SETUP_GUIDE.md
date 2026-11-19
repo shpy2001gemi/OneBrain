@@ -360,7 +360,8 @@ không có cờ này thì phải tự lưu KU trước. CI
 [ku-dev-demo-scripts.yml](../.github/workflows/ku-dev-demo-scripts.yml) chạy unit
 test các script và `--check-only` trên Ubuntu/Windows, cộng job Linux chạy lại
 đúng first run này (build Web, bootstrap DEV-ONLY vào demo root tạm có dấu cách,
-chạy nguyên văn dòng check CLI/CLI được in ra, gồm `cargo build` + `--seed-sample-ku`);
+chạy nguyên văn dòng check CLI/CLI được in ra, gồm `cargo build` + `--seed-sample-ku`,
+rồi dòng check Web/Web được in ra, gồm build example `ku_local_web`);
 job đó cũng chạy hằng tuần để bắt lệch runtime.
 
 Giới hạn: Registry DEV-ONLY **không** phải trust Registry của operator, CCID không
