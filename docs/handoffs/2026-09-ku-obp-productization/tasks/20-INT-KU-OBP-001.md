@@ -6,7 +6,40 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — first-run one-command bootstrap with opt-in DEV-ONLY Registry (2026-11-19)
+## Latest follow-up — dev demo CLI hosts, seeded two-node checks & light CI (2026-11-19)
+
+Owner delegated the choice on 2026-11-19; the agent picked (t4), commit/push `ec10d4e`:
+
+- **[bootstrap_ku_dev_demo.py](../../../../scripts/base/bootstrap_ku_dev_demo.py)** now also
+  prints the equivalent `onebrain start --api` host command for the generated
+  `host.json` (`cli_host_command`, PowerShell-quoted, same argv as
+  `check_ku_public_share_demo.build_cli_host_args`; token/Vault key stay in files)
+  and, with `--with-receiver`, Web and CLI two-node check commands.
+- **[check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)**
+  `--seed-sample-ku` (explicit opt-in; `--seed-predicate-label`, `--seed-text`):
+  only when the sender lists no saved KU, it saves one private sample through the
+  `/ku` button API (catalog → `resolve` exactly one candidate → `reservations` →
+  `draft` → `prepare` preview → explicit `save`, `published=false`). Ambiguous
+  label or any failure stops before reserve/save.
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)**:
+  light path-filtered workflow (Ubuntu + Windows) running the three script unit
+  test modules and `bootstrap_ku_dev_demo.py --check-only`; no Rust build/host.
+- Docs: SETUP_GUIDE §5.3, CONTRIBUTING fastest first run, KU_WEB_001 shortcut note.
+- Checks (Windows, 19/11, base `aef85b5`): `onebrain` debug rebuilt with
+  `vnext-network-runtime`; unit **17/17** (+2 new) on Windows and WSL Ubuntu
+  (Python 3.12); fresh DEV-ONLY bootstraps into `%TEMP%`: `--sender-kind cli
+  --receiver-kind cli --require-cli-client --seed-sample-ku` **52/52 PASS** (seed
+  6 + `onebrain ku get/export` + offline receiver), `--receiver-kind web
+  --require-cli-client --seed-sample-ku` **52/52 PASS**, rerun on the seeded CLI
+  demo (no reseed, existing intent) **45/45 PASS**; the printed CLI host command
+  started from PowerShell: `/ku` 200, authenticated status 200. KU/vNext validators PASS.
+
+Not covered: GitHub run of the new workflow (only after push), live GUI
+click-through, macOS, `--check-only` with cargo inside WSL (cargo absent there;
+reported FAIL as designed). DEV-ONLY Registry remains non-operator trust; parent
+task stays Merged.
+
+## Earlier follow-up — first-run one-command bootstrap with opt-in DEV-ONLY Registry (2026-11-19)
 
 Owner selected (t1) task 20.C first-run on 2026-11-19 and, for the Registry
 blocker, the opt-in DEV-ONLY synthetic Registry (D-056), commit/push `1c804b4`:
