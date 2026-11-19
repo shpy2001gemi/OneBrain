@@ -6,7 +6,39 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — dev demo CLI hosts, seeded two-node checks & light CI (2026-11-19)
+## Latest follow-up — Linux fresh-clone run & POSIX-correct bootstrap next steps (2026-11-19)
+
+Owner delegated the choice again on 2026-11-19; the agent picked (t5), commit/push `c2c6f7a`:
+
+- **Linux run (no code changes needed for the runtime):** WSL Ubuntu 24.04 has no
+  `cc`/Rust/Node and `sudo` needs a password, so the run used an ephemeral Docker
+  `node:22-bookworm` container (rustup minimal, cargo 1.100.0, Node 22, Python 3.11)
+  with a **fresh GitHub clone of `8eb7dac`**: unit 17/17, `--check-only` OK, `npm ci`
+  + `npm run build` OK, DEV-ONLY bootstrap `--with-receiver` OK, `cargo build --locked`
+  of `ku_local_web` and `onebrain-cli` with `vnext-network-runtime` OK; share checks
+  `--receiver-kind web --require-cli-client --seed-sample-ku` **52/52**, `--sender-kind
+  cli --receiver-kind cli --require-cli-client --seed-sample-ku` **52/52**, rerun
+  (no reseed) **45/45**.
+- **Defect found and fixed in [bootstrap_ku_dev_demo.py](../../../../scripts/base/bootstrap_ku_dev_demo.py):**
+  next steps were always PowerShell (`Push-Location`, `python`, `; then`, unquoted
+  demo-root paths). Now printed for the platform shell: POSIX `sh` on Linux/macOS
+  (`python3` — fresh Ubuntu/Debian have no `python`; `&&`; `shlex` quoting;
+  `(cd src/onebrain-web && npm ci && npm run build)`), PowerShell unchanged on Windows;
+  demo-root paths quoted so roots with spaces paste as-is. Optional `cc` prerequisite
+  warning on POSIX; Node hint now 20.19+/22.12+ (Vite 8). SETUP_GUIDE §5.3 and
+  CONTRIBUTING have Linux commands.
+- Checks: unit **19/19** (+2) on Windows and WSL Ubuntu; in the container with the
+  patch, root `/work/demo space`: the printed CLI/CLI share-check line run verbatim
+  via `bash -c` **52/52**; the printed CLI host command run verbatim: `/ku`, `/`,
+  `/favicon.svg` 200, status 200 with token / 401 without; token never in logs.
+  WSL `--check-only` reports FAIL cargo + WARN cc as designed. KU/vNext validators PASS.
+
+Notes: `onebrain start --api` exits its REPL on stdin EOF (`Goodbye!`), so a
+background/non-interactive start needs an open stdin; in a terminal it runs until
+stopped. The `cc` warning was added after the container rerun (unit-tested + WSL).
+Not covered: native Linux desktop, macOS, GUI click-through. Parent task stays Merged.
+
+## Earlier follow-up — dev demo CLI hosts, seeded two-node checks & light CI (2026-11-19)
 
 Owner delegated the choice on 2026-11-19; the agent picked (t4), commit/push `ec10d4e`:
 
