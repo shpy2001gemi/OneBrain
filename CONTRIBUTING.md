@@ -48,7 +48,10 @@ platform shell (PowerShell on Windows, POSIX `sh` elsewhere) and paste as-is.
 It never prints secrets, overwrites files, saves/shares a KU or starts a host. It
 also prints an equivalent `onebrain start --api` (`-p onebrain-cli`) host command
 for the same data and `/ku`. Add `--with-receiver` for a second host config and
-opt-in loopback network blocks, then run `check_ku_public_share_demo.py` with
+opt-in loopback network blocks (the receiver also admits the sample as its own
+private source, saving nothing, so its `/ku` **Start a new private draft from …**
+button can copy a received Public KU's text into a new manual private draft; source,
+concept, preview and Save stay explicit — D-057), then run `check_ku_public_share_demo.py` with
 `--receiver-kind web` (Web hosts) or `--sender-kind cli --receiver-kind cli
 --require-cli-client` (CLI hosts plus `onebrain ku get/export`); the explicit
 `--seed-sample-ku` flag saves the sample KU privately through the `/ku` button API

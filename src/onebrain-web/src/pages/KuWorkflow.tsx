@@ -77,6 +77,21 @@ function statementLines(semantic: SavedSemanticStatements): string[] {
     .map((s) => s.text_arguments.filter(Boolean).join(", "))
     .filter((line) => line.length > 0);
 }
+/** Owner boundary 2026-11-20 (D-057): a received Public KU can only seed a new
+ *  manual private draft when it is exactly one predicate with one text literal.
+ *  Only the text is copied; the predicate CCID is a hint for explicit selection. */
+function publicDraftSeed(
+  semantic: PublicShareListView["items"][number]["semantic"],
+): { predicate_ccid: string; text: string } | undefined {
+  if (semantic.statements.length !== 1) return undefined;
+  const [stmt] = semantic.statements;
+  if (stmt.text_arguments.length !== 1) return undefined;
+  const text = stmt.text_arguments[0];
+  if (typeof text !== "string" || !text.trim() || text.length > 4096)
+    return undefined;
+  if (!/^[0-9a-f]{32}$/.test(stmt.predicate_ccid)) return undefined;
+  return { predicate_ccid: stmt.predicate_ccid, text };
+}
 function SavedStatementText({
   semantic,
 }: {
@@ -157,6 +172,11 @@ export function KuWorkflowPage({
   const [shareListQuery, setShareListQuery] = useState("");
   const [shareListView, setShareListView] = useState<PublicShareListView>();
   const [shareInspectSelectorNote, setShareInspectSelectorNote] = useState("");
+  /** Accepted Public KU that seeded the current manual draft (display only). */
+  const [draftOrigin, setDraftOrigin] = useState<{
+    object_cid: string;
+    predicate_ccid: string;
+  }>();
   /** Display-only statement text by ObjectCID; `null` = no text projection. */
   const [savedText, setSavedText] = useState<
     Record<string, SavedSemanticStatements | null>
@@ -706,6 +726,27 @@ export function KuWorkflowPage({
             bytes remain unchanged.
           </p>
         )}
+        {draftOrigin && (
+          <div role="note" aria-label="Draft prefilled from accepted Public KU">
+            <p>
+              <strong>New private draft prefilled from an accepted Public KU</strong>
+            </p>
+            <p className="ku-id">
+              Public ObjectCID: {draftOrigin.object_cid}
+              <br />
+              Public predicate CCID: {draftOrigin.predicate_ccid}
+            </p>
+            <p>
+              Only the text argument was copied. Choose your own admitted
+              source, enter a Registry label, look up concepts and explicitly
+              select one; the candidate equal to the Public predicate is
+              marked. Nothing is saved until you preview and click Save.
+              Saving creates a separate private LOCAL_ONLY KU from your source
+              with unassessed fidelity. The Public KU is not adopted, changed
+              or linked, and no reward is authorized.
+            </p>
+          </div>
+        )}
         <p>
           Supported form: one Registry predicate with one text argument. Select
           a host-admitted source and explicitly choose a concept. This editor
@@ -784,9 +825,29 @@ export function KuWorkflowPage({
             {candidates.map((c) => (
               <option key={c} value={c}>
                 {c}
+                {draftOrigin?.predicate_ccid === c
+                  ? " — matches the Public KU predicate"
+                  : ""}
               </option>
             ))}
           </select>
+          {draftOrigin &&
+            resolved &&
+            candidates.length > 0 &&
+            !candidates.includes(draftOrigin.predicate_ccid) && (
+              <p role="note">
+                No candidate for this label equals the Public predicate CCID.
+                Selecting one makes a statement with a different predicate.
+              </p>
+            )}
+          {draftOrigin &&
+            selection &&
+            selection !== draftOrigin.predicate_ccid &&
+            candidates.includes(draftOrigin.predicate_ccid) && (
+              <p role="note">
+                The selected concept differs from the Public KU predicate.
+              </p>
+            )}
           {resolved && candidates.length === 0 && (
             <p>
               No candidate in this pinned Registry. Preview remains unresolved
@@ -820,6 +881,7 @@ export function KuWorkflowPage({
             setPrepared(undefined);
             setReceipt(undefined);
             setRevision(undefined);
+            setDraftOrigin(undefined);
             setText("");
           }}
         >
@@ -1038,6 +1100,7 @@ export function KuWorkflowPage({
                 cid: view.object_cid,
                 frontier: page!.snapshot_frontier,
               });
+              setDraftOrigin(undefined);
               setPending(undefined);
               setPrepared(undefined);
               setReceipt(undefined);
@@ -1456,6 +1519,58 @@ export function KuWorkflowPage({
                     >
                       Use {item.object_cid} in step 4
                     </button>
+                    {(() => {
+                      const seed = publicDraftSeed(item.semantic);
+                      if (!seed)
+                        return (
+                          <p>
+                            Cannot prefill a private draft: only one predicate
+                            with one text literal is supported.
+                          </p>
+                        );
+                      return (
+                        <>
+                        {!catalog?.sources.length && (
+                          <p>
+                            A new private draft needs a host-admitted manual
+                            source on this host; see Create a manual draft.
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={
+                            busy ||
+                            lockedDraft ||
+                            uncertain ||
+                            !catalog?.sources.length
+                          }
+                          title="Copies only the text argument into a new manual private draft; you still choose the source and concept, preview and save explicitly."
+                          onClick={() => {
+                            setPending(undefined);
+                            setPrepared(undefined);
+                            setReceipt(undefined);
+                            setRevision(undefined);
+                            setSource("");
+                            setLabel("");
+                            setCandidates([]);
+                            setSelection("");
+                            setResolved(false);
+                            setText(seed.text);
+                            setDraftOrigin({
+                              object_cid: item.object_cid,
+                              predicate_ccid: seed.predicate_ccid,
+                            });
+                            requestAnimationFrame(() =>
+                              editorRef.current?.focus(),
+                            );
+                          }}
+                        >
+                          Start a new private draft from {item.object_cid}
+                        </button>
+                        </>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>

@@ -350,7 +350,11 @@ preview rồi bấm **Save exact preview privately**). Lệnh không in token/ke
 ghi đè file, không lưu/chia sẻ KU và không khởi động host. Bước in ra cũng có lệnh
 host CLI thay thế (`cargo run -p onebrain-cli ... -- start --api --api-token-file
 ... --ku-source ... --web-dir ...`, cùng dữ liệu/cổng/`/ku`). Thêm `--with-receiver`
-để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai, rồi chạy
+để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai (receiver cũng
+admit nguồn mẫu như nguồn riêng tư của chính nó, không lưu gì, để trên `/ku` của
+receiver nút **Start a new private draft from …** ở `Browse accepted Public KUs`
+điền sẵn text vào draft manual riêng tư mới; vẫn tự chọn nguồn, concept, preview và
+Save — D-057), rồi chạy
 `check_ku_public_share_demo.py` với `--receiver-kind web` (host Web) hoặc
 `--sender-kind cli --receiver-kind cli --require-cli-client` (host CLI + `onebrain
 ku get/export`; build `-p onebrain-cli --features vnext-network-runtime`). Cờ

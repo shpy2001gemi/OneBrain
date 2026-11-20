@@ -315,7 +315,12 @@ def bootstrap(plan: Plan, runner: Runner = default_runner) -> None:
     _write_new(plan.demo_root / "host.json", json.dumps(sender, indent=2) + "\n")
     plan.hosts.append("host.json")
     if plan.with_receiver:
-        receiver = host_config(plan, public_key, "receiver", sources=[])
+        # D-057: the receiver admits the same synthetic sample as its own private
+        # source so `/ku` can start a new private draft from a received Public KU.
+        # Admission saves or shares nothing.
+        receiver_sources = [{"label": "Dev demo sample: water (receiver)",
+                             "canonical_file": sources[0]["canonical_file"]}]
+        receiver = host_config(plan, public_key, "receiver", sources=receiver_sources)
         _write_new(plan.demo_root / "receiver.json", json.dumps(receiver, indent=2) + "\n")
         plan.hosts.append("receiver.json")
 

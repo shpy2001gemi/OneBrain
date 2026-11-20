@@ -6,7 +6,32 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Web/Web CI check seeds on the Web host (2026-11-19)
+## Latest follow-up — new manual private draft from an accepted Public KU on `/ku` Web (2026-11-20)
+
+Owner picked (p) with its stated boundary on 2026-11-20, recorded as D-057:
+
+- **[KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx):** each
+  item in `Browse accepted Public KUs` gets **Start a new private draft from …**
+  (only for one predicate + one text literal; otherwise an explanation, no button;
+  disabled without a host-admitted manual source or while a draft is pending/uncertain).
+  The click makes no host call: it resets the editor, copies only the text literal,
+  clears source/label/concept and shows a `Draft prefilled from accepted Public KU`
+  note (Public ObjectCID + predicate CCID; not adopted, changed or linked; no reward).
+  After `Look up Registry concepts` the candidate equal to the Public predicate is
+  marked but not auto-selected; notes appear if no candidate or the selected one
+  differs. Preview/Save stay the existing explicit manual flow (`LOCAL_ONLY`,
+  `fidelity=unassessed`). `New draft`/`Create revision` clear the origin note.
+- **[bootstrap_ku_dev_demo.py](../../../../scripts/base/bootstrap_ku_dev_demo.py):**
+  `--with-receiver` now admits the same synthetic sample as the receiver's own source
+  (`Dev demo sample: water (receiver)`; saves nothing) so the button is usable in the
+  first-run demo. CONTRIBUTING and SETUP_GUIDE §5.3 mention it.
+- Checks: see PROGRESS checkpoint (vitest, build, lint, script unit tests, live run).
+
+Not covered: no host/API change, no provenance link from the new KU to the Public KU,
+no reverse Registry lookup (the user types the label); Desktop shares this Web UI but
+was not click-tested; CLI has no equivalent command; macOS. Same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — Web/Web CI check seeds on the Web host (2026-11-19)
 
 Owner picked (t9) on 2026-11-19; commit `beb94dc` (fast-forwarded to main):
 

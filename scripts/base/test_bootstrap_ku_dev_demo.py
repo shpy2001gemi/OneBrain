@@ -122,7 +122,11 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
         self.assertEqual(sender["network"], boot.NETWORK_BLOCK)
         self.assertEqual(receiver["network"], boot.NETWORK_BLOCK)
         self.assertEqual((sender["port"], receiver["port"]), (4300, 4301))
-        self.assertEqual(receiver["sources"], [])
+        # D-057: receiver admits the sample as its own private source (nothing saved).
+        self.assertEqual([s["label"] for s in receiver["sources"]],
+                         ["Dev demo sample: water (receiver)"])
+        self.assertEqual(receiver["sources"][0]["canonical_file"],
+                         sender["sources"][0]["canonical_file"])
         self.assertEqual(sender["registry_root"], receiver["registry_root"])
         for key in ("data_dir", "vault_key_file", "api_token_file"):
             self.assertNotEqual(sender[key], receiver[key])

@@ -1,5 +1,18 @@
 # Decisions and claim boundary
 
+## D-057 — `/ku` Web may seed a new manual private draft from a received Public KU
+
+On 2026-11-20 the owner chose option (p) with its stated boundary: on `/ku` Web a
+button on an accepted Public KU (receiver local public store) may prefill a **new**
+manual private draft, only for the supported shape of one predicate with one text
+literal. Only the text literal is copied; the Public predicate CCID is shown as a
+hint and the matching Registry candidate is marked, but the user still picks their
+own host-admitted private `source_ref`, enters a label, explicitly selects a
+concept, previews and explicitly saves. The result is a separate `LOCAL_ONLY` KU
+with `fidelity=unassessed`; nothing is auto-adopted, the Public KU is not changed,
+no provenance link to it is recorded and no reward is authorized. No host/API,
+Registry or claim-boundary change.
+
 ## D-056 — Opt-in DEV-ONLY synthetic Registry for first-run contributor bootstrap
 
 On 2026-11-19 the owner chose task 20.C first-run (one bootstrap command with

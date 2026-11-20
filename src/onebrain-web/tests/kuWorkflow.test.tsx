@@ -94,6 +94,8 @@ function fixture(
     savedSemantic?: boolean;
     /** `accepted_selectors` on the share_list candidate (live receiver). */
     shareListSelectors?: string[];
+    /** share_list candidate carries two text arguments (unsupported for prefill). */
+    shareListTwoArguments?: boolean;
     /** Host supports display-only `workspace_summary` (header counts). */
     workspaceSummary?: "network_on" | "network_off";
   } = {},
@@ -411,7 +413,9 @@ function fixture(
                 statements: [
                   {
                     predicate_ccid: ccid,
-                    text_arguments: ["Water is a liquid."],
+                    text_arguments: options.shareListTwoArguments
+                      ? ["Water is a liquid.", "Ice is a solid."]
+                      : ["Water is a liquid."],
                   },
                 ],
                 fidelity: "unassessed",
@@ -2576,6 +2580,132 @@ describe("local KU component journey", () => {
     ).toHaveLength(count);
   });
 
+  it("starts a new manual private draft from an accepted Public KU: copies only the text, keeps source/concept/preview/save explicit (D-057)", async () => {
+    const f = fixture();
+    const { container } = render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "Host source" });
+    const publicObject = "d".repeat(64);
+    const startName = `Start a new private draft from ${publicObject}`;
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    const callsBefore = f.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: startName }));
+
+    // Prefill is local only: no reservation, draft, prepare or save call.
+    expect(f.calls.length).toBe(callsBefore);
+    expect(
+      (screen.getByLabelText("Text argument (manual assertion)") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Water is a liquid.");
+    expect((screen.getByLabelText("Admitted source") as HTMLSelectElement).value).toBe("");
+    expect((screen.getByLabelText("Predicate label") as HTMLInputElement).value).toBe("");
+    const note = screen.getByRole("note", {
+      name: "Draft prefilled from accepted Public KU",
+    });
+    expect(note.textContent).toContain(publicObject);
+    expect(note.textContent).toContain(ccid);
+    expect(note.textContent).toContain("not adopted, changed or linked");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Create a manual draft" }),
+      ).toBe(document.activeElement),
+    );
+    expect(
+      (screen.getByRole("button", { name: "Preview and validate" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    const a11y = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(a11y.violations).toEqual([]);
+
+    // The user explicitly chooses a source, label and concept.
+    fireEvent.change(screen.getByLabelText("Admitted source"), {
+      target: { value: source },
+    });
+    fireEvent.change(screen.getByLabelText("Predicate label"), {
+      target: { value: "water" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Look up Registry concepts" }),
+    );
+    await screen.findByRole("option", {
+      name: `${ccid} — matches the Public KU predicate`,
+    });
+    expect(
+      (screen.getByLabelText("Explicit concept selection") as HTMLSelectElement)
+        .value,
+    ).toBe("");
+    fireEvent.change(screen.getByLabelText("Explicit concept selection"), {
+      target: { value: ccid },
+    });
+    await preview();
+    const draft = f.calls.find((c) => c.body?.request?.action === "draft")!.body
+      .request.payload;
+    expect(draft).toEqual({
+      operation_id: op,
+      idempotency_key: op,
+      source_ref: source,
+      predicate_label: "water",
+      selected_ccid: ccid,
+      argument_text: "Water is a liquid.",
+    });
+    expect(
+      f.calls.filter((c) => c.body?.request?.operation === "save"),
+    ).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save exact preview privately" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain(
+        "Published: false",
+      ),
+    );
+    // New draft clears the Public origin note.
+    fireEvent.click(screen.getByRole("button", { name: "New draft" }));
+    expect(
+      screen.queryByRole("note", {
+        name: "Draft prefilled from accepted Public KU",
+      }),
+    ).toBeNull();
+  });
+  it("does not offer a private draft prefill for unsupported Public KU shapes or without a manual source", async () => {
+    const f = fixture({ shareListTwoArguments: true });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "Host source" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const card = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    expect(card.textContent).toContain(
+      "Cannot prefill a private draft: only one predicate with one text literal is supported.",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Start a new private draft/ }),
+    ).toBeNull();
+    cleanup();
+
+    const g = fixture({ emptyCatalog: true });
+    render(<KuWorkflowPage client={g.client} />);
+    await screen.findByRole("button", { name: `Inspect ${object}` });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const start = await screen.findByRole("button", {
+      name: `Start a new private draft from ${"d".repeat(64)}`,
+    });
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/A new private draft needs a host-admitted manual source/),
+    ).toBeTruthy();
+  });
   it("browses and filters accepted Public KUs, prefills step 4 for provenance inspection, and clears stale browse results", async () => {
     const options: Parameters<typeof fixture>[0] = { emptyCatalog: true };
     const f = fixture(options);
