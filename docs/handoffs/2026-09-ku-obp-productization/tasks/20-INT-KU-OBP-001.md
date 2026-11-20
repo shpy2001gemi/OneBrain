@@ -25,7 +25,16 @@ Owner picked (p) with its stated boundary on 2026-11-20, recorded as D-057:
   `--with-receiver` now admits the same synthetic sample as the receiver's own source
   (`Dev demo sample: water (receiver)`; saves nothing) so the button is usable in the
   first-run demo. CONTRIBUTING and SETUP_GUIDE §5.3 mention it.
-- Checks: see PROGRESS checkpoint (vitest, build, lint, script unit tests, live run).
+- Checks (commit `42c073a`): vitest **149/149** (`kuWorkflow` 50/50, 2 new tests: prefill
+  makes no host call, copies only text, marks but does not auto-select the candidate,
+  exact `draft` payload, explicit save, axe clean; unsupported shape/no source), `npm
+  run build`, `npm run lint` 0 errors (no new warning), script unit 15/15; live on a
+  fresh DEV-ONLY demo root: `--receiver-kind web --skip-cli-client --seed-sample-ku`
+  **46/46** with the receiver source, then browser agent **8/8** on receiver
+  `:4472/ku` (Browse → Start… → note + text only → own source + `water` → marked
+  candidate not auto-selected → preview `ready`/`LOCAL_ONLY` → Save `committed`,
+  `Published: false`, header `1 private KU saved` → New draft clears note; 0 console
+  errors; host facts: only `http://127.0.0.1:4472`). Demo root deleted afterwards.
 
 Not covered: no host/API change, no provenance link from the new KU to the Public KU,
 no reverse Registry lookup (the user types the label); Desktop shares this Web UI but
