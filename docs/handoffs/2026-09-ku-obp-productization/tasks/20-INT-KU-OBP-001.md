@@ -6,7 +6,36 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — new manual private draft from an accepted Public KU on `/ku` Web (2026-11-20)
+## Latest follow-up — `vNext foundation contract` CI green again (2026-11-20)
+
+Owner picked (ci) on 2026-11-20. The workflow had been red on main since
+September (last success 2026-09-05), hiding regressions from contributors.
+Commit `a03b6b4` (squash of `codex/ci-vnext-foundation-green`) fixes the four causes:
+
+- **KU golden line endings:** `validate_ku_registration.py` binds the SHA-256 of
+  [ku-semantic-content-v1.json](../../../../src/test-vectors/vnext/ku-semantic-content-v1.json),
+  but the recorded hash was taken from a Windows CRLF checkout. `.gitattributes`
+  pins the file to `eol=lf`; `golden_sha256` in
+  [ku-product-workflow-v1.json](../../../../src/test-vectors/vnext/ku-product-workflow-v1.json)
+  now holds the LF hash (the committed bytes are unchanged); the generator writes LF.
+- **DR-M5 marker race (M5.5):** [dr_m5_failpoint.rs](../../../../src/ku-core/src/foundation/dr_m5_failpoint.rs)
+  created the marker empty and wrote into it later, so a polling parent could read
+  a partial body. It now writes and fsyncs a harness-owned sibling, then hard-links
+  it to the marker path. Linking refuses an existing path, so the no-overwrite rule still holds.
+- **Default-feature workspace job:** installs the Tauri Linux libraries (`libwebkit2gtk-4.1-dev` etc.)
+  so `cargo test --workspace` can build `onebrain-desktop` (`glib-2.0` was missing).
+- **Formatting:** `cargo fmt --all` drift in 18 files (formatting only; checked with rustfmt 1.11 = CI stable 1.100).
+- Checks: branch push run 44689939787 **6/6 jobs success** (foundation-contract,
+  Feature-enabled real-QUIC incl. M5.5–P3.3, Default-feature workspace, Windows smoke,
+  macOS ARM64 soak smoke, base-v1-projections). Local: `validate_vnext_contracts.py` PASS
+  (Windows and an LF clone), CI Python unit list 324/324, failpoint 9/9, outbox 15/15,
+  journal 12/12, operational compaction 7/7, runtime rollout 5/5, crash harness 7/7.
+
+Not covered: the separate `Base v1 three-OS qualification candidate` workflow is also
+red since September (fmt drift was its first failure; its Linux lane still fails in the first
+step on the branch dispatch run 44692767804, log only available once the run finishes). No product behavior change.
+
+## Earlier follow-up — new manual private draft from an accepted Public KU on `/ku` Web (2026-11-20)
 
 Owner picked (p) with its stated boundary on 2026-11-20, recorded as D-057:
 
