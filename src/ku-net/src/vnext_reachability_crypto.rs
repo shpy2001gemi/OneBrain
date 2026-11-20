@@ -562,7 +562,11 @@ pub enum ReachabilityNonceDomainV1 {
 
 pub trait ReachabilityReplayStore: Send + Sync {
     /// Atomic verified-history floor check/commit; unsupported stores fail closed.
-    fn descriptor_history(&self, _history: &VerifiedDescriptorHistory, _commit: bool) -> Result<(), RelayAdmissionError> {
+    fn descriptor_history(
+        &self,
+        _history: &VerifiedDescriptorHistory,
+        _commit: bool,
+    ) -> Result<(), RelayAdmissionError> {
         Err(RelayAdmissionError::StateUnavailable)
     }
     fn check_sequence_candidate(
@@ -616,10 +620,19 @@ pub struct InMemoryReachabilityReplayStore {
 }
 
 impl ReachabilityReplayStore for InMemoryReachabilityReplayStore {
-    fn descriptor_history(&self, history: &VerifiedDescriptorHistory, commit: bool) -> Result<(), RelayAdmissionError> {
-        let mut state = self.sequences.lock().map_err(|_| RelayAdmissionError::StateUnavailable)?;
+    fn descriptor_history(
+        &self,
+        history: &VerifiedDescriptorHistory,
+        commit: bool,
+    ) -> Result<(), RelayAdmissionError> {
+        let mut state = self
+            .sequences
+            .lock()
+            .map_err(|_| RelayAdmissionError::StateUnavailable)?;
         history.check_floor(state.get(&history.key()).copied())?;
-        if commit { state.insert(history.key(), history.terminal_floor()); }
+        if commit {
+            state.insert(history.key(), history.terminal_floor());
+        }
         Ok(())
     }
     fn check_sequence_candidate(
@@ -1021,7 +1034,11 @@ impl ReachabilityRecordAdmission for ReachabilityAdmission {
         proofs: &[RelayPossessionProofV1],
         now: u64,
     ) -> Result<ValidatedRelayDescriptor, RelayAdmissionError> {
-        freshness(pending.canonical.issued_at, pending.canonical.expires_at, now)?;
+        freshness(
+            pending.canonical.issued_at,
+            pending.canonical.expires_at,
+            now,
+        )?;
         let stored = self
             .pending_descriptors
             .get(&pending.digest)

@@ -231,7 +231,9 @@ impl OllamaKuInputs {
     }
 }
 impl KuInputProvider for OllamaKuInputs {
-    fn review_selection_v2(&self) -> bool { self.selection_v2 }
+    fn review_selection_v2(&self) -> bool {
+        self.selection_v2
+    }
     fn review_provider(&self, model: &str) -> Option<Arc<dyn ExtractionProvider>> {
         self.review_providers.get(model).cloned()
     }
@@ -345,7 +347,11 @@ impl KuInputProvider for OllamaKuInputs {
                             })
                         })
                         .collect::<Result<_, BaseServiceError>>()?,
-                    limitations: vec!["experimental_model_unqualified".into(), "local_only".into(), "review_drafts_available".into()],
+                    limitations: vec![
+                        "experimental_model_unqualified".into(),
+                        "local_only".into(),
+                        "review_drafts_available".into(),
+                    ],
                     consent_text: CONSENT.into(),
                 })
             }

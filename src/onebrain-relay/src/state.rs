@@ -121,7 +121,9 @@ impl DurableRelayState {
             let bytes = key.value();
             if bytes.len() == 40 && bytes.starts_with(target) {
                 let sequence = u64::from_be_bytes(
-                    bytes[32..].try_into().map_err(|_| DurableStateError::Corrupt)?,
+                    bytes[32..]
+                        .try_into()
+                        .map_err(|_| DurableStateError::Corrupt)?,
                 );
                 highest = Some(highest.map_or(sequence, |value| value.max(sequence)));
             }

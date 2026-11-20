@@ -4,10 +4,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::SigningKey;
 use ku_net::vnext_reachability_crypto::{
-    InMemoryReachabilityReplayStore, ReachabilityAdmission, ReachabilityAdmissionPreparer,
-    ReachabilityDialValidator, ReachabilityLockFreeDialValidation, ReachabilityLockFreePreparation,
-    ReachabilityRecordAdmission, SystemPublicEndpointResolver,
-    DescriptorHistoryReplayStore, VerifiedDescriptorHistory,
+    DescriptorHistoryReplayStore, InMemoryReachabilityReplayStore, ReachabilityAdmission,
+    ReachabilityAdmissionPreparer, ReachabilityDialValidator, ReachabilityLockFreeDialValidation,
+    ReachabilityLockFreePreparation, ReachabilityRecordAdmission, SystemPublicEndpointResolver,
+    VerifiedDescriptorHistory,
 };
 use ku_net::vnext_relay_tunnel::prove_relay_possession;
 use onebrain_protocol::{encode_relay_control, RelayControlV1, RelayTransportV1};
@@ -84,8 +84,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("invalid bounded request".into());
     }
     let request: ProbeRequestV1 = serde_json::from_slice(&request)?;
-    if !matches!((request.format, request.descriptor_history_hex.is_some()), (1, false) | (2, true))
-        || request.kind != "probe-candidate-descriptor"
+    if !matches!(
+        (request.format, request.descriptor_history_hex.is_some()),
+        (1, false) | (2, true)
+    ) || request.kind != "probe-candidate-descriptor"
         || !valid_host_id(&request.source_host_id)
         || !valid_host_id(&request.relay_host_id)
     {
@@ -110,11 +112,22 @@ async fn probe(
     let preparer = ReachabilityAdmissionPreparer::new(resolver.clone(), 2)?;
     let validator = ReachabilityDialValidator::new(resolver, 2)?;
     let now = unix_now()?;
-    let replay = Arc::new(DescriptorHistoryReplayStore::new(Arc::new(InMemoryReachabilityReplayStore::default())));
+    let replay = Arc::new(DescriptorHistoryReplayStore::new(Arc::new(
+        InMemoryReachabilityReplayStore::default(),
+    )));
     if let Some(history) = &request.descriptor_history_hex {
-        if history.len() >= 16 { return Err("descriptor history count exceeds limit".into()); }
-        let bytes = history.iter().map(|s| decode_hex(s, 8192)).collect::<Result<Vec<_>, _>>()?;
-        replay.install(vec![VerifiedDescriptorHistory::verify(&bytes, &descriptor, now)?])?;
+        if history.len() >= 16 {
+            return Err("descriptor history count exceeds limit".into());
+        }
+        let bytes = history
+            .iter()
+            .map(|s| decode_hex(s, 8192))
+            .collect::<Result<Vec<_>, _>>()?;
+        replay.install(vec![VerifiedDescriptorHistory::verify(
+            &bytes,
+            &descriptor,
+            now,
+        )?])?;
     }
     let mut admission = ReachabilityAdmission::new(replay);
     let deadline = Instant::now() + PROBE_DEADLINE;

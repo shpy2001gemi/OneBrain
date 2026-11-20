@@ -923,7 +923,9 @@ impl RoutedVNextSession {
         Ok((self.connection, self.authenticated, admission))
     }
 
-    pub(crate) fn is_live(&self) -> bool { self.connection.is_open() }
+    pub(crate) fn is_live(&self) -> bool {
+        self.connection.is_open()
+    }
 
     pub fn expected_peer(&self) -> NodeId {
         self.expected_peer

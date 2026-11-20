@@ -236,7 +236,8 @@ pub struct ApiServer {
 impl ApiServer {
     #[cfg(feature = "vnext-outbound-first")]
     pub fn with_obp_binding(mut self, binding: crate::obp_api::Binding) -> Self {
-        self.state.obp_binding=Some(binding); self
+        self.state.obp_binding = Some(binding);
+        self
     }
 
     /// Create a new server, wrapping the node in an `Arc<Mutex<_>>`.
@@ -682,7 +683,9 @@ async fn auth_middleware(
     next: Next,
 ) -> Response {
     let path = req.uri().path();
-    if path == "/api/vnext/obp/ws" { return next.run(req).await; }
+    if path == "/api/vnext/obp/ws" {
+        return next.run(req).await;
+    }
     // Skip auth for WebSocket paths and static web files
     if path.starts_with("/ws/") || !path.starts_with("/api/") {
         return next.run(req).await;
@@ -700,7 +703,9 @@ async fn auth_middleware(
             if constant_time_eq(token.as_bytes(), state.api_token.as_bytes()) {
                 next.run(req).await
             } else {
-                if path.starts_with("/api/vnext/obp/") { return crate::obp_api::auth_error(StatusCode::FORBIDDEN); }
+                if path.starts_with("/api/vnext/obp/") {
+                    return crate::obp_api::auth_error(StatusCode::FORBIDDEN);
+                }
                 #[cfg(feature = "base-v1")]
                 if path.starts_with("/api/vnext/ku/") {
                     return crate::ku_api::authentication_error(StatusCode::FORBIDDEN);
@@ -710,7 +715,9 @@ async fn auth_middleware(
             }
         }
         _ => {
-            if path.starts_with("/api/vnext/obp/") { return crate::obp_api::auth_error(StatusCode::UNAUTHORIZED); }
+            if path.starts_with("/api/vnext/obp/") {
+                return crate::obp_api::auth_error(StatusCode::UNAUTHORIZED);
+            }
             #[cfg(feature = "base-v1")]
             if path.starts_with("/api/vnext/ku/") {
                 return crate::ku_api::authentication_error(StatusCode::UNAUTHORIZED);

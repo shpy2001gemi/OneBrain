@@ -50,7 +50,11 @@ impl TaskRequest {
     }
     pub fn schema(&self) -> &'static str {
         if self.selection_v2() {
-            return if self.kind == TaskKind::RepairSelection { semantic_selection_v2::REPAIR_SCHEMA } else { semantic_selection_v2::SCHEMA };
+            return if self.kind == TaskKind::RepairSelection {
+                semantic_selection_v2::REPAIR_SCHEMA
+            } else {
+                semantic_selection_v2::SCHEMA
+            };
         }
         match self.kind {
             TaskKind::Draft | TaskKind::Supplement => DRAFT_SCHEMA,
@@ -62,7 +66,11 @@ impl TaskRequest {
     }
     pub fn system_prompt(&self) -> &'static str {
         if self.selection_v2() {
-            return if self.kind == TaskKind::RepairSelection { semantic_selection_v2::REPAIR_PROMPT } else { semantic_selection_v2::PROMPT };
+            return if self.kind == TaskKind::RepairSelection {
+                semantic_selection_v2::REPAIR_PROMPT
+            } else {
+                semantic_selection_v2::PROMPT
+            };
         }
         match self.kind {
             TaskKind::Draft | TaskKind::Supplement => DRAFT_PROMPT,
@@ -84,12 +92,22 @@ impl TaskRequest {
         if self.selection_v2() {
             if self.kind == TaskKind::RepairSelection {
                 return semantic_selection_v2::repair_wire_schema(
-                    self.data["SOURCE"].as_str().ok_or(ExtractionError("source_binding"))?,
-                    &self.data["FIELDS"], &self.data["CHOICES"]);
+                    self.data["SOURCE"]
+                        .as_str()
+                        .ok_or(ExtractionError("source_binding"))?,
+                    &self.data["FIELDS"],
+                    &self.data["CHOICES"],
+                );
             }
             return semantic_selection_v2::wire_schema(
-                self.data["SOURCE"].as_str().ok_or(ExtractionError("source_binding"))?,
-                if self.kind == TaskKind::RepairSelection { Some(&self.data["FIELDS"]) } else { None },
+                self.data["SOURCE"]
+                    .as_str()
+                    .ok_or(ExtractionError("source_binding"))?,
+                if self.kind == TaskKind::RepairSelection {
+                    Some(&self.data["FIELDS"])
+                } else {
+                    None
+                },
             );
         }
         let base = if self.kind == TaskKind::RepairSelection {
@@ -710,23 +728,32 @@ impl DraftJob {
         let focus = source
             .get(w.start..w.end)
             .ok_or(ExtractionError("source_binding"))?;
-        if self.profile == semantic_selection::PROFILE || self.profile == semantic_selection_v2::PROFILE {
+        if self.profile == semantic_selection::PROFILE
+            || self.profile == semantic_selection_v2::PROFILE
+        {
             let mut budget = WorkBudget::new(
                 1_000_000,
                 Duration::from_secs(30),
                 Arc::new(AtomicBool::new(false)),
             )?;
             let mut data = json!({"SOURCE":focus});
-            if self.profile == semantic_selection_v2::PROFILE { data["SELECTION_PROFILE"] = json!(self.profile); }
+            if self.profile == semantic_selection_v2::PROFILE {
+                data["SELECTION_PROFILE"] = json!(self.profile);
+            }
             let kind = if let Some(selection) = &w.selection {
                 let validation = &w
                     .revisions
                     .last()
                     .ok_or(ExtractionError("draft_missing"))?
                     .validation;
-                let (target, fields) =
-                    selection_repair_target(&self.profile, focus, selection, validation, &mut budget)?
-                        .ok_or(ExtractionError("selection_repair_target"))?;
+                let (target, fields) = selection_repair_target(
+                    &self.profile,
+                    focus,
+                    selection,
+                    validation,
+                    &mut budget,
+                )?
+                .ok_or(ExtractionError("selection_repair_target"))?;
                 data["TARGET"] = selection["claims"][target].clone();
                 data["FIELDS"] = json!(fields);
                 data["CHOICES"] = selection_repair_choices(
@@ -742,8 +769,11 @@ impl DraftJob {
                 data["UNCOVERED_ROLE_TEXT"] = json!(validation.uncovered);
                 TaskKind::RepairSelection
             } else {
-                data["NUMERIC_CANDIDATES"] =
-                    if self.profile == semantic_selection_v2::PROFILE { semantic_selection_v2::numeric_candidates(focus, &mut budget)? } else { semantic_selection::numeric_candidates(focus, &mut budget)? };
+                data["NUMERIC_CANDIDATES"] = if self.profile == semantic_selection_v2::PROFILE {
+                    semantic_selection_v2::numeric_candidates(focus, &mut budget)?
+                } else {
+                    semantic_selection::numeric_candidates(focus, &mut budget)?
+                };
                 TaskKind::Select
             };
             if self.windows.len() > 1 {
@@ -871,10 +901,14 @@ impl DraftJob {
             .filter_map(|(_, window)| window.revisions.last())
             .map(|revision| revision.draft["statements"].as_array().map_or(0, Vec::len))
             .sum();
-        let other_nodes: usize = self.windows.iter().enumerate()
-            .filter(|(i,_)| *i != active.window)
-            .filter_map(|(_,w)| w.revisions.last())
-            .map(|r| r.draft["semantic_nodes"].as_u64().unwrap_or(0) as usize).sum();
+        let other_nodes: usize = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != active.window)
+            .filter_map(|(_, w)| w.revisions.last())
+            .map(|r| r.draft["semantic_nodes"].as_u64().unwrap_or(0) as usize)
+            .sum();
         let w = &mut self.windows[active.window];
         let focus = source
             .get(w.start..w.end)
@@ -884,7 +918,11 @@ impl DraftJob {
             let output = parse(&raw, budget)?;
             match active.kind {
                 TaskKind::Select | TaskKind::RepairSelection => {
-                    require(self.profile == semantic_selection::PROFILE || self.profile == semantic_selection_v2::PROFILE, "draft_profile")?;
+                    require(
+                        self.profile == semantic_selection::PROFILE
+                            || self.profile == semantic_selection_v2::PROFILE,
+                        "draft_profile",
+                    )?;
                     w.selection_proposals.push(output.clone());
                     let (selection, draft, validation) = if active.kind == TaskKind::Select {
                         require(w.selection.is_none(), "selection_already_recorded")?;
@@ -917,14 +955,23 @@ impl DraftJob {
                             "selection_repair_binding",
                         )?;
                         selection_apply_repair(
-                            &self.profile, focus, base, target, &fields, &output, budget,
+                            &self.profile,
+                            focus,
+                            base,
+                            target,
+                            &fields,
+                            &output,
+                            budget,
                         )?
                     };
                     require(
                         other_claims + draft["statements"].as_array().unwrap().len() <= 64,
                         "claim_bound",
                     )?;
-                    require(other_nodes + draft["semantic_nodes"].as_u64().unwrap_or(0) as usize <= 256,"semantic_node_bound")?;
+                    require(
+                        other_nodes + draft["semantic_nodes"].as_u64().unwrap_or(0) as usize <= 256,
+                        "semantic_node_bound",
+                    )?;
                     w.state = if validation.clear()
                         && draft["unresolved"].as_array().unwrap().is_empty()
                     {
@@ -1149,21 +1196,60 @@ impl DraftJob {
     }
 }
 
-fn selection_assemble(profile: &str, source: &str, v: &Value, b: &mut WorkBudget) -> Result<(Value,Validation)> {
-    if profile == semantic_selection_v2::PROFILE { semantic_selection_v2::assemble(source,v,b) }
-    else { semantic_selection::assemble(source,v,b) }
+fn selection_assemble(
+    profile: &str,
+    source: &str,
+    v: &Value,
+    b: &mut WorkBudget,
+) -> Result<(Value, Validation)> {
+    if profile == semantic_selection_v2::PROFILE {
+        semantic_selection_v2::assemble(source, v, b)
+    } else {
+        semantic_selection::assemble(source, v, b)
+    }
 }
-fn selection_repair_target(profile: &str, source: &str, v: &Value, validation: &Validation, b: &mut WorkBudget) -> Result<Option<(usize,Vec<String>)>> {
-    if profile == semantic_selection_v2::PROFILE { semantic_selection_v2::repair_target(source,v,validation,b) }
-    else { semantic_selection::repair_target(source,v,validation,b) }
+fn selection_repair_target(
+    profile: &str,
+    source: &str,
+    v: &Value,
+    validation: &Validation,
+    b: &mut WorkBudget,
+) -> Result<Option<(usize, Vec<String>)>> {
+    if profile == semantic_selection_v2::PROFILE {
+        semantic_selection_v2::repair_target(source, v, validation, b)
+    } else {
+        semantic_selection::repair_target(source, v, validation, b)
+    }
 }
-fn selection_repair_choices(profile: &str, source: &str, v: &Value, target: usize, fields: &[String], validation: &Validation, b: &mut WorkBudget) -> Result<Value> {
-    if profile == semantic_selection_v2::PROFILE { semantic_selection_v2::repair_choices(source,v,target,fields,validation,b) }
-    else { semantic_selection::repair_choices(source,v,target,fields,validation,b) }
+fn selection_repair_choices(
+    profile: &str,
+    source: &str,
+    v: &Value,
+    target: usize,
+    fields: &[String],
+    validation: &Validation,
+    b: &mut WorkBudget,
+) -> Result<Value> {
+    if profile == semantic_selection_v2::PROFILE {
+        semantic_selection_v2::repair_choices(source, v, target, fields, validation, b)
+    } else {
+        semantic_selection::repair_choices(source, v, target, fields, validation, b)
+    }
 }
-fn selection_apply_repair(profile: &str, source: &str, v: &Value, target: usize, fields: &[String], reply: &Value, b: &mut WorkBudget) -> Result<(Value,Value,Validation)> {
-    if profile == semantic_selection_v2::PROFILE { semantic_selection_v2::apply_repair(source,v,target,fields,reply,b) }
-    else { semantic_selection::apply_repair(source,v,target,fields,reply,b) }
+fn selection_apply_repair(
+    profile: &str,
+    source: &str,
+    v: &Value,
+    target: usize,
+    fields: &[String],
+    reply: &Value,
+    b: &mut WorkBudget,
+) -> Result<(Value, Value, Validation)> {
+    if profile == semantic_selection_v2::PROFILE {
+        semantic_selection_v2::apply_repair(source, v, target, fields, reply, b)
+    } else {
+        semantic_selection::apply_repair(source, v, target, fields, reply, b)
+    }
 }
 #[cfg(test)]
 mod tests;

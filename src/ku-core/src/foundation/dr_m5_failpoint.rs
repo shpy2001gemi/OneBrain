@@ -229,9 +229,26 @@ mod armed {
         Some(create_marker(&marker, &body).map(|()| marker))
     }
 
+    /// Publishes the marker atomically: the body is written and fsynced into a
+    /// harness-owned sibling first and then hard-linked to the final path, so
+    /// a parent polling `path.is_file()` never observes an empty or partial
+    /// marker. Linking refuses an existing final path, preserving the
+    /// create-new/no-overwrite contract.
     fn create_marker(path: &Path, body: &str) -> io::Result<()> {
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        persist(&mut file, body)
+        let mut partial_name = path.as_os_str().to_owned();
+        partial_name.push(format!(".{}.partial", std::process::id()));
+        let partial = PathBuf::from(partial_name);
+        let published = (|| {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&partial)?;
+            persist(&mut file, body)?;
+            drop(file);
+            std::fs::hard_link(&partial, path)
+        })();
+        let _ = std::fs::remove_file(&partial);
+        published
     }
 
     /// The parent kills the child as soon as it observes the marker, so the
