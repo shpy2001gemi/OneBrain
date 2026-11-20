@@ -444,7 +444,8 @@ impl RelayDiscovery {
         self.total_records = 0;
         self.signature_checks = 0;
         self.active_dns_jobs = 0;
-        self.relays.retain(|_, relay| relay.canonical().expires_at > now);
+        self.relays
+            .retain(|_, relay| relay.canonical().expires_at > now);
     }
 }
 
@@ -647,8 +648,11 @@ impl VerifiedRelayDiscovery for RelayDiscovery {
         proofs: &[RelayPossessionProofV1],
         now: u64,
     ) -> Result<RelayDiscoveryDelta, RelayDiscoveryLimitation> {
-        if !self.relays.contains_key(&staged.pending.canonical().relay_node_id)
-            && self.relays.len() >= self.policy.max_total_records {
+        if !self
+            .relays
+            .contains_key(&staged.pending.canonical().relay_node_id)
+            && self.relays.len() >= self.policy.max_total_records
+        {
             self.abort_descriptor(staged, now)?;
             return Err(RelayDiscoveryLimitation::RecordLimit);
         }

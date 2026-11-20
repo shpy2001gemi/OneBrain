@@ -576,7 +576,9 @@ impl VNextProductRuntime {
                 network.install_product_routing(owner.clone())?;
             }
             #[cfg(feature = "vnext-outbound-first")]
-            obp.restore_policy(outbound_first.as_ref()).await.map_err(|_| VNextProductRuntimeError::OutboundFirst("obp_policy_recovery"))?;
+            obp.restore_policy(outbound_first.as_ref())
+                .await
+                .map_err(|_| VNextProductRuntimeError::OutboundFirst("obp_policy_recovery"))?;
             network.start_product_outbound()?;
 
             let rehydrated_private_needs = distributed_kql

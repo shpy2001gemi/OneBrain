@@ -225,7 +225,10 @@ impl KuStore {
             producer,
             job: if self.inputs.review_selection_v2() {
                 DraftJob::new_selection_v2(&input.text)
-            } else { DraftJob::new_selection(&input.text) }.map_err(|_| invalid())?,
+            } else {
+                DraftJob::new_selection(&input.text)
+            }
+            .map_err(|_| invalid())?,
         };
         self.write_review(&record)?;
         Ok(true)

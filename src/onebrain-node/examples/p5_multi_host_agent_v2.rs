@@ -249,9 +249,17 @@ impl AgentRuntimeState {
             Arc::clone(&dial_validator),
         ));
         let session_replay = Arc::new(RedbReachabilityReplayStore::open(
-            advertisement_replay_store_path(Path::new(AGENT_STATE_ROOT), &config.host_id, &config.session_id)?,
+            advertisement_replay_store_path(
+                Path::new(AGENT_STATE_ROOT),
+                &config.host_id,
+                &config.session_id,
+            )?,
         )?);
-        let descriptor_replay = Arc::new(ku_net::vnext_reachability_crypto::DescriptorHistoryReplayStore::new(session_replay.clone()));
+        let descriptor_replay = Arc::new(
+            ku_net::vnext_reachability_crypto::DescriptorHistoryReplayStore::new(
+                session_replay.clone(),
+            ),
+        );
         let discovery = Arc::new(tokio::sync::RwLock::new(RelayDiscovery::new(
             RelayDiscoveryPolicy::default(),
             ReachabilityAdmission::new(descriptor_replay.clone()),
@@ -1656,8 +1664,11 @@ fn diagnose_relay_matrix(
             .iter()
             .map(|endpoint| format!("{:?}", endpoint.transport))
             .collect::<Vec<_>>();
-        let replay = Arc::new(ku_net::vnext_reachability_crypto::DescriptorHistoryReplayStore::new(
-            Arc::new(InMemoryReachabilityReplayStore::default())));
+        let replay = Arc::new(
+            ku_net::vnext_reachability_crypto::DescriptorHistoryReplayStore::new(Arc::new(
+                InMemoryReachabilityReplayStore::default(),
+            )),
+        );
         replay.install(histories.clone())?;
         let isolated_discovery = Arc::new(tokio::sync::RwLock::new(RelayDiscovery::new(
             RelayDiscoveryPolicy::default(),
@@ -1720,7 +1731,9 @@ fn ensure_reservations(
         return Err("production reservation set must contain two or three relays".into());
     }
     let now = unix_now()?;
-    state.descriptor_replay.install(command_descriptor_histories(command, &records, now)?)?;
+    state
+        .descriptor_replay
+        .install(command_descriptor_histories(command, &records, now)?)?;
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     let delta = state
         .runtime
@@ -1756,7 +1769,9 @@ fn ensure_reservations(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let path = relay_reservation_cursor(&relay_key);
                 if !path.exists() && legacy_relay_reservation_cursor(&relay_key).exists() {
-                    return Err("legacy relay request cursor requires preserved-floor migration".into());
+                    return Err(
+                        "legacy relay request cursor requires preserved-floor migration".into(),
+                    );
                 }
                 entry.insert(DurableSequenceCursor::open(
                     path,
@@ -1970,21 +1985,50 @@ fn next_durable_sequence(
 }
 
 #[cfg(unix)]
-fn command_descriptor_histories(command: &AgentCommandFrame, records: &[Vec<u8>], now: u64)
-    -> Result<Vec<ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory>, Box<dyn std::error::Error>> {
-    let Some(value) = command.parameters.get("relay_descriptor_histories") else { return Ok(Vec::new()); };
-    let map = value.as_object().ok_or("descriptor histories must be an object")?;
-    if map.len() != records.len() { return Err("history key set mismatch".into()); }
-    records.iter().map(|record| {
-        let list = map.get(&hex(record)).and_then(serde_json::Value::as_array).ok_or("missing descriptor history")?;
-        if list.len() >= 16 { return Err("history count exceeds limit".into()); }
-        let history = list.iter().map(|value| {
-            let value = value.as_str().ok_or("history must contain hex strings")?;
-            if value.len() > 16384 { return Err("history bytes exceed limit".into()); }
-            decode_hex_vec(value)
-        }).collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
-        Ok(ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory::verify(&history, record, now)?)
-    }).collect()
+fn command_descriptor_histories(
+    command: &AgentCommandFrame,
+    records: &[Vec<u8>],
+    now: u64,
+) -> Result<
+    Vec<ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory>,
+    Box<dyn std::error::Error>,
+> {
+    let Some(value) = command.parameters.get("relay_descriptor_histories") else {
+        return Ok(Vec::new());
+    };
+    let map = value
+        .as_object()
+        .ok_or("descriptor histories must be an object")?;
+    if map.len() != records.len() {
+        return Err("history key set mismatch".into());
+    }
+    records
+        .iter()
+        .map(|record| {
+            let list = map
+                .get(&hex(record))
+                .and_then(serde_json::Value::as_array)
+                .ok_or("missing descriptor history")?;
+            if list.len() >= 16 {
+                return Err("history count exceeds limit".into());
+            }
+            let history = list
+                .iter()
+                .map(|value| {
+                    let value = value.as_str().ok_or("history must contain hex strings")?;
+                    if value.len() > 16384 {
+                        return Err("history bytes exceed limit".into());
+                    }
+                    decode_hex_vec(value)
+                })
+                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            Ok(
+                ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory::verify(
+                    &history, record, now,
+                )?,
+            )
+        })
+        .collect()
 }
 
 #[cfg(unix)]
@@ -2186,8 +2230,14 @@ mod tests {
         let binding = relay_reservation_cursor_binding([7; 32], relay);
         assert_eq!(binding, relay_reservation_cursor_binding([7; 32], relay));
         assert_ne!(binding, relay_reservation_cursor_binding([8; 32], relay));
-        assert_ne!(binding, relay_reservation_cursor_binding([7; 32], NodeId::from_bytes([10; 32])));
-        assert_ne!(relay_reservation_cursor("ab"), legacy_relay_reservation_cursor("ab"));
+        assert_ne!(
+            binding,
+            relay_reservation_cursor_binding([7; 32], NodeId::from_bytes([10; 32]))
+        );
+        assert_ne!(
+            relay_reservation_cursor("ab"),
+            legacy_relay_reservation_cursor("ab")
+        );
     }
 
     #[tokio::test]

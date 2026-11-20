@@ -52,6 +52,10 @@ pub mod verifier_service;
 pub mod vnext_bootstrap_client;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_canary_operations;
+#[cfg(all(test, feature = "vnext-chaos-harness"))]
+mod vnext_chaos_profile_tests;
+#[cfg(all(test, feature = "vnext-compaction-harness"))]
+mod vnext_compaction_profile_tests;
 #[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_companion;
 pub mod vnext_config;
@@ -65,8 +69,6 @@ pub mod vnext_distributed_kql;
 pub mod vnext_distributed_pomv;
 #[cfg(feature = "vnext-chaos-harness")]
 pub mod vnext_fuzz_targets;
-#[cfg(all(test, feature = "vnext-chaos-harness"))]
-mod vnext_chaos_profile_tests;
 pub mod vnext_legacy_migration;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_linux_candidate_gatherer;
@@ -85,8 +87,6 @@ pub mod vnext_observability;
 mod vnext_observability_profile_tests;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_operational_compaction;
-#[cfg(all(test, feature = "vnext-compaction-harness"))]
-mod vnext_compaction_profile_tests;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_outbound_product;
 #[cfg(feature = "vnext-network-runtime")]
@@ -124,22 +124,22 @@ pub mod vnext_rendezvous_publisher;
 mod vnext_resource_profile_tests;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
+#[cfg(all(test, feature = "vnext-network-runtime"))]
+mod vnext_rollback_profile_tests;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_route_authority;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_route_journal;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_runtime_rollout;
-#[cfg(all(test, feature = "vnext-network-runtime"))]
-mod vnext_rollback_profile_tests;
 #[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
-#[cfg(feature = "vnext-soak-harness")]
-pub mod vnext_soak_release;
 #[cfg(all(test, feature = "vnext-soak-harness"))]
 mod vnext_soak_profile_tests;
+#[cfg(feature = "vnext-soak-harness")]
+pub mod vnext_soak_release;
 pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;

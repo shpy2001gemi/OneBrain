@@ -29,17 +29,22 @@ impl ExtractionProvider for Proposal {
     ) -> Result<Vec<u8>, ExtractionError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.entered.notify_one();
-        if self.wait || (self.wait_review && request.kind == ku_encoder::extraction::review_draft::TaskKind::RepairSelection) {
+        if self.wait
+            || (self.wait_review
+                && request.kind == ku_encoder::extraction::review_draft::TaskKind::RepairSelection)
+        {
             std::future::pending::<()>().await;
         }
         let output = match request.kind {
             ku_encoder::extraction::review_draft::TaskKind::Select => {
-                let mut v=json!({"claims":[{"subject":"Copper","predicate":"is","arguments":["conductive"]}]});
-                if self.wait_review { v["claims"][0]["anchor"]=json!("conductive"); }
+                let mut v = json!({"claims":[{"subject":"Copper","predicate":"is","arguments":["conductive"]}]});
+                if self.wait_review {
+                    v["claims"][0]["anchor"] = json!("conductive");
+                }
                 v
             }
             ku_encoder::extraction::review_draft::TaskKind::RepairSelection => {
-                assert_eq!(request.data["FIELDS"],json!(["anchor"]));
+                assert_eq!(request.data["FIELDS"], json!(["anchor"]));
                 json!({"patch":{"anchor":"Copper is conductive."}})
             }
             ku_encoder::extraction::review_draft::TaskKind::Draft => {
@@ -109,7 +114,7 @@ fn inputs(
     registry: Arc<onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager>,
     provider: Option<Arc<Proposal>>,
 ) -> Arc<dyn KuInputProvider> {
-    inputs_for_profile(registry,provider,false)
+    inputs_for_profile(registry, provider, false)
 }
 fn inputs_for_profile(
     registry: Arc<onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager>,
@@ -127,8 +132,12 @@ fn inputs_for_profile(
             )
         })
         .collect();
-    let inputs=OllamaKuInputs::new([0; 32], manual, registry, models).unwrap();
-    Arc::new(if v2 { inputs.with_selection_v2() } else { inputs })
+    let inputs = OllamaKuInputs::new([0; 32], manual, registry, models).unwrap();
+    Arc::new(if v2 {
+        inputs.with_selection_v2()
+    } else {
+        inputs
+    })
 }
 async fn fixture(
     provider: Arc<Proposal>,
@@ -137,10 +146,14 @@ async fn fixture(
     NodeConfig,
     Arc<onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager>,
 ) {
-    fixture_for_profile(provider,false).await
+    fixture_for_profile(provider, false).await
 }
-async fn fixture_for_profile(provider:Arc<Proposal>,v2:bool) -> (
-    Fixture, NodeConfig,
+async fn fixture_for_profile(
+    provider: Arc<Proposal>,
+    v2: bool,
+) -> (
+    Fixture,
+    NodeConfig,
     Arc<onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager>,
 ) {
     let dir = tempfile::tempdir().unwrap();
@@ -156,7 +169,7 @@ async fn fixture_for_profile(provider:Arc<Proposal>,v2:bool) -> (
     runtime.ku = Some(KuRuntimeConfig {
         vault_key: VaultKey::from_bytes([8; 32]),
         registry: Some(registry.clone()),
-        inputs: inputs_for_profile(registry.clone(), Some(provider),v2),
+        inputs: inputs_for_profile(registry.clone(), Some(provider), v2),
         public: None,
     });
     node.install_base_runtime(runtime).unwrap();
@@ -194,9 +207,9 @@ async fn review_draft_background_poll_restart_without_model_and_no_save() {
 async fn review_draft_v2_background_poll_restart_without_model_and_no_save() {
     background_poll_restart(true).await;
 }
-async fn background_poll_restart(v2:bool) {
+async fn background_poll_restart(v2: bool) {
     let provider = proposal(false, false);
-    let (f, config, registry) = fixture_for_profile(provider.clone(),v2).await;
+    let (f, config, registry) = fixture_for_profile(provider.clone(), v2).await;
     let session = f.session().await;
     let op = f.reserve(&session).await;
     let payload = json!({"operation_id":op,"idempotency_key":op,"model":"qwen3:test-only","text":"Copper is conductive.","consent":true});
@@ -219,8 +232,17 @@ async fn background_poll_restart(v2:bool) {
     .await
     .unwrap();
     assert_eq!(view["data"]["payload"]["review_job"]["canonical_ku"], false);
-    if v2 { assert_eq!(view["data"]["payload"]["review_job"]["job"]["windows"][0]["revisions"][0]["draft"]["profile"],"ku-semantic-draft/2.0"); }
-    assert_eq!(view["data"]["payload"]["review_job"]["semantic_verification"], "unassessed");
+    if v2 {
+        assert_eq!(
+            view["data"]["payload"]["review_job"]["job"]["windows"][0]["revisions"][0]["draft"]
+                ["profile"],
+            "ku-semantic-draft/2.0"
+        );
+    }
+    assert_eq!(
+        view["data"]["payload"]["review_job"]["semantic_verification"],
+        "unassessed"
+    );
     assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         edit(&f, &session, "review_start", payload).await.0,
@@ -267,9 +289,9 @@ async fn review_draft_returns_before_model_and_cancel_fences_callback() {
 async fn review_draft_v2_returns_before_model_and_cancel_fences_callback() {
     cancel_background(true).await;
 }
-async fn cancel_background(v2:bool) {
+async fn cancel_background(v2: bool) {
     let provider = proposal(false, true);
-    let (f, _, _) = fixture_for_profile(provider.clone(),v2).await;
+    let (f, _, _) = fixture_for_profile(provider.clone(), v2).await;
     let session = f.session().await;
     let op = f.reserve(&session).await;
     let (_,start)=tokio::time::timeout(std::time::Duration::from_secs(3),edit(&f,&session,"review_start",json!({"operation_id":op,"idempotency_key":op,"model":"qwen3:test-only","text":"Copper is conductive.","consent":true}))).await.unwrap();
@@ -370,18 +392,19 @@ async fn review_draft_drain_restart_requires_explicit_resume_and_keeps_spent_bud
 async fn review_draft_v2_drain_restart_requires_explicit_resume_and_keeps_spent_budget() {
     drain_restart(true).await;
 }
-async fn drain_restart(v2:bool) {
+async fn drain_restart(v2: bool) {
     let mut waiting = proposal(false, false);
     Arc::get_mut(&mut waiting).unwrap().wait_review = true;
-    let (f, _, registry) = fixture_for_profile(waiting.clone(),v2).await;
+    let (f, _, registry) = fixture_for_profile(waiting.clone(), v2).await;
     let session = f.session().await;
     let op = f.reserve(&session).await;
     let (_,start)=edit(&f,&session,"review_start",json!({"operation_id":op,"idempotency_key":op,"model":"qwen3:test-only","text":"Copper is conductive.","consent":true})).await;
     assert_eq!(start["ok"], true);
-    tokio::time::timeout(
-        std::time::Duration::from_secs(3),
-        async { while waiting.calls.load(Ordering::SeqCst) < 2 { waiting.entered.notified().await; } },
-    )
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        while waiting.calls.load(Ordering::SeqCst) < 2 {
+            waiting.entered.notified().await;
+        }
+    })
     .await
     .unwrap();
     let mut runtime = f.state.node.lock().await.detach_base_runtime().unwrap();
