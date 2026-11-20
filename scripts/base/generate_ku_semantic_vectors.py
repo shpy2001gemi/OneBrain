@@ -58,5 +58,5 @@ def vectors():
 
 if __name__ == '__main__':
     path=ROOT/'src/test-vectors/vnext/ku-semantic-content-v1.json'
-    path.write_text(json.dumps(vectors(),indent=2)+'\n',encoding='utf-8')
+    path.write_text(json.dumps(vectors(),indent=2)+'\n',encoding='utf-8',newline='\n')
     print(f'Wrote {path.relative_to(ROOT)}')

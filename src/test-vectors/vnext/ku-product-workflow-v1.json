@@ -1107,6 +1107,6 @@
     },
     "domain": "semantic-content/1",
     "golden_vectors": "ku-semantic-content-v1.json",
-    "golden_sha256": "9e8664535ee9449998d6d7259314b5550829b77cd374fecbbdf5eb529299a1d0"
+    "golden_sha256": "3a01bb734ff28e55b532c7e82f622a40ef475958305a3a289c10226c05d22c81"
   }
 }

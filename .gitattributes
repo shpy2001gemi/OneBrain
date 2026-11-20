@@ -29,3 +29,6 @@ src/onebrain-mobile/test/goldens/*.png -text
 # Semantic selection artifacts are byte-compared by the offline contract validator.
 docs/specs/vnext/ku-semantic-selection-v1/** text eol=lf
 docs/specs/vnext/ku-semantic-selection-v2/** text eol=lf
+
+# The KU product contract binds the SHA-256 of these exact golden bytes.
+src/test-vectors/vnext/ku-semantic-content-v1.json text eol=lf
