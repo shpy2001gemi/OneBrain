@@ -61,6 +61,25 @@ REVIEWED_AUDIT_ITEMS.update({
     advisory: {"id": advisory, "severity": "P2", "triage": "documented-non-base"}
     for advisory in ("RUSTSEC-2024-0429", "RUSTSEC-2026-0221")
 })
+# Owner-approved 2026-11-25 (ci3): unmaintained-only, no known vulnerability or fix.
+# zbus/zvariant: Linux D-Bus via onebrain-desktop Tauri plugins, not in onebrain-cli.
+# chrono: optional serde_with dependency recorded in Cargo.lock but not compiled.
+REVIEWED_AUDIT_ITEMS.update({
+    advisory: {"id": advisory, "severity": "P3", "triage": "documented-non-base"}
+    for advisory in (
+        "RUSTSEC-2026-0370",
+        "RUSTSEC-2026-0371",
+        "RUSTSEC-2026-0372",
+        "RUSTSEC-2026-0543",
+    )
+})
+# paste: compile-time proc-macro via tokenizers -> ku-encoder (in the base build graph,
+# no runtime code); revisit when tokenizers drops it.
+REVIEWED_AUDIT_ITEMS["RUSTSEC-2024-0436"] = {
+    "id": "RUSTSEC-2024-0436",
+    "severity": "P3",
+    "triage": "accepted-risk",
+}
 _IDENTITY_FIELDS = (
     "release_request_digest",
     "qualification_session_id",
