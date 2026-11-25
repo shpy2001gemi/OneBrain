@@ -67,7 +67,102 @@ enum KuCommand {
     Cancel(Operation),
     /// Read/repair the durable recorded outcome without rerunning extraction.
     Reconcile(Operation),
+    /// D-045 Public KU share through the host's registered editor actions.
+    #[command(subcommand)]
+    Share(ShareCommand),
 }
+
+/// Thin projection of the registered `POST /api/vnext/ku/editor` share actions
+/// (`share_prepare`, `share_confirm`, `share_intent`, `share_inspect`,
+/// `share_list`). The host owns consent, the outbox and the network runtime.
+#[derive(Debug, Subcommand)]
+enum ShareCommand {
+    /// Preview one saved private KU as a Public KU for one expected peer; never enqueues or sends.
+    Prepare {
+        /// Saved private ObjectCID (one predicate + one text literal only).
+        #[arg(long, value_parser = hex32)]
+        object_cid: String,
+        /// Expected receiver NodeID; the session fails closed on any other peer.
+        #[arg(long, value_parser = hex32)]
+        expected_node_id: String,
+        /// Receiver listen address, e.g. 127.0.0.1:4433.
+        #[arg(long)]
+        address: std::net::SocketAddr,
+        #[arg(long, value_parser = hex32)]
+        selector: String,
+        #[arg(long, value_parser = hex32)]
+        namespace: String,
+    },
+    /// Type the exact prepared_id on stdin to confirm the previewed Public share; no --yes bypass.
+    Confirm {
+        #[arg(long, value_parser = hex32)]
+        prepared_id: String,
+    },
+    /// Read one durable outbound intent; read-only, never resends.
+    Intent {
+        #[arg(long, value_parser = hex32)]
+        intent_id: String,
+    },
+    /// Receiver: inspect an accepted Public KU and its transport provenance.
+    Inspect {
+        #[arg(long, value_parser = hex32)]
+        object_cid: String,
+        #[arg(long, value_parser = hex32)]
+        selector: String,
+    },
+    /// Receiver: browse accepted Public KUs, separate from private saved knowledge.
+    List {
+        #[arg(long)]
+        query: Option<String>,
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=256))]
+        limit: Option<u32>,
+    },
+}
+
+impl ShareCommand {
+    fn request(&self) -> (&'static str, Value) {
+        match self {
+            Self::Prepare {
+                object_cid,
+                expected_node_id,
+                address,
+                selector,
+                namespace,
+            } => (
+                "share_prepare",
+                json!({"object_cid":object_cid,"expected_node_id":expected_node_id,"address":address.to_string(),"selector":selector,"namespace":namespace}),
+            ),
+            // Only reached after the exact typed prepared_id matched.
+            Self::Confirm { prepared_id } => (
+                "share_confirm",
+                json!({"prepared_id":prepared_id,"confirm_public":true}),
+            ),
+            Self::Intent { intent_id } => ("share_intent", json!({"intent_id":intent_id})),
+            Self::Inspect {
+                object_cid,
+                selector,
+            } => (
+                "share_inspect",
+                json!({"object_cid":object_cid,"selector":selector}),
+            ),
+            Self::List { query, limit } => {
+                let mut payload = json!({});
+                if let Some(query) = query {
+                    payload["query"] = json!(query);
+                }
+                if let Some(limit) = limit {
+                    payload["limit"] = json!(limit);
+                }
+                ("share_list", payload)
+            }
+        }
+    }
+}
+
+const CANCEL_PROMPT: &str =
+    "Cancel eligible private staging (committed work cannot be undone). Type exact operation_id";
+const SHARE_CONFIRM_PROMPT: &str = "Confirm PUBLIC share of the exact previewed Public KU to the expected peer; a Public copy cannot be made private again. Type exact prepared_id";
+const SHARE_SCOPE: &str = "Public share scope: preview never enqueues or sends; confirm creates a durable pending intent only; Acknowledged is a transport receipt, not adoption, verification or reward. Private ObjectCID and source stay withheld. Fidelity remains unassessed; models are unqualified.";
 
 #[derive(Debug, Args)]
 struct PayloadFile {
@@ -121,6 +216,9 @@ impl KuCommand {
     fn request(&self) -> Result<Option<(&'static str, Value)>, String> {
         let (name, payload) = match self {
             Self::Reserve | Self::Status { operation_id: None } => return Ok(None),
+            Self::Share(_) => {
+                return Err("share actions use the registered editor transport".into())
+            }
             Self::Prepare(file) => ("prepare", file_dto::<KuPrepareV1>(file)?),
             Self::Revise(file) => ("revise", file_dto::<KuReviseV1>(file)?),
             Self::Save(file) => ("save", file_dto::<KuSaveV1>(file)?),
@@ -196,7 +294,10 @@ impl Client {
     async fn call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
         let operation = body
             .as_ref()
-            .and_then(|v| v.pointer("/request/operation"))
+            .and_then(|v| {
+                v.pointer("/request/operation")
+                    .or_else(|| v.pointer("/request/action"))
+            })
             .and_then(Value::as_str)
             .unwrap_or(if path.ends_with("reservations") {
                 "reserve"
@@ -281,7 +382,27 @@ fn validate_response(operation: &str, value: &Value) -> Result<(), String> {
         );
     }
     session(value)?;
-    let bytes = serde_json::to_vec(&value["data"]["payload"]).unwrap();
+    let payload = &value["data"]["payload"];
+    let share_event = match operation {
+        "share_prepare" => Some("share_prepared"),
+        "share_confirm" => Some("share_confirmed"),
+        "share_intent" => Some("intent"),
+        "share_inspect" => Some("public_object"),
+        "share_list" => Some("public_objects"),
+        _ => None,
+    };
+    if let Some(event) = share_event {
+        let pending_preview = operation != "share_prepare"
+            || (payload["enqueued"] == false && payload["payload_sent"] == false);
+        if payload["event"] != event
+            || payload.get("authorizes_reward").is_some_and(|v| v != false)
+            || !pending_preview
+        {
+            return Err("invalid KU share response; inspect the intent before any retry".into());
+        }
+        return Ok(());
+    }
+    let bytes = serde_json::to_vec(payload).unwrap();
     match operation {
         "reserve" => dto::<KuOperationRefV1>(&bytes),
         "prepare" | "preview" | "revise" => dto::<KuPreparedV1>(&bytes),
@@ -303,21 +424,35 @@ fn verify_cancel(operation_id: &str, typed: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn run(args: &KuArgs) -> Result<Value, String> {
-    run_with_confirmation(args, read_cancellation).await
+fn verify_share_confirm(prepared_id: &str, typed: &str) -> Result<(), String> {
+    if typed.trim_end_matches(['\r', '\n']) != prepared_id {
+        return Err(
+            "public share confirmation rejected: type the exact prepared_id; nothing was confirmed"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
-fn read_cancellation(operation_id: &str) -> Result<String, String> {
-    eprint!("Cancel eligible private staging (committed work cannot be undone). Type exact operation_id {operation_id}: ");
+async fn run(args: &KuArgs) -> Result<Value, String> {
+    let prompt = match &args.command {
+        KuCommand::Share(ShareCommand::Confirm { .. }) => SHARE_CONFIRM_PROMPT,
+        _ => CANCEL_PROMPT,
+    };
+    run_with_confirmation(args, |id| read_confirmation(prompt, id)).await
+}
+
+fn read_confirmation(prompt: &str, id: &str) -> Result<String, String> {
+    eprint!("{prompt} {id}: ");
     std::io::stderr()
         .flush()
-        .map_err(|_| "cannot show cancellation prompt")?;
+        .map_err(|_| "cannot show confirmation prompt")?;
     let mut typed = String::new();
     std::io::stdin()
         .lock()
         .take(128)
         .read_line(&mut typed)
-        .map_err(|_| "cannot read cancellation")?;
+        .map_err(|_| "cannot read confirmation")?;
     Ok(typed)
 }
 
@@ -325,6 +460,22 @@ async fn run_with_confirmation(
     args: &KuArgs,
     confirm: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<Value, String> {
+    if let KuCommand::Share(share) = &args.command {
+        let (action, payload) = share.request();
+        let client = Client::new(args)?;
+        if let ShareCommand::Confirm { prepared_id } = share {
+            verify_share_confirm(prepared_id, &confirm(prepared_id)?)?;
+        }
+        let status = client
+            .call(Method::GET, "/api/vnext/ku/status", None)
+            .await?;
+        let session = session(&status)?;
+        return client.call(Method::POST, "/api/vnext/ku/editor", Some(json!({
+            "session":session,
+            "budget":{"max_items":args.max_items,"max_bytes":args.max_bytes,"max_work_units":args.max_work_units},
+            "request":{"action":action,"payload":payload}
+        }))).await;
+    }
     let operation = args.command.request()?;
     let client = Client::new(args)?;
     if let KuCommand::Cancel(op) = &args.command {
@@ -356,6 +507,10 @@ async fn run_with_confirmation(
 pub(crate) async fn execute(args: KuArgs) -> Result<(), String> {
     let envelope = run(&args).await?;
     println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
+    if matches!(args.command, KuCommand::Share(_)) {
+        eprintln!("{SHARE_SCOPE}");
+        return Ok(());
+    }
     eprintln!("Local authorized scope only. Save is private; preparation is pending intent, not accepted KU. Partial/empty pages are not network absence. Fidelity remains unassessed unless evidenced; models are unqualified. No publication, delivery or reward is implied.");
     Ok(())
 }

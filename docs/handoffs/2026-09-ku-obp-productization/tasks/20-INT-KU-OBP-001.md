@@ -6,7 +6,38 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — CLI-sender dev demo reconciled as covered (t12, 2026-11-25)
+## Latest follow-up — share projection reconciled + `onebrain ku share` CLI parity (t13, 2026-11-25)
+
+Next step of the t12 checkpoint. MASTER_PLAN row "Task 20 follow-up — share projection" still said
+"current concept uses the isolated helper". Checked against main: the D-045 share module is already
+projected through the registered `POST /api/vnext/ku/editor` actions (`bef0d28`), `/ku` Web
+(`25b89c5` and later UX rows), normal host composition in `ku_host` (`2eb30d4`), `ku_local_web`
+opt-in network (`5dfc6bd`), `OneBrainNode`/Desktop `VNextProductRuntime` (`fbcda30`) and
+`onebrain start --api --ku-network-bind` (overview row 31). The row is satisfied.
+
+The one remaining gap was CLI parity: `onebrain ku` had no share command. Added a thin projection
+of the same registered editor actions in [ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs):
+`onebrain ku share prepare|confirm|intent|inspect|list`. IDs are 64 lowercase hex, checked before
+any request; `confirm` needs the exact `prepared_id` typed on stdin (no flag bypass; a mismatch
+contacts no host) and then sends `confirm_public: true`. Responses must have the expected `event`,
+never `authorizes_reward: true`, and a preview must say `enqueued: false` / `payload_sent: false`.
+stderr says confirm only creates a pending intent and `Acknowledged` is not adoption or reward.
+No new service operation, DTO or wire field. Docs: [CLI_REFERENCE](../../../../src/onebrain-cli/CLI_REFERENCE.md)
+and an addendum in [KU_LOCAL_CLI_PROJECTION_V1](../../../specs/vnext/KU_LOCAL_CLI_PROJECTION_V1.md).
+
+Checks: `onebrain-cli` `cli::ku` 8/8 (3 new: parse/payload/bypass, typed-confirm before any
+request + exact editor body on a mock host, response event/reward/preview checks), full
+`onebrain-cli` tests on default and `vnext-network-runtime` features, rustfmt, vNext validator.
+Live on a fresh DEV-ONLY bootstrap (Windows): printed CLI/CLI share check 52/52, then two
+`onebrain start --api --ku-network-bind` hosts driven only by `onebrain ku share …` 11/11
+(prepare hides the private ObjectCID, wrong typed id refused, confirm → `Acknowledged`, receiver
+`share list`/`share inspect` show the Public KU with the sender NodeID, receiver has no such intent).
+
+Not covered: the CI two-node job still drives sharing through HTTP (the share check script), not
+`onebrain ku share`; no prepared-preview lookup action exists, so the CLI cannot re-show the preview
+at confirm time (copy it from `share prepare`). Same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — CLI-sender dev demo reconciled as covered (t12, 2026-11-25)
 
 Next step of the t11 checkpoint: MASTER_PLAN row 20.C still listed "CLI-sender dev demo"
 (added at t1, when `--sender-kind cli` on the dev demo was not covered). Checked against the

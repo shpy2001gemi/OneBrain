@@ -41,3 +41,17 @@ the existing Base reservation transport, not a twelfth KU operation.
 Tests must cover parsing/validation, exact cancellation, response bounds,
 failure/reconcile projection and a real local API/node workflow using isolated
 test custody and Registry fixtures. No live owner data/model is required.
+
+## D-045 Public KU share projection (addendum)
+
+`onebrain ku share prepare|confirm|intent|inspect|list` projects the already
+registered `POST /api/vnext/ku/editor` actions `share_prepare`, `share_confirm`,
+`share_intent`, `share_inspect` and `share_list` (the same closed payloads `/ku`
+Web sends). No new service operation, DTO, authority or wire field is added.
+Typed IDs are 64 lowercase hex and validated before any request. `confirm`
+requires typing the exact `prepared_id` on stdin, then sends
+`confirm_public: true`; there is no flag bypass and a mismatch contacts no host.
+Responses must carry the expected `event`, never `authorizes_reward: true`, and
+a preview must report `enqueued: false` / `payload_sent: false`. Network
+capability, consent expiry and outbox semantics remain host-owned; stderr states
+that confirmation is a pending intent and `Acknowledged` is not adoption or reward.

@@ -71,6 +71,35 @@ Stale fences fail rather than auto-retry. Local empty/partial pages do not claim
 network absence; pending preparation does not mean committed KU, delivery or
 reward. Model readiness does not mean model qualification.
 
+### Public KU share (D-045)
+
+`onebrain ku share …` projects the host's registered `POST /api/vnext/ku/editor`
+share actions, the same ones `/ku` Web uses. The host must run with the opt-in
+loopback network (`onebrain start --api … --ku-network-bind 127.0.0.1:<port>`
+built with `--features vnext-network-runtime`, or `ku_local_web` with
+`"network"`); otherwise confirm/intent/inspect return `503 capability_disabled`
+(`ku_public_share_network_unavailable`) and the preview is kept.
+
+```powershell
+# Sender: preview only (never enqueues or sends); copy prepared_id from stdout.
+onebrain ku share prepare --object-cid <saved-private-object-cid> `
+  --expected-node-id <receiver-node-id> --address 127.0.0.1:<receiver-port> `
+  --selector <64-hex> --namespace <64-hex>
+# Sender: type the exact prepared_id at the stderr prompt; no --yes bypass.
+onebrain ku share confirm --prepared-id <prepared-id>
+# Sender: read the durable outbound intent (read-only; never resends).
+onebrain ku share intent --intent-id <intent-id>
+# Receiver: browse accepted Public KUs, then inspect one with its selector.
+onebrain ku share list --query water --limit 20
+onebrain ku share inspect --object-cid <public-object-cid> --selector <64-hex>
+```
+
+Only one predicate plus one text literal is supported. Preview hides the
+private ObjectCID and source; confirm creates a pending intent, and
+`Acknowledged` is a transport receipt only — not adoption, verification, Use or
+reward. A Public copy cannot be made private again. Accepted Public KUs are
+separate from `onebrain ku list` (private saved knowledge).
+
 ## 1. Overview
 
 OneBrain CLI is the **first interface** of the system — runs directly in the terminal.
