@@ -607,3 +607,260 @@ fn borrowed_branch_repair_keeps_valid_reconstructions_and_flags_only_unsourced_t
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn branch_scope_or_order_dispatches_bounded_reorder_and_surface_narrowing() {
+    // D-061 Part 1: disjoint resolved branches emitted out of source byte order.
+    let expected = rocket();
+    let mut reversed = rocket();
+    reversed["claims"][0]["alternatives"][0]["branches"] = json!([
+        {"surface":{"quote":"rắn"},"borrowed":{"quote":"nhiên liệu"}},
+        {"surface":{"quote":"nhiên liệu lỏng"}}
+    ]);
+    let (_, validation) = assemble(ROCKET, &reversed, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].alternatives: branch_scope_or_order".into()));
+    let (target, fields) = repair_target(ROCKET, &reversed, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &reversed,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"]["scope_or_order"],
+        json!([{"group":0,"reorder":true,"branches":[]}])
+    );
+    assert_eq!(
+        choices["alternatives"]["surfaces"],
+        json!(["nhiên liệu lỏng", "rắn"])
+    );
+    assert_eq!(choices["alternatives"]["borrowed"], json!(["nhiên liệu"]));
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let branch_props = &wire["properties"]["patch"]["properties"]["alternatives"]["items"]
+        ["properties"]["branches"]["items"]["properties"];
+    assert_eq!(
+        branch_props["surface"]["properties"]["quote"]["enum"],
+        json!(["nhiên liệu lỏng", "rắn"])
+    );
+    assert_eq!(
+        branch_props["borrowed"]["properties"]["quote"]["enum"],
+        json!(["nhiên liệu"])
+    );
+    let (changed, draft, after) = apply_repair(
+        ROCKET,
+        &reversed,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":expected["claims"][0]["alternatives"]}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(changed, expected);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert_eq!(
+        draft["statements"][0]["alternatives"][0]["branches"][1]["origin"],
+        "reconstructed"
+    );
+    // Rejections on pure reorder: unchanged, dropped borrowed, moved borrowed, narrowed valid surface.
+    let reject_rev = |alternatives: Value| {
+        apply_repair(
+            ROCKET,
+            &reversed,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+        .is_err()
+    };
+    assert!(reject_rev(reversed["claims"][0]["alternatives"].clone()));
+    let mut dropped_borrowed = expected["claims"][0]["alternatives"].clone();
+    dropped_borrowed[0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    assert!(reject_rev(dropped_borrowed));
+    let mut moved_borrowed = expected["claims"][0]["alternatives"].clone();
+    moved_borrowed[0]["branches"][0]["borrowed"] = json!({"quote":"nhiên liệu"});
+    moved_borrowed[0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    assert!(reject_rev(moved_borrowed));
+    let mut narrowed_valid = expected["claims"][0]["alternatives"].clone();
+    narrowed_valid[0]["branches"][0]["surface"] = json!({"quote":"lỏng"});
+    assert!(reject_rev(narrowed_valid));
+
+    // D-061 Part 2: expanded or scope-escaping branch surface narrows inside group.quote outside cue.
+    for bad_surface in [
+        json!({"quote":"nhiên liệu rắn"}),
+        json!({"quote":"rắn","within":"nhiên liệu rắn sẽ an toàn hơn"}),
+    ] {
+        let mut expanded = rocket();
+        expanded["claims"][0]["alternatives"][0]["branches"][1]["surface"] = bad_surface;
+        let (_, v_exp) = assemble(ROCKET, &expanded, &mut budget()).unwrap();
+        assert!(v_exp
+            .issues
+            .contains(&"selection[0].alternatives: branch_scope_or_order".into()));
+        let (t, f) = repair_target(ROCKET, &expanded, &v_exp, &mut budget())
+            .unwrap()
+            .unwrap();
+        let ch = repair_choices(ROCKET, &expanded, t, &f, &v_exp, &mut budget()).unwrap();
+        assert_eq!(
+            ch["alternatives"]["scope_or_order"],
+            json!([{"group":0,"reorder":true,"branches":[{"branch":1,"surface":["rắn"],"may_keep":false}]}])
+        );
+        assert_eq!(
+            ch["alternatives"]["surfaces"],
+            json!(["nhiên liệu lỏng", "rắn"])
+        );
+        let (repaired, _, after_exp) = apply_repair(
+            ROCKET,
+            &expanded,
+            t,
+            &f,
+            &json!({"patch":{"alternatives":expected["claims"][0]["alternatives"]}}),
+            &mut budget(),
+        )
+        .unwrap();
+        assert_eq!(repaired, expected);
+        assert!(after_exp.uncovered.is_empty());
+        // Reject extra `within` on narrowed surface or cue-overlapping surface.
+        let mut with_within = expected["claims"][0]["alternatives"].clone();
+        with_within[0]["branches"][1]["surface"] =
+            json!({"quote":"rắn","within":"nhiên liệu lỏng hoặc rắn"});
+        assert!(apply_repair(
+            ROCKET,
+            &expanded,
+            t,
+            &f,
+            &json!({"patch":{"alternatives":with_within}}),
+            &mut budget(),
+        )
+        .is_err());
+        let mut with_cue = expected["claims"][0]["alternatives"].clone();
+        with_cue[0]["branches"][1]["surface"] = json!({"quote":"hoặc rắn"});
+        assert!(apply_repair(
+            ROCKET,
+            &expanded,
+            t,
+            &f,
+            &json!({"patch":{"alternatives":with_cue}}),
+            &mut budget(),
+        )
+        .is_err());
+    }
+}
+
+#[test]
+fn ambiguous_branch_surface_narrows_locally_and_unrepairable_duplicate_group_skips_dispatch() {
+    // Ambiguous single-word surface ("điện" appears in both branches) narrows to unique local run.
+    let source = "Xe điện hoặc tàu điện chạy.";
+    let selection = json!({"claims":[{
+        "subject":"Xe điện hoặc tàu điện",
+        "predicate":"chạy",
+        "arguments":["Xe điện hoặc tàu điện"],
+        "alternatives":[{
+            "quote":"Xe điện hoặc tàu điện",
+            "cue":"hoặc",
+            "exclusivity":"unspecified",
+            "branches":[{"surface":{"quote":"điện"}},{"surface":{"quote":"tàu điện"}}]
+        }]
+    }]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].alternatives: branch_scope_or_order".into()));
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"]["scope_or_order"],
+        json!([{"group":0,"reorder":true,"branches":[{"branch":0,"surface":["Xe","Xe điện"],"may_keep":false}]}])
+    );
+    let mut fixed = selection["claims"][0]["alternatives"].clone();
+    fixed[0]["branches"][0]["surface"] = json!({"quote":"Xe điện"});
+    let (_, _, after) = apply_repair(
+        source,
+        &selection,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":fixed}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(after.clear(), "{:?} {:?}", after.issues, after.uncovered);
+
+    // Still-reversed reply on two broken branches is rejected even when quotes come from choices.
+    let two_bad_src = "Máy dùng pin hoặc điện.";
+    let two_bad = json!({"claims":[{
+        "subject":"Máy",
+        "predicate":"dùng",
+        "arguments":["pin hoặc điện"],
+        "alternatives":[{
+            "quote":"pin hoặc điện",
+            "cue":"hoặc",
+            "exclusivity":"unspecified",
+            "branches":[{"surface":{"quote":"Máy"}},{"surface":{"quote":"dùng"}}]
+        }]
+    }]});
+    let (_, v_bad) = assemble(two_bad_src, &two_bad, &mut budget()).unwrap();
+    let (t_bad, f_bad) = repair_target(two_bad_src, &two_bad, &v_bad, &mut budget())
+        .unwrap()
+        .unwrap();
+    let mut wrong_order = two_bad["claims"][0]["alternatives"].clone();
+    wrong_order[0]["branches"] = json!([{"surface":{"quote":"điện"}},{"surface":{"quote":"pin"}}]);
+    assert!(apply_repair(
+        two_bad_src,
+        &two_bad,
+        t_bad,
+        &f_bad,
+        &json!({"patch":{"alternatives":wrong_order}}),
+        &mut budget(),
+    )
+    .is_err());
+
+    // Duplicate-token group ("bi hoặc bi") has no unique local token run -> does not dispatch.
+    let dup_src = "Hộp có bi hoặc bi.";
+    let dup = json!({"claims":[{
+        "subject":"Hộp",
+        "predicate":"có",
+        "arguments":["bi hoặc bi"],
+        "alternatives":[{
+            "quote":"bi hoặc bi",
+            "cue":"hoặc",
+            "exclusivity":"unspecified",
+            "branches":[{"surface":{"quote":"bi"}},{"surface":{"quote":"bi"}}]
+        }]
+    }]});
+    let (_, v_dup) = assemble(dup_src, &dup, &mut budget()).unwrap();
+    assert!(v_dup
+        .issues
+        .contains(&"selection[0].alternatives: branch_scope_or_order".into()));
+    assert!(repair_target(dup_src, &dup, &v_dup, &mut budget())
+        .unwrap()
+        .is_none());
+}

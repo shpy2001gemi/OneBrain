@@ -80,6 +80,19 @@ and branch counts, surfaces, quote/cue/exclusivity and every other reconstructio
 are unchanged. Dropping a reconstruction leaves an explicit, source-quoted surface;
 it does not assert that the shorter branch is the intended meaning.
 
+Branch scope or ordering failures in an OR group (`branch_scope_or_order`) may
+likewise dispatch an `alternatives`-only repair when finite local choices exist
+(D-061). If all branches already resolve uniquely and disjointly inside the group
+quote outside its cue, only reordering those existing branches (with their own
+reconstructions intact) into source byte order is permitted. Otherwise, only
+branches whose surface fails unique resolution inside the group quote, overlaps
+the cue, or overlaps another branch may replace `surface` with one unique
+whitespace-bounded token run inside the group quote outside the cue (and outside
+fixed sibling spans); repaired groups satisfy left-to-right non-overlapping order,
+while group/branch counts, quote/cue/exclusivity and unflagged surfaces or
+reconstructions remain unchanged. Groups without a unique local token run or an
+unambiguous cue stay unrouted in `needs_review`.
+
 ## Lifecycle, limits and compatibility
 
 Use the existing durable reservations, cancel/restart fencing and consent boundary.

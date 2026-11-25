@@ -1,5 +1,21 @@
 # Decisions and claim boundary
 
+## D-061 — Bounded repair for OR branch scope and order (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: `branch_scope_or_order`
+in an OR group dispatches one bounded `alternatives` repair when finite host-local
+choices exist. When all branches already resolve uniquely and disjointly inside
+`group.quote` outside `cue`, only permuting those existing branches (with their own
+`borrowed` fields intact) into source byte order is allowed; when a branch surface
+fails unique resolution inside `group.quote`, overlaps `cue`, or overlaps another
+branch, only flagged branches may replace `surface` with one unique whitespace-bounded
+token run inside `group.quote` outside `cue` (and outside fixed sibling spans).
+Group/branch counts, `quote`/`cue`/`exclusivity`, and unflagged surfaces or
+reconstructions stay byte-identical; repaired groups must pass left-to-right
+non-overlapping validation and full host revalidation, while unrepairable duplicate
+or ambiguous-cue groups do not dispatch. Deterministic tests only; no model run,
+no fidelity claim, user host stays v1.
+
 ## D-060 — Bounded repair for borrowed text outside other branches (SEM-F03 narrow)
 
 On 2026-11-25 the owner chose the recommended KU-SEM-001 item: borrowed text in

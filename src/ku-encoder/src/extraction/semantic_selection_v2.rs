@@ -243,7 +243,7 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
         wire["properties"]["patch"]["properties"]["predicate"]["enum"] = json!(options);
     }
     if let Some(alt) = wire["properties"]["patch"]["properties"].get_mut("alternatives") {
-        // D-060: same group count; borrowed text only from host-derived choices.
+        // D-060 / D-061: same group count; surface and borrowed text only from host-derived choices.
         let groups = choices["alternatives"]["groups"]
             .as_u64()
             .ok_or(ExtractionError("selection_repair_choice"))?;
@@ -254,6 +254,13 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
         alt["minItems"] = json!(groups);
         alt["maxItems"] = json!(groups);
         let branch = &mut alt["items"]["properties"]["branches"]["items"];
+        if let Some(surfaces) = choices["alternatives"].get("surfaces") {
+            let surfaces = surfaces
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!surfaces.is_empty(), "selection_repair_choice")?;
+            branch["properties"]["surface"]["properties"]["quote"]["enum"] = json!(surfaces);
+        }
         if quotes.is_empty() {
             branch["properties"]
                 .as_object_mut()
@@ -685,8 +692,173 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
+        if v.issues.contains(&format!(
+            "selection[{i}].alternatives: branch_scope_or_order"
+        )) && !branch_scope_choices(source, claim, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["alternatives".into()])));
+        }
     }
     Ok(None)
+}
+
+fn overlaps(a: (usize, usize), b: (usize, usize)) -> bool {
+    a.0 < b.1 && b.0 < a.1
+}
+
+struct GroupScopeRepair {
+    group: usize,
+    group_span: (usize, usize),
+    cue_span: Option<(usize, usize)>,
+    surfaces: BTreeMap<usize, BTreeSet<String>>,
+    keepable: BTreeSet<usize>,
+}
+
+/// D-061: groups that raised `branch_scope_or_order` because disjoint resolved
+/// branches were emitted out of source byte order, or because a branch surface
+/// failed resolution inside `group.quote`, overlapped `cue`, or overlapped
+/// another branch. Surface-flagged branches get finite whitespace-bounded token
+/// runs inside `group.quote` outside `cue_span` (and outside fixed sibling
+/// spans); unrepairable groups are omitted so futile repairs never dispatch.
+fn branch_scope_choices(
+    source: &str,
+    claim: &Value,
+    b: &mut WorkBudget,
+) -> Result<Vec<GroupScopeRepair>> {
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut out = Vec::new();
+    for (g, group) in items(claim, "alternatives").enumerate() {
+        let Some(group_span) = span(source, &json!({ "quote": group["quote"] }), scope, b)? else {
+            continue;
+        };
+        let quote = text(&group["quote"]);
+        let cue_span = span(
+            source,
+            &json!({ "quote": group["cue"], "within": group["quote"] }),
+            scope,
+            b,
+        )?;
+        let branches: Vec<_> = items(group, "branches").collect();
+        let mut spans = Vec::with_capacity(branches.len());
+        let mut prior_end = group_span.0;
+        let mut failed = false;
+        for branch in &branches {
+            let at =
+                span(source, &branch["surface"], quote, b)?.filter(|at| contains(group_span, *at));
+            if let Some(at) = at.filter(|at| at.0 >= prior_end) {
+                prior_end = at.1;
+            } else {
+                failed = true;
+            }
+            spans.push(at);
+        }
+        if !failed {
+            continue;
+        }
+        let mut bad = BTreeSet::new();
+        let mut keepable = BTreeSet::new();
+        for (j, s) in spans.iter().enumerate() {
+            let Some(at) = *s else {
+                bad.insert(j);
+                continue;
+            };
+            let hits_cue = cue_span.is_some_and(|cs| overlaps(at, cs));
+            let hits_other = spans
+                .iter()
+                .enumerate()
+                .any(|(k, other)| k != j && other.is_some_and(|o| overlaps(at, o)));
+            if hits_cue || hits_other {
+                bad.insert(j);
+                if !hits_cue {
+                    keepable.insert(j);
+                }
+            }
+        }
+        if bad.is_empty() {
+            out.push(GroupScopeRepair {
+                group: g,
+                group_span,
+                cue_span,
+                surfaces: BTreeMap::new(),
+                keepable,
+            });
+            continue;
+        }
+        let Some(cs) = cue_span else {
+            continue;
+        };
+        let fixed: Vec<(usize, usize)> = spans
+            .iter()
+            .enumerate()
+            .filter(|(m, _)| !bad.contains(m))
+            .filter_map(|(_, s)| *s)
+            .collect();
+        let tokens: Vec<(usize, usize)> = quote
+            .split_whitespace()
+            .take(32)
+            .map(|t| {
+                let start = t.as_ptr() as usize - quote.as_ptr() as usize;
+                (start, start + t.len())
+            })
+            .collect();
+        let mut options = BTreeSet::new();
+        for s in 0..tokens.len() {
+            for e in s..tokens.len().min(s + 8) {
+                let candidate = &quote[tokens[s].0..tokens[e].1];
+                if options.len() < 64
+                    && span(source, &json!({ "quote": candidate }), quote, b)?.is_some_and(|c| {
+                        contains(group_span, c)
+                            && !overlaps(c, cs)
+                            && fixed.iter().all(|f| !overlaps(c, *f))
+                    })
+                {
+                    options.insert(candidate.to_owned());
+                }
+            }
+        }
+        if options.is_empty() {
+            continue;
+        }
+        let surfaces = bad.into_iter().map(|j| (j, options.clone())).collect();
+        out.push(GroupScopeRepair {
+            group: g,
+            group_span,
+            cue_span,
+            surfaces,
+            keepable,
+        });
+    }
+    Ok(out)
+}
+
+fn has_bijection(n: usize, edge: impl Fn(usize, usize) -> bool) -> bool {
+    fn dfs(
+        new_j: usize,
+        n: usize,
+        edge: &impl Fn(usize, usize) -> bool,
+        seen: &mut [bool],
+        matched_old: &mut [Option<usize>],
+    ) -> bool {
+        for old_j in 0..n {
+            if !edge(old_j, new_j) || seen[old_j] {
+                continue;
+            }
+            seen[old_j] = true;
+            if matched_old[old_j].is_none_or(|prev_new| dfs(prev_new, n, edge, seen, matched_old)) {
+                matched_old[old_j] = Some(new_j);
+                return true;
+            }
+        }
+        false
+    }
+    let mut matched_old = vec![None; n];
+    for new_j in 0..n {
+        let mut seen = vec![false; n];
+        if !dfs(new_j, n, &edge, &mut seen, &mut matched_old) {
+            return false;
+        }
+    }
+    true
 }
 
 /// D-060: branches whose borrowed text is not taken from another branch of the
@@ -806,12 +978,28 @@ pub fn repair_choices(
             .and_then(|c| c.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
         let repairable = borrowed_choices(source, claim, b)?;
+        let scope_repairs = branch_scope_choices(source, claim, b)?;
+        let scope_by_group: BTreeMap<usize, &GroupScopeRepair> =
+            scope_repairs.iter().map(|sr| (sr.group, sr)).collect();
         let mut quotes = BTreeSet::new();
         for (g, group) in items(claim, "alternatives").enumerate() {
+            let quote = text(&group["quote"]);
             for (j, branch) in items(group, "branches").enumerate() {
                 if !repairable.contains_key(&(g, j)) {
                     if let Some(q) = branch["borrowed"]["quote"].as_str() {
                         quotes.insert(q.to_owned());
+                    }
+                } else if let Some(sr) = scope_by_group.get(&g).filter(|sr| !sr.surfaces.is_empty())
+                {
+                    if let Some(borrowed) = branch.get("borrowed") {
+                        if span(source, borrowed, quote, b)?.is_some_and(|at| {
+                            contains(sr.group_span, at)
+                                && sr.cue_span.is_none_or(|cs| !overlaps(at, cs))
+                        }) {
+                            if let Some(q) = borrowed["quote"].as_str() {
+                                quotes.insert(q.to_owned());
+                            }
+                        }
                     }
                 }
             }
@@ -821,11 +1009,47 @@ pub fn repair_choices(
             quotes.extend(options.iter().cloned());
             listed.push(json!({"group":g,"branch":j,"borrowed":options,"may_omit":true}));
         }
-        choices["alternatives"] = json!({
+        let mut alt_choices = json!({
             "groups": items(claim, "alternatives").count(),
             "repairable": listed,
             "borrowed": quotes,
         });
+        if !scope_repairs.is_empty() {
+            let mut surfaces = BTreeSet::new();
+            for (g, group) in items(claim, "alternatives").enumerate() {
+                for (j, branch) in items(group, "branches").enumerate() {
+                    let keep_existing = match scope_by_group.get(&g) {
+                        None => true,
+                        Some(sr) => !sr.surfaces.contains_key(&j) || sr.keepable.contains(&j),
+                    };
+                    if keep_existing {
+                        if let Some(q) = branch["surface"]["quote"].as_str() {
+                            surfaces.insert(q.to_owned());
+                        }
+                    }
+                }
+            }
+            let mut scope_listed = Vec::new();
+            for sr in &scope_repairs {
+                let mut branch_list = Vec::new();
+                for (j, opts) in &sr.surfaces {
+                    surfaces.extend(opts.iter().cloned());
+                    branch_list.push(json!({
+                        "branch": j,
+                        "surface": opts,
+                        "may_keep": sr.keepable.contains(j),
+                    }));
+                }
+                scope_listed.push(json!({
+                    "group": sr.group,
+                    "reorder": true,
+                    "branches": branch_list,
+                }));
+            }
+            alt_choices["scope_or_order"] = json!(scope_listed);
+            alt_choices["surfaces"] = json!(surfaces);
+        }
+        choices["alternatives"] = alt_choices;
     }
     Ok(choices)
 }
@@ -861,6 +1085,9 @@ pub fn apply_repair(
             .and_then(|a| a.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
         let repairable = borrowed_choices(source, old, b)?;
+        let scope_repairs = branch_scope_choices(source, old, b)?;
+        let scope_by_group: BTreeMap<usize, &GroupScopeRepair> =
+            scope_repairs.iter().map(|sr| (sr.group, sr)).collect();
         for (key, value) in patch {
             let previous = old[key]
                 .as_array()
@@ -885,30 +1112,83 @@ pub fn apply_repair(
                 if key == "alternatives" {
                     let a: Vec<_> = items(before, "branches").collect();
                     let z: Vec<_> = items(after, "branches").collect();
-                    require(
-                        a.len() == z.len()
-                            && a.iter().zip(&z).all(|(x, y)| x["surface"] == y["surface"]),
-                        "selection_repair_structure_loss",
-                    )?;
-                    // Unflagged reconstructions stay byte-identical; flagged ones
-                    // may only be dropped or replaced by a host-derived choice.
-                    for (j, (x, y)) in a.iter().zip(&z).enumerate() {
-                        if x.get("borrowed") == y.get("borrowed") {
-                            continue;
-                        }
-                        let options = repairable
-                            .get(&(g, j))
-                            .ok_or(ExtractionError("selection_repair_structure_loss"))?;
+                    if let Some(sr) = scope_by_group.get(&g) {
+                        require(a.len() == z.len(), "selection_repair_structure_loss")?;
                         require(
-                            match y.get("borrowed") {
-                                None => true,
-                                Some(v) => {
-                                    v.as_object().is_some_and(|o| o.len() == 1)
-                                        && v["quote"].as_str().is_some_and(|q| options.contains(q))
-                                }
-                            },
+                            has_bijection(a.len(), |old_j, new_j| {
+                                let x = a[old_j];
+                                let y = z[new_j];
+                                let surface_ok = if x["surface"] == y["surface"] {
+                                    !sr.surfaces.contains_key(&old_j)
+                                        || sr.keepable.contains(&old_j)
+                                } else if let Some(opts) = sr.surfaces.get(&old_j) {
+                                    y["surface"].as_object().is_some_and(|o| o.len() == 1)
+                                        && y["surface"]["quote"]
+                                            .as_str()
+                                            .is_some_and(|q| opts.contains(q))
+                                } else {
+                                    false
+                                };
+                                let borrowed_ok = if x.get("borrowed") == y.get("borrowed") {
+                                    true
+                                } else if let Some(opts) = repairable.get(&(g, old_j)) {
+                                    match y.get("borrowed") {
+                                        None => true,
+                                        Some(v) => {
+                                            v.as_object().is_some_and(|o| o.len() == 1)
+                                                && v["quote"]
+                                                    .as_str()
+                                                    .is_some_and(|q| opts.contains(q))
+                                        }
+                                    }
+                                } else {
+                                    false
+                                };
+                                surface_ok && borrowed_ok
+                            }),
                             "selection_repair_choice",
                         )?;
+                        let quote = text(&after["quote"]);
+                        let mut prior_end = sr.group_span.0;
+                        for y in &z {
+                            let at = span(source, &y["surface"], quote, b)?.filter(|at| {
+                                contains(sr.group_span, *at)
+                                    && sr.cue_span.is_none_or(|cs| !overlaps(*at, cs))
+                                    && at.0 >= prior_end
+                            });
+                            let Some(at) = at else {
+                                return Err(ExtractionError("selection_repair_revalidation"));
+                            };
+                            prior_end = at.1;
+                        }
+                    } else {
+                        require(
+                            a.len() == z.len()
+                                && a.iter().zip(&z).all(|(x, y)| x["surface"] == y["surface"]),
+                            "selection_repair_structure_loss",
+                        )?;
+                        // Unflagged reconstructions stay byte-identical; flagged ones
+                        // may only be dropped or replaced by a host-derived choice.
+                        for (j, (x, y)) in a.iter().zip(&z).enumerate() {
+                            if x.get("borrowed") == y.get("borrowed") {
+                                continue;
+                            }
+                            let options = repairable
+                                .get(&(g, j))
+                                .ok_or(ExtractionError("selection_repair_structure_loss"))?;
+                            require(
+                                match y.get("borrowed") {
+                                    None => true,
+                                    Some(v) => {
+                                        v.as_object().is_some_and(|o| o.len() == 1)
+                                            && v["quote"]
+                                                .as_str()
+                                                .is_some_and(|q| options.contains(q))
+                                    }
+                                },
+                                "selection_repair_choice",
+                            )?;
+                        }
                     }
                 }
             }
