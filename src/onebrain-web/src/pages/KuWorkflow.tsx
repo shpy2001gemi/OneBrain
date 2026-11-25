@@ -77,6 +77,51 @@ function statementLines(semantic: SavedSemanticStatements): string[] {
     .map((s) => s.text_arguments.filter(Boolean).join(", "))
     .filter((line) => line.length > 0);
 }
+type CcidLabelMap = Record<string, string | null>;
+/** Best-effort D-058 reverse Registry lookup; any failure shows no labels. */
+async function fetchCcidLabels(
+  client: KuClient,
+  session: Session,
+  ccids: string[],
+): Promise<CcidLabelMap> {
+  if (ccids.length === 0) return {};
+  try {
+    const result = await client.describeCcids(session, { ccids });
+    const items = result?.data?.payload?.items;
+    if (!Array.isArray(items)) return {};
+    return Object.fromEntries(
+      items
+        .filter(
+          (i) =>
+            ccids.includes(i.ccid) &&
+            (typeof i.label === "string" || i.label === null),
+        )
+        .map((i) => [i.ccid, i.label]),
+    );
+  } catch {
+    return {};
+  }
+}
+/** Predicate CCID line, with the host Registry label when one is known. */
+function PredicateRef({
+  ccid,
+  labels,
+  prefix = "Predicate",
+}: {
+  ccid: string;
+  labels: CcidLabelMap;
+  prefix?: string;
+}) {
+  const label = labels[ccid];
+  if (typeof label !== "string") return <>{`${prefix} CCID: ${ccid}`}</>;
+  return (
+    <>
+      {`${prefix}: “${label}” `}
+      <small>(Registry label on this host, display only)</small>
+      {` · ${prefix} CCID: ${ccid}`}
+    </>
+  );
+}
 /** Owner boundary 2026-11-20 (D-057): a received Public KU can only seed a new
  *  manual private draft when it is exactly one predicate with one text literal.
  *  Only the text is copied; the predicate CCID is a hint for explicit selection. */
@@ -181,6 +226,9 @@ export function KuWorkflowPage({
   const [savedText, setSavedText] = useState<
     Record<string, SavedSemanticStatements | null>
   >({});
+  /** D-058 display-only Registry labels by predicate CCID (`null` = absent). */
+  const [ccidLabels, setCcidLabels] = useState<CcidLabelMap>({});
+  const labelAttempted = useRef(new Set<string>());
   const [error, setError] = useState<ReturnType<typeof describeError>>();
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
@@ -315,6 +363,27 @@ export function KuWorkflowPage({
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+  // D-058: look up Registry labels once per displayed predicate CCID (read-only).
+  useEffect(() => {
+    if (!session) return;
+    const shown = [
+      ...(sharePrepared?.semantic.statements ?? []),
+      ...(shareListView?.items.flatMap((i) => i.semantic.statements) ?? []),
+      ...(shareInspectView?.semantic.statements ?? []),
+    ].map((s) => s.predicate_ccid);
+    const wanted = [...new Set(shown)]
+      .filter((c) => /^[0-9a-f]{32}$/.test(c) && !labelAttempted.current.has(c))
+      .slice(0, 64);
+    if (wanted.length === 0) return;
+    wanted.forEach((c) => labelAttempted.current.add(c));
+    let live = true;
+    void fetchCcidLabels(client, session, wanted).then((found) => {
+      if (live) setCcidLabels((prev) => ({ ...prev, ...found }));
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, session, sharePrepared, shareListView, shareInspectView]);
   // Only an exact Pending view is re-read: terminal or unrecognized states stop.
   const pendingIntentId =
     shareIntentView?.state === "Pending" ? shareIntentView.intent_id : undefined;
@@ -734,7 +803,11 @@ export function KuWorkflowPage({
             <p className="ku-id">
               Public ObjectCID: {draftOrigin.object_cid}
               <br />
-              Public predicate CCID: {draftOrigin.predicate_ccid}
+              <PredicateRef
+                ccid={draftOrigin.predicate_ccid}
+                labels={ccidLabels}
+                prefix="Public predicate"
+              />
             </p>
             <p>
               Only the text argument was copied. Choose your own admitted
@@ -1261,7 +1334,7 @@ export function KuWorkflowPage({
             </p>
             {sharePrepared.semantic.statements.map((stmt, idx) => (
               <p key={idx} className="ku-id">
-                Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                <PredicateRef ccid={stmt.predicate_ccid} labels={ccidLabels} /> · Text argument:{" "}
                 {stmt.text_arguments.filter(Boolean).join(", ")}
               </p>
             ))}
@@ -1485,7 +1558,7 @@ export function KuWorkflowPage({
                     </p>
                     {item.semantic.statements.map((stmt, idx) => (
                       <p key={idx} className="ku-id">
-                        Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                        <PredicateRef ccid={stmt.predicate_ccid} labels={ccidLabels} /> · Text argument:{" "}
                         {stmt.text_arguments.filter(Boolean).join(", ")}
                       </p>
                     ))}
@@ -1653,7 +1726,7 @@ export function KuWorkflowPage({
             </p>
             {shareInspectView.semantic.statements.map((stmt, idx) => (
               <p key={idx} className="ku-id">
-                Predicate CCID: {stmt.predicate_ccid} · Text argument:{" "}
+                <PredicateRef ccid={stmt.predicate_ccid} labels={ccidLabels} /> · Text argument:{" "}
                 {stmt.text_arguments.filter(Boolean).join(", ")}
               </p>
             ))}

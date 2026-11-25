@@ -6,7 +6,45 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — CI two-node check drives `onebrain ku share` (`--cli-share`, t14, 2026-11-25)
+## Latest follow-up — display-only reverse Registry lookup `describe_ccids` (D-058, t15, 2026-11-25)
+
+Next step of the t14 checkpoint: backlog "reverse lookup CCID→label". Client-side alone was not
+possible (`resolve` only maps label→CCID), so the owner approved D-058: one read-only editor
+action, existing DTOs unchanged.
+
+- **ku-core:** `ConceptLookup::describe_checked(&Ccid)` (default fails closed); in-memory
+  `ConceptRegistry` uses `get_by_ccid`, `IndexedConceptRegistry` its existing CCID index.
+  `ConceptRegistryReaderLease::describe_checked` in [concept_registry_runtime.rs](../../../../src/onebrain-node/src/concept_registry_runtime.rs).
+- **Node:** `ManualEditorRequest::DescribeCcids { ccids }` (1..64, 32 lowercase hex) handled by
+  `KuStore::describe_ccids` in [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs)
+  with the host's active Registry (works on read-only/receiver hosts; recovery-admitted read):
+  `{event:"ccid_labels",items:[{ccid,label|null}],registry_release_root,scope,authorizes_reward:false}`;
+  no Registry → `ku_dependency_unavailable`.
+- **Web:** [KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx) looks up each
+  displayed Public predicate CCID once (share preview, browse, inspect) and shows
+  `Predicate: “water” (Registry label on this host, display only) · Predicate CCID: …`; the D-057
+  prefill note uses the same line. Unavailable action → CCID only, as before.
+- **CLI:** `onebrain ku describe --ccid <32-hex>…` in [ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs)
+  (reply must be `ccid_labels`, `authorizes_reward:false`; scope note on stderr).
+- **Check script:** [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  asks the receiver for the predicate label (HTTP for Web/Web, `onebrain ku describe` under
+  `--cli-share`), so existing CI two-node jobs run it on three OS.
+- Docs: [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md) table row +
+  D-058 addendum, [CLI_REFERENCE](../../../../src/onebrain-cli/CLI_REFERENCE.md), DECISIONS D-058.
+
+Checks: API `ku_host` normal-host test (known CCID → `water`, unknown → `null`, empty/uppercase/
+short rejected) plus `onebrain-api` lib 42/42 (+1 ignored) and `ku_host` network 3/3; node lib
+122/122; ku-core `concept_registry` 29/29; CLI `cli::ku` 9/9 (1 new); vitest 150/150 (1 new: label
+shown, one lookup per CCID, cached on re-browse, axe clean); `npm run build`, lint 0 errors (8
+existing warnings, none new); script unit 20/20; vNext validator OK. Live DEV-ONLY bootstraps
+(Windows): printed CLI/CLI line **57/57** (receiver 8 CLI calls incl. 2 `describe`, 0 leaks) and
+Web/Web **48/48**, label `water` before and after receiver restart.
+
+Not covered: no browser click-through of the new label line (vitest only); labels come from each
+host's own Registry and may differ between hosts; still no prepared-preview lookup action. Same
+DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — CI two-node check drives `onebrain ku share` (`--cli-share`, t14, 2026-11-25)
 
 Next step of the t13 checkpoint (CI did not run the new CLI share commands). Before starting,
 the t13 push-runs on `06c8f70` were all green (Base v1 45598853308, KU dev demo, vNext).

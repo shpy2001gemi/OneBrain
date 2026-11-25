@@ -403,6 +403,11 @@ impl ConceptLookup for IndexedConceptRegistry {
         IndexedConceptRegistry::resolve_checked(self, name)
             .map_err(|error| ConceptLookupError::new(error.to_string()))
     }
+
+    fn describe_checked(&self, ccid: &Ccid) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
+        self.get_by_ccid_checked(ccid)
+            .map_err(|error| ConceptLookupError::new(error.to_string()))
+    }
 }
 
 fn append_suffix(path: &Path, suffix: &str) -> PathBuf {

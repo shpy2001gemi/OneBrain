@@ -106,6 +106,18 @@ intent `Acknowledged` → receiver `share list`/`share inspect`); the first-run
 bootstrap prints it in its `CLI hosts …` line, which CI runs on Linux, macOS and
 Windows (DEV-ONLY, not qualification).
 
+### Registry label for a CCID (D-058)
+
+```powershell
+# Display-only reverse lookup in this host's active Registry (repeat --ccid, ≤64).
+onebrain ku describe --ccid <32-hex-ccid> --ccid <32-hex-ccid>
+```
+
+Each item carries the host Registry canonical name, or `null` when the CCID is not
+in it. A label is a display aid only — not verification, fidelity, adoption or
+reward — and another host's Registry may name the CCID differently. The
+`--cli-share` check runs it on the receiver for the Public predicate CCID.
+
 ## 1. Overview
 
 OneBrain CLI is the **first interface** of the system — runs directly in the terminal.

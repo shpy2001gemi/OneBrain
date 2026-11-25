@@ -33,6 +33,7 @@ a closed tagged union using `action` and `payload`:
 | share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false,accepted_selectors?}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
 | saved_semantic | `{object_cids}` (1..64) | `{event:"saved_semantic",items:[{object_cid,semantic:{statements,statement_count}\|null}],scope,fidelity:"unassessed",authorizes_reward:false}` |
 | workspace_summary | `{}` | `{event:"workspace_summary",private_saved,network:{enabled:false}\|{enabled:true,node_id,listen_addr,active_sessions,authenticated_sessions,accepted_records},scope,claims_network_completion:false,authorizes_reward:false}` |
+| describe_ccids | `{ccids}` (1..64, 32 lowercase hex) | `{event:"ccid_labels",items:[{ccid,label:string\|null}],registry_release_root,scope,authorizes_reward:false}` |
 
 Catalog returns only the authenticated principal's host-admitted sources (at most
 64, labels at most 128 UTF-8 bytes). Resolve accepts at most 256 UTF-8 bytes and
@@ -179,3 +180,15 @@ and runs `ku_local_web` with `--features vnext-network-runtime`,
 touching Registry or dataset state, starts a loopback `VNextNetworkRuntime`
 after node/Base initialization, and binds it via `attach_live_public_reader` so
 the `/ku` Web share confirmation and peer inspection actions run end-to-end.
+
+D-058 adds `describe_ccids` (owner-approved 2026-11-25; not network-gated,
+recovery-admitted read): a display-only reverse lookup of 1..64 CCIDs in the
+host's active signed Registry generation (`ConceptLookup::describe_checked`, the
+existing CCID index). Each item returns the Registry canonical name or `null` when
+the CCID is absent; no Registry or a lookup failure returns `ku_dependency_unavailable`.
+It grants no access, selects no candidate and is not verification, fidelity,
+adoption or reward; another host's Registry may name the same CCID differently or
+not at all. `/ku` Web shows the label next to Public predicate CCIDs (share
+preview, browse, inspect and the D-057 prefill note) and shows only the CCID when
+the action is unavailable; `onebrain ku describe --ccid …` projects the same action.
+Existing actions, DTOs and wire fields are unchanged.

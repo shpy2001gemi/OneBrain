@@ -70,6 +70,13 @@ enum KuCommand {
     /// D-045 Public KU share through the host's registered editor actions.
     #[command(subcommand)]
     Share(ShareCommand),
+    /// D-058: show this host's active Registry canonical name for each CCID
+    /// (display only; not verification, fidelity, adoption or reward).
+    Describe {
+        /// Concept CCID (32 lowercase hex); repeat up to 64 times.
+        #[arg(long = "ccid", required = true, value_parser = hex16)]
+        ccids: Vec<String>,
+    },
 }
 
 /// Thin projection of the registered `POST /api/vnext/ku/editor` share actions
@@ -159,10 +166,28 @@ impl ShareCommand {
     }
 }
 
+impl KuCommand {
+    /// Registered editor action for `share …` / `describe`; `None` otherwise.
+    fn editor_request(&self) -> Result<Option<(&'static str, Value)>, String> {
+        match self {
+            Self::Share(share) => Ok(Some(share.request())),
+            Self::Describe { ccids } => {
+                if ccids.len() > MAX_DESCRIBE_CCIDS {
+                    return Err("at most 64 --ccid values".into());
+                }
+                Ok(Some(("describe_ccids", json!({ "ccids": ccids }))))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 const CANCEL_PROMPT: &str =
     "Cancel eligible private staging (committed work cannot be undone). Type exact operation_id";
 const SHARE_CONFIRM_PROMPT: &str = "Confirm PUBLIC share of the exact previewed Public KU to the expected peer; a Public copy cannot be made private again. Type exact prepared_id";
 const SHARE_SCOPE: &str = "Public share scope: preview never enqueues or sends; confirm creates a durable pending intent only; Acknowledged is a transport receipt, not adoption, verification or reward. Private ObjectCID and source stay withheld. Fidelity remains unassessed; models are unqualified.";
+const DESCRIBE_SCOPE: &str = "Registry label scope: display-only canonical names from this host's active Registry (null = not in it); not verification, fidelity, adoption or reward.";
+const MAX_DESCRIBE_CCIDS: usize = 64;
 
 #[derive(Debug, Args)]
 struct PayloadFile {
@@ -187,6 +212,18 @@ fn hex32(value: &str) -> Result<String, String> {
     decode_hex::<32>(value)
         .map(|_| value.to_owned())
         .map_err(|_| "expected exactly 64 lowercase hexadecimal characters".into())
+}
+
+fn hex16(value: &str) -> Result<String, String> {
+    if value.len() == 32
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        Ok(value.to_owned())
+    } else {
+        Err("expected exactly 32 lowercase hexadecimal characters".into())
+    }
 }
 
 fn dto<T: KuPayload>(bytes: &[u8]) -> Result<Value, String> {
@@ -216,8 +253,8 @@ impl KuCommand {
     fn request(&self) -> Result<Option<(&'static str, Value)>, String> {
         let (name, payload) = match self {
             Self::Reserve | Self::Status { operation_id: None } => return Ok(None),
-            Self::Share(_) => {
-                return Err("share actions use the registered editor transport".into())
+            Self::Share(_) | Self::Describe { .. } => {
+                return Err("share/describe actions use the registered editor transport".into())
             }
             Self::Prepare(file) => ("prepare", file_dto::<KuPrepareV1>(file)?),
             Self::Revise(file) => ("revise", file_dto::<KuReviseV1>(file)?),
@@ -383,6 +420,15 @@ fn validate_response(operation: &str, value: &Value) -> Result<(), String> {
     }
     session(value)?;
     let payload = &value["data"]["payload"];
+    if operation == "describe_ccids" {
+        if payload["event"] != "ccid_labels"
+            || payload["authorizes_reward"] != false
+            || !payload["items"].is_array()
+        {
+            return Err("invalid KU describe response".into());
+        }
+        return Ok(());
+    }
     let share_event = match operation {
         "share_prepare" => Some("share_prepared"),
         "share_confirm" => Some("share_confirmed"),
@@ -460,10 +506,9 @@ async fn run_with_confirmation(
     args: &KuArgs,
     confirm: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<Value, String> {
-    if let KuCommand::Share(share) = &args.command {
-        let (action, payload) = share.request();
+    if let Some((action, payload)) = args.command.editor_request()? {
         let client = Client::new(args)?;
-        if let ShareCommand::Confirm { prepared_id } = share {
+        if let KuCommand::Share(ShareCommand::Confirm { prepared_id }) = &args.command {
             verify_share_confirm(prepared_id, &confirm(prepared_id)?)?;
         }
         let status = client
@@ -509,6 +554,10 @@ pub(crate) async fn execute(args: KuArgs) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&envelope).unwrap());
     if matches!(args.command, KuCommand::Share(_)) {
         eprintln!("{SHARE_SCOPE}");
+        return Ok(());
+    }
+    if matches!(args.command, KuCommand::Describe { .. }) {
+        eprintln!("{DESCRIBE_SCOPE}");
         return Ok(());
     }
     eprintln!("Local authorized scope only. Save is private; preparation is pending intent, not accepted KU. Partial/empty pages are not network absence. Fidelity remains unassessed unless evidenced; models are unqualified. No publication, delivery or reward is implied.");

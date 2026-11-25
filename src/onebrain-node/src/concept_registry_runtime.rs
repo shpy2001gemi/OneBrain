@@ -340,6 +340,17 @@ impl ConceptRegistryReaderLease {
     > {
         self.generation.registry.resolve_checked(label)
     }
+
+    /// Display-only reverse lookup in this leased generation.
+    pub fn describe_checked(
+        &self,
+        ccid: &ku_core::ccid::Ccid,
+    ) -> Result<
+        Option<ku_core::concept_registry::ResolvedConcept>,
+        ku_core::concept_registry::ConceptLookupError,
+    > {
+        self.generation.registry.describe_checked(ccid)
+    }
 }
 
 /// Loads a complete signed generation before atomically swapping the Arc held

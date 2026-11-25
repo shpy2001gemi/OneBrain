@@ -371,6 +371,8 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 demo.share_cli_args("share_confirm", {"prepared_id": "ab" * 32,
                                                       "confirm_public": False})
+            self.assertEqual(demo.share_cli_args("describe_ccids", {"ccids": ["07" * 16, "ab" * 16]}),
+                             ["describe", "--ccid", "07" * 16, "--ccid", "ab" * 16])
 
             # Missing binary fails before any process starts.
             with self.assertRaisesRegex(SystemExit, "--cli-share needs the CLI binary"):
@@ -402,7 +404,8 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                     self.assertEqual("stdin" in kwargs, typed is None)
                     res.returncode = 0
                     res.stdout = json.dumps({"ok": True, "data": {"payload": {"event": "x"}}})
-                    res.stderr = demo.SHARE_SCOPE_MARKER + " preview never enqueues"
+                    res.stderr = (demo.DESCRIBE_SCOPE_MARKER + " display-only" if "describe" in argv
+                                  else demo.SHARE_SCOPE_MARKER + " preview never enqueues")
                 return res
 
             http_calls = []
@@ -422,6 +425,7 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                 # Receiver: CLI only while the networked host is up.
                 check.receiver.online = True
                 check.receiver.editor("share_list", {})
+                check.receiver.editor("describe_ccids", {"ccids": ["07" * 16]})
                 check.receiver.online = False
                 check.receiver.editor("share_inspect", {"object_cid": "aa" * 32,
                                                         "selector": demo.SELECTOR})

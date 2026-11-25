@@ -231,6 +231,14 @@ export interface SavedSemanticView {
   authorizes_reward: false;
 }
 /** Display-only `/ku` header counts; never network-gated. */
+export interface CcidLabelsView {
+  event: "ccid_labels";
+  /** `label` is the active Registry canonical name, or `null` when absent. */
+  items: { ccid: string; label: string | null }[];
+  registry_release_root?: string | null;
+  scope: string;
+  authorizes_reward: false;
+}
 export interface WorkspaceSummaryView {
   event: "workspace_summary";
   private_saved: number;
@@ -417,6 +425,13 @@ export function createKuClient(
         session,
         budget,
         request: { action: "workspace_summary", payload: {} },
+      }),
+    /** D-058 display-only reverse Registry lookup (CCID → canonical name). */
+    describeCcids: (session: Session, payload: { ccids: string[] }) =>
+      request<CcidLabelsView>("editor", {
+        session,
+        budget,
+        request: { action: "describe_ccids", payload },
       }),
     invoke: <K extends keyof Operations>(
       session: Session,

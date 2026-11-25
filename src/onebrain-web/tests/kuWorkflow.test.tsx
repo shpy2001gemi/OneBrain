@@ -98,6 +98,8 @@ function fixture(
     shareListTwoArguments?: boolean;
     /** Host supports display-only `workspace_summary` (header counts). */
     workspaceSummary?: "network_on" | "network_off";
+    /** Host supports D-058 display-only `describe_ccids` (Registry labels). */
+    ccidLabels?: boolean;
   } = {},
 ) {
   let saved = false;
@@ -468,6 +470,21 @@ function fixture(
               scope:
                 "display text of objects this session can already read; not verification or adoption",
               fidelity: "unassessed",
+              authorizes_reward: false,
+            };
+            break;
+          case "describe_ccids":
+            if (!options.ccidLabels)
+              return shareErrorResponse("unsupported_action");
+            payload = {
+              event: "ccid_labels",
+              items: body.request.payload.ccids.map((c: string) => ({
+                ccid: c,
+                label: c === ccid ? "water" : null,
+              })),
+              registry_release_root: "8".repeat(64),
+              scope:
+                "display-only canonical name from this host's active Registry; not verification, fidelity or adoption",
               authorizes_reward: false,
             };
             break;
@@ -2578,6 +2595,42 @@ describe("local KU component journey", () => {
     expect(
       f.calls.filter((c) => c.body?.request?.action === "share_intent"),
     ).toHaveLength(count);
+  });
+
+  it("shows the host Registry label next to Public predicate CCIDs once per CCID, display only (D-058)", async () => {
+    const f = fixture({ ccidLabels: true });
+    const { container } = render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "Host source" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    const listed = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    await waitFor(() =>
+      expect(listed.textContent).toContain(
+        `Predicate: “water” (Registry label on this host, display only) · Predicate CCID: ${ccid}`,
+      ),
+    );
+    const lookups = f.calls.filter(
+      (c) => c.body?.request?.action === "describe_ccids",
+    );
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].body.request.payload).toEqual({ ccids: [ccid] });
+    // Browsing again reuses the cached label: no second lookup.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Browse accepted Public KUs" }),
+    );
+    await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    expect(
+      f.calls.filter((c) => c.body?.request?.action === "describe_ccids"),
+    ).toHaveLength(1);
+    const result = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(result.violations).toEqual([]);
   });
 
   it("starts a new manual private draft from an accepted Public KU: copies only the text, keeps source/concept/preview/save explicit (D-057)", async () => {

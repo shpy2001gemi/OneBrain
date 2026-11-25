@@ -656,6 +656,44 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(unreadable.code, BaseErrorCodeV1::NotFound);
+
+        // D-058 display-only reverse Registry lookup: known CCID → canonical
+        // name, unknown → null, malformed/empty input rejected; local-only host.
+        let ManualEditorResponse::CcidLabels(labels) = services
+            .editor(
+                ManualEditorRequest::DescribeCcids(onebrain_node::ku_manual::DescribeCcids {
+                    ccids: vec![hex(&[7; 16]), "ab".repeat(16)],
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(labels["event"], "ccid_labels");
+        assert_eq!(labels["authorizes_reward"], false);
+        assert!(labels["registry_release_root"].is_string());
+        assert_eq!(
+            labels["items"],
+            serde_json::json!([
+                { "ccid": hex(&[7; 16]), "label": "water" },
+                { "ccid": "ab".repeat(16), "label": null }
+            ])
+        );
+        for bad in [vec![], vec!["AB".repeat(16)], vec!["ab".repeat(15)]] {
+            let err = services
+                .editor(
+                    ManualEditorRequest::DescribeCcids(onebrain_node::ku_manual::DescribeCcids {
+                        ccids: bad,
+                    }),
+                    budget(),
+                )
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(err.code, BaseErrorCodeV1::InvalidRequest);
+        }
     }
 
     #[cfg(feature = "vnext-network-runtime")]

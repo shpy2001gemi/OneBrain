@@ -92,6 +92,14 @@ pub struct PublicShareList {
 pub struct SavedSemantic {
     pub object_cids: Vec<String>,
 }
+/// D-058: display-only reverse Registry lookup for 1..=64 CCIDs (32 lowercase
+/// hex) in the host's active Registry generation. Grants no access, selects or
+/// verifies nothing; a label is not fidelity, adoption or reward evidence.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DescribeCcids {
+    pub ccids: Vec<String>,
+}
 /// ARCH-07: lower one claim from the latest revision of a review-job window.
 /// `reviewed` records the user's explicit review; prepare/preview/save stay
 /// separate explicit steps on the fresh reserved `operation_id`.
@@ -133,6 +141,7 @@ pub enum ManualEditorRequest {
     ShareList(PublicShareList),
     SavedSemantic(SavedSemantic),
     WorkspaceSummary {},
+    DescribeCcids(DescribeCcids),
 }
 #[derive(Serialize)]
 pub struct ManualSource {
@@ -172,6 +181,7 @@ pub enum ManualEditorResponse {
     PublicShare(serde_json::Value),
     SavedSemantic(serde_json::Value),
     WorkspaceSummary(serde_json::Value),
+    CcidLabels(serde_json::Value),
 }
 struct Source {
     label: String,
@@ -317,6 +327,7 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ShareIntent(_)
             | ManualEditorRequest::ShareList(_)
             | ManualEditorRequest::SavedSemantic(_)
+            | ManualEditorRequest::DescribeCcids(_)
             | ManualEditorRequest::WorkspaceSummary {} => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {

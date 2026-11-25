@@ -57,6 +57,8 @@ pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
 const MAX_SAVED_SEMANTIC_ITEMS: usize = 64;
 /// Statements shown per object by `saved_semantic`; `statement_count` is exact.
 const MAX_SAVED_SEMANTIC_STATEMENTS: usize = 16;
+/// Bound for the display-only `describe_ccids` editor action (D-058).
+const MAX_DESCRIBE_CCIDS: usize = 64;
 
 /// Display projection of a semantic KU kernel (kind 2): predicate CCID and
 /// text literal arguments (non-text arguments are `null`). `None` for opaque,
@@ -572,6 +574,7 @@ impl KuStore {
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
             Req::SavedSemantic(input) => return self.saved_semantic(principal, input, budget),
             Req::WorkspaceSummary {} => return self.workspace_summary(principal, budget),
+            Req::DescribeCcids(input) => return self.describe_ccids(input, budget),
             other => return self.inputs.editor(principal, other, budget),
         };
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
@@ -709,6 +712,55 @@ impl KuStore {
         Ok(crate::ku_manual::ManualEditorResponse::WorkspaceSummary(
             result,
         ))
+    }
+    /// D-058 display-only reverse Registry lookup (CCID → canonical name) in
+    /// the active generation. No Registry → `ku_dependency_unavailable`; an
+    /// absent CCID yields `label: null`. Read-only; grants no access and does
+    /// not verify, select, adopt or reward anything.
+    fn describe_ccids(
+        &self,
+        input: crate::ku_manual::DescribeCcids,
+        budget: &ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        let count = input.ccids.len();
+        if count == 0 || count > MAX_DESCRIBE_CCIDS || count as u64 > budget.max_items as u64 {
+            return Err(invalid());
+        }
+        let mut ccids = Vec::with_capacity(count);
+        for value in &input.ccids {
+            if value.len() != 32
+                || !value
+                    .bytes()
+                    .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            {
+                return Err(invalid());
+            }
+            ccids.push(decode_hex::<16>(value).map_err(|_| invalid())?);
+        }
+        let lease = self
+            .registry
+            .as_ref()
+            .ok_or_else(unavailable)?
+            .reader_lease();
+        let mut items = Vec::with_capacity(count);
+        for (hex_value, ccid) in input.ccids.iter().zip(&ccids) {
+            let label = lease
+                .describe_checked(ccid)
+                .map_err(|_| unavailable())?
+                .map(|concept| concept.canonical_name);
+            items.push(serde_json::json!({ "ccid": hex_value, "label": label }));
+        }
+        let result = serde_json::json!({
+            "event": "ccid_labels",
+            "items": items,
+            "registry_release_root": lease.status().release_aggregate_root,
+            "scope": "display-only canonical name from this host's active Registry; not verification, fidelity or adoption",
+            "authorizes_reward": false
+        });
+        if serde_json::to_vec(&result).map_err(|_| invalid())?.len() as u64 > budget.max_bytes {
+            return Err(resource());
+        }
+        Ok(crate::ku_manual::ManualEditorResponse::CcidLabels(result))
     }
     fn begin_extraction(
         &self,

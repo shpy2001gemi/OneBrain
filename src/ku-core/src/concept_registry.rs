@@ -69,6 +69,16 @@ pub trait ConceptLookup: Send + Sync {
     fn resolve_checked(&self, name: &str) -> Result<ResolveResult, ConceptLookupError> {
         Ok(self.resolve(name))
     }
+
+    /// Checked reverse lookup (CCID → registry entry), display use only.
+    /// `Ok(None)` means the CCID is absent from this registry. Backends without
+    /// a CCID index fail closed instead of claiming absence.
+    fn describe_checked(
+        &self,
+        _ccid: &Ccid,
+    ) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
+        Err(ConceptLookupError::new("reverse CCID lookup unsupported"))
+    }
 }
 
 /// A resolved concept with its metadata.
@@ -646,6 +656,10 @@ impl Default for ConceptRegistry {
 impl ConceptLookup for ConceptRegistry {
     fn resolve(&self, name: &str) -> ResolveResult {
         ConceptRegistry::resolve(self, name)
+    }
+
+    fn describe_checked(&self, ccid: &Ccid) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
+        Ok(self.get_by_ccid(ccid).cloned())
     }
 }
 

@@ -372,6 +372,52 @@ fn share_responses_must_match_event_and_never_claim_reward_or_sending_preview() 
     }
 }
 
+#[test]
+fn describe_parses_ccids_into_the_registered_editor_action_and_checks_the_reply() {
+    let (a, b) = ("ab".repeat(16), "07".repeat(16));
+    let args = parse(&["describe", "--ccid", &a, "--ccid", &b]).unwrap();
+    assert_eq!(
+        args.command.editor_request().unwrap(),
+        Some(("describe_ccids", json!({"ccids":[a, b]})))
+    );
+    assert!(args.command.request().is_err());
+    for argv in [
+        vec!["describe"],
+        vec!["describe", "--ccid", "abbreviated"],
+        vec!["describe", "--ccid", &"AB".repeat(16)],
+        vec!["describe", "--ccid", &"ab".repeat(32)],
+    ] {
+        assert!(parse(&argv).is_err(), "{argv:?}");
+    }
+    let many: Vec<String> = (0..65).map(|_| "ab".repeat(16)).collect();
+    let mut argv = vec!["describe"];
+    for c in &many {
+        argv.extend(["--ccid", c.as_str()]);
+    }
+    assert!(parse(&argv).unwrap().command.editor_request().is_err());
+    let session =
+        json!({"process_generation":"11".repeat(32),"dataset_generation":"22".repeat(32)});
+    let env = |payload: Value| {
+        json!({"ok":true,"profile":onebrain_api::vnext_api::VNEXT_PRODUCT_PROFILE,
+            "data":{"session":session,"payload":payload,"model_qualified":false},"meta":{}})
+    };
+    assert!(validate_response(
+        "describe_ccids",
+        &env(json!({"event":"ccid_labels","items":[{"ccid":"ab".repeat(16),"label":"water"}],"authorizes_reward":false}))
+    )
+    .is_ok());
+    for payload in [
+        json!({"event":"ccid_labels","items":[],"authorizes_reward":true}),
+        json!({"event":"ccid_labels","authorizes_reward":false}),
+        json!({"event":"public_objects","items":[],"authorizes_reward":false}),
+    ] {
+        assert!(
+            validate_response("describe_ccids", &env(payload.clone())).is_err(),
+            "{payload}"
+        );
+    }
+}
+
 #[cfg(feature = "base-v1")]
 #[path = "fixture.rs"]
 mod fixture;

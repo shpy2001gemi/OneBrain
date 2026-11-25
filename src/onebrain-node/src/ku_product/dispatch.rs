@@ -77,6 +77,7 @@ async fn editor(
             | Editor::ShareInspect(_)
             | Editor::ShareIntent(_)
             | Editor::WorkspaceSummary {}
+            | Editor::DescribeCcids(_)
     );
     let lease = base.product_lease(if recovery {
         ProductAdmission::Recovery

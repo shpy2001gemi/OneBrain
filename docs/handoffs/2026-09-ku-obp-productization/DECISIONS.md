@@ -1,5 +1,15 @@
 # Decisions and claim boundary
 
+## D-058 — Display-only reverse Registry lookup (`describe_ccids`)
+
+On 2026-11-25 the owner chose the recommended option for the task 20 backlog item
+"reverse lookup CCID→label": add one read-only editor action
+`describe_ccids { ccids: [≤64 hex] }` that returns the canonical name from the
+host's active Registry (or `null`). Existing DTOs stay unchanged. `/ku` Web shows
+the label next to CCIDs and the CLI adds `onebrain ku describe`. The spec addendum
+states it is display-only: not verification, fidelity, adoption or reward. No
+Registry trust, distribution or claim-boundary change.
+
 ## D-057 — `/ku` Web may seed a new manual private draft from a received Public KU
 
 On 2026-11-20 the owner chose option (p) with its stated boundary: on `/ku` Web a

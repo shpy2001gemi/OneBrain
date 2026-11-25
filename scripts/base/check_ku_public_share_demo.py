@@ -294,12 +294,18 @@ def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
 
 
 SENDER_SHARE_ACTIONS = ("share_prepare", "share_confirm", "share_intent")
-RECEIVER_SHARE_ACTIONS = ("share_inspect", "share_list")
+RECEIVER_SHARE_ACTIONS = ("share_inspect", "share_list", "describe_ccids")
 SHARE_SCOPE_MARKER = "Public share scope:"
+DESCRIBE_SCOPE_MARKER = "Registry label scope:"
 
 
 def share_cli_args(action: str, payload: dict) -> list[str]:
     """Map one registered editor share action to ``onebrain ku share`` sub-args."""
+    if action == "describe_ccids":
+        args = ["describe"]
+        for ccid in payload["ccids"]:
+            args += ["--ccid", ccid]
+        return args
     if action == "share_prepare":
         return ["share", "prepare", "--object-cid", payload["object_cid"],
                 "--expected-node-id", payload["expected_node_id"],
@@ -347,7 +353,8 @@ class ShareCli:
         self.last_err = err
         if self.api.contains_token(out, err):
             self.leaks += 1
-        if rc == 0 and SHARE_SCOPE_MARKER not in err:
+        marker = DESCRIBE_SCOPE_MARKER if action == "describe_ccids" else SHARE_SCOPE_MARKER
+        if rc == 0 and marker not in err:
             self.scope_missing += 1
         return (200 if rc == 0 and env.get("ok") else f"cli-rc={rc}"), env
 
@@ -755,6 +762,16 @@ class Check:
         self.check(f"receiver{when}: share_list filter finds the accepted Public KU",
                    found is not None,
                    f"{code} hits={len(hits)}")
+        # D-058: display-only reverse Registry lookup of the Public predicate CCID.
+        pred = stmt.get("predicate_ccid", "")
+        code, env = self.receiver.editor("describe_ccids", {"ccids": [pred]})
+        labels = payload(env) if ok(code, env) else {}
+        label = next((i.get("label") for i in labels.get("items", []) if i.get("ccid") == pred), None)
+        self.check(f"receiver{when}: describe_ccids shows a display-only Registry label for the predicate",
+                   isinstance(label, str) and label != ""
+                   and labels.get("event") == "ccid_labels"
+                   and labels.get("authorizes_reward") is False,
+                   f"{code} label={label!r}")
         self.check_receiver_cli_client(prepared, when)
 
     def check_receiver_cli_client(self, prepared: dict, when: str) -> None:
