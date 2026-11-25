@@ -6,7 +6,37 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — prepared-preview read-back `share_preview` before CLI confirm (D-059, t16, 2026-11-25)
+## Latest follow-up — prepared Public KU share survives host restart (D-062, t17, 2026-11-26)
+
+Backlog item "prepared share only in memory": restarting the normal host lost every
+unexpired `share prepare`, so the user had to prepare again. The owner chose the
+recommended option D-062.
+
+- **Node:** [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs) adds
+  `PUBLIC_KU_CONSENT_SECONDS`, `prepared_preview_digest` and
+  `PublicKuShareCoordinator::{contains, discard, restore_view}`; `restore_view` re-derives a
+  preparation from persisted inputs at its original prepare time and accepts it only when
+  unexpired and preview-digest-identical (`prepared_share_missing`, or `saved_access_changed`
+  when the saved view no longer qualifies). `PreparedPublicKu` stays non-serializable.
+- **Host store:** [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs) `KuStore`
+  seals a `PreparedShareRecord` (inputs + digest, Vault `seal_local_metadata`) into journal
+  table `ku_public_share_prepared_v1` before `share_prepare` returns (prunes expired rows,
+  enforces 16 live); `share_preview`/`share_confirm` restore a missing id after rechecking the
+  caller's access; `share_confirm` deletes the record after network/access checks and before
+  the single confirmation (`capability_disabled` still keeps it).
+- **Web/docs:** `kuFeedback.ts` stale/limit wording no longer says restart clears preparations;
+  spec D-062 addendum in [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md),
+  [CLI_REFERENCE](../../../../src/onebrain-cli/CLI_REFERENCE.md), DECISIONS D-062.
+- **Tests:** node `restored_prepared_share_matches_exact_preview_and_never_extends_expiry`; API
+  `normal_host_http_editor_public_ku_share_…` now restarts the sender host after prepare, reads
+  back the identical preview, keeps it through `capability_disabled`, confirms it once, and the
+  replay after confirm returns `prepared_share_missing` (durable record gone).
+
+Checks: see the PROGRESS checkpoint. Not covered: the isolated `ku_peer_demo` helper and library
+`PublicKuShareCoordinator` callers stay in memory; no live two-node restart run; same DEV-ONLY/
+no-qualification limits.
+
+## Earlier follow-up — prepared-preview read-back `share_preview` before CLI confirm (D-059, t16, 2026-11-25)
 
 Next step of the t15 checkpoint: backlog "prepared-preview lookup at confirm". `onebrain ku share
 confirm` only asked for the typed `prepared_id`; the preview lived only in host memory with no

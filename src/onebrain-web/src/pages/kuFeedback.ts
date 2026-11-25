@@ -21,7 +21,7 @@ type ShareErrorFeedback = {
 const STALE_SHARE_PREPARATION_FEEDBACK: ShareErrorFeedback = {
   title: "Prepared Public KU share preview is no longer valid",
   explanation:
-    "The host rejected confirmation because this single-use in-memory share preparation expired after its 15-minute (900-second) window, was evicted under the 16-item in-memory preparation limit, was already used once, or was cleared when the host restarted.",
+    "The host rejected confirmation because this single-use share preparation expired after its 15-minute (900-second) window, was already used once, or is not held by this host (an unknown ID, or a preparation stored before a host restart that could no longer be restored). Unexpired preparations survive a host restart under the 16-item preparation limit.",
   context:
     "No payload was enqueued or sent by this failed confirmation, and the saved private artifact remains unchanged. The stale preview has been cleared from this page.",
   recovery:
@@ -59,13 +59,13 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
       "Inspect a supported accepted LOCAL_ONLY manual KU (one resolved predicate and one text literal) and verify the recipient NodeID, loopback address (127.0.0.1:<port>), selector and namespace before clicking Prepare public share preview.",
   },
   prepared_limit: {
-    title: "In-memory Public KU share preparation limit reached",
+    title: "Public KU share preparation limit reached",
     explanation:
-      "The host already holds the maximum of 16 unexpired single-use Public KU share previews in memory. It rejected creating another preview until an existing preparation is confirmed, expires after its 15-minute (900-second) window, or is cleared by a host restart.",
+      "The host already holds the maximum of 16 unexpired single-use Public KU share previews (kept across host restarts). It rejected creating another preview until an existing preparation is confirmed or expires after its 15-minute (900-second) window.",
     context:
-      "Here, rate_limited (ResourceExhausted) reflects the 16-item in-memory share preparation cap, not an AI model timeout or quota. No new preview or outbound intent was created, and existing unexpired preparations remain in memory.",
+      "Here, rate_limited (ResourceExhausted) reflects the 16-item share preparation cap, not an AI model timeout or quota. No new preview or outbound intent was created, and existing unexpired preparations remain available.",
     recovery:
-      "Confirm an existing prepared share preview if intended, wait for older 15-minute preparations to expire, or restart the host to clear in-memory preparations before clicking Prepare public share preview again.",
+      "Confirm an existing prepared share preview if intended, or wait for older 15-minute preparations to expire before clicking Prepare public share preview again.",
   },
   outbox_unavailable_reprepare_same_intent: {
     title: "Durable outbound share outbox was unavailable during confirmation",
@@ -126,7 +126,7 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
     explanation:
       "The host rejected confirmation because confirm_public was not set to true. Public KU disclosure is a two-step boundary and never enqueues an outbound transfer intent without explicit public confirmation.",
     context:
-      "No public object or outbound transfer intent was created, and any unexpired prepared share preview remains in memory.",
+      "No public object or outbound transfer intent was created, and any unexpired prepared share preview remains available.",
     recovery:
       "Review the prepared Public KU preview and permanent consequence, check Confirm public disclosure of this exact preview (confirm_public: true), and click Confirm public share.",
   },
@@ -225,7 +225,7 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
     explanation:
       "The host rejected the Public KU share action because its system clock is before the Unix epoch or overflowed while computing the 15-minute (900-second) preparation expiry window.",
     context:
-      "Here, dependency_unavailable (DependencyUnavailable) reflects the host system clock check, not an AI model failure or a Base operation that uses Reconcile operation. No outbound transfer intent was enqueued, and any unexpired prepared share preview remains in memory.",
+      "Here, dependency_unavailable (DependencyUnavailable) reflects the host system clock check, not an AI model failure or a Base operation that uses Reconcile operation. No outbound transfer intent was enqueued, and any unexpired prepared share preview remains available.",
     recovery:
       "Correct the host's system clock to current UTC time, then retry Prepare public share preview or Confirm public share.",
   },
@@ -268,7 +268,7 @@ export function describeKuError(error: unknown) {
         explanation:
           "The host keeps networking disabled by default. Confirming a Public KU share or inspecting outbound/accepted peer share state requires an active opt-in VNextNetworkRuntime attached to this host.",
         context:
-          "No payload was enqueued or sent. Any unexpired prepared share preview remains available in memory.",
+          "No payload was enqueued or sent. Any unexpired prepared share preview remains available.",
       } satisfies ShareErrorFeedback)
     : reasons
         .map((reason) => SHARE_ERROR_FEEDBACK[reason])

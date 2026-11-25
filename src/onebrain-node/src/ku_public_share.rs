@@ -28,7 +28,10 @@ pub const PUBLIC_CONSEQUENCE: &str = "This new object and its semantic content b
 pub const MAX_PREPARED_PUBLIC_KU_SHARES: usize = 16;
 
 /// No Clone/Serialize/Debug: possession of this host-local prepared capability
-/// cannot be fabricated from a response or used twice. Restart discards it.
+/// cannot be fabricated from a response or used twice. The struct itself is
+/// never persisted; a D-062 host keeps only its sealed prepare inputs and
+/// re-derives it after restart (`PublicKuShareCoordinator::restore_view`),
+/// accepting it only when the exact preview digest matches.
 pub struct PreparedPublicKu {
     intent: OutboundTransferIntent,
     expires_at: u64,
@@ -175,7 +178,9 @@ pub fn prepare_public_ku(
     .map_err(|_| "invalid_public_ku_intent")?;
     Ok(PreparedPublicKu {
         intent,
-        expires_at: now.checked_add(900).ok_or("invalid_clock")?,
+        expires_at: now
+            .checked_add(PUBLIC_KU_CONSENT_SECONDS)
+            .ok_or("invalid_clock")?,
         semantic_cid: normalized.cid.into_bytes(),
         private_cid: view.object_cid.0,
     })
@@ -199,8 +204,66 @@ pub async fn saved_ku_view(
     }
 }
 
-/// Host-local, in-memory D-045 prepare/confirm state machine shared by the
-/// normal host and the isolated peer demo.
+/// Consent window of one prepared Public KU share, in seconds.
+pub const PUBLIC_KU_CONSENT_SECONDS: u64 = 900;
+
+/// D-062: digest binding a durable prepared-share record to the exact preview
+/// that `share_prepare` returned. A re-derived preview must match it.
+pub fn prepared_preview_digest(preview: &serde_json::Value) -> Result<[u8; 32], &'static str> {
+    let bytes = serde_json::to_vec(preview).map_err(|_| "invalid_public_ku_intent")?;
+    Ok(
+        *blake3::Hasher::new_derive_key("onebrain:ku:public-share-preview:1")
+            .update(&bytes)
+            .finalize()
+            .as_bytes(),
+    )
+}
+
+fn share_targets(
+    expected_node_id: &str,
+    selector: &str,
+    namespace: &str,
+) -> Result<(NodeId, SelectorCid, NamespaceCommitment), &'static str> {
+    Ok((
+        NodeId::from_bytes(decode_hex::<32>(expected_node_id).map_err(|_| "invalid_peer")?),
+        SelectorCid::from_bytes(decode_hex::<32>(selector).map_err(|_| "invalid_selector")?),
+        NamespaceCommitment::from_bytes(
+            decode_hex::<32>(namespace).map_err(|_| "invalid_namespace")?,
+        ),
+    ))
+}
+
+fn share_preview_json(
+    prepared_id: &str,
+    proposal: &PreparedPublicKu,
+    expected_node_id: &str,
+    address: SocketAddr,
+    selector: &str,
+    namespace: &str,
+) -> Result<serde_json::Value, &'static str> {
+    Ok(serde_json::json!({
+        "event": "share_prepared",
+        "prepared_id": prepared_id,
+        "intent_id": hex(&proposal.intent_id()),
+        "public_object_cid": hex(&proposal.public_cid()),
+        "semantic_content_cid": hex(&proposal.semantic_cid()),
+        "canonical_base64": STANDARD.encode(proposal.preview()),
+        "semantic": inspect_public_ku(proposal.preview())?,
+        "expected_node_id": expected_node_id,
+        "address": address,
+        "selector": selector,
+        "namespace": namespace,
+        "expires_at": proposal.expires_at(),
+        "consequence": PUBLIC_CONSEQUENCE,
+        "enqueued": false,
+        "payload_sent": false,
+        "support": "one predicate and one text literal only"
+    }))
+}
+
+/// Host-local D-045 prepare/confirm state machine shared by the normal host
+/// and the isolated peer demo. It is in memory; the normal host (`KuStore`,
+/// D-062) additionally persists sealed prepare inputs and restores entries.
 #[derive(Default)]
 pub struct PublicKuShareCoordinator {
     /// prepared_id -> (private ObjectCID, proposal, exact preview returned by prepare).
@@ -210,6 +273,68 @@ pub struct PublicKuShareCoordinator {
 impl PublicKuShareCoordinator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether a live (unconsumed) entry with this id is held in memory.
+    pub fn contains(&self, prepared_id: &str) -> bool {
+        self.prepared.contains_key(prepared_id)
+    }
+
+    /// Drop an entry without confirming it (e.g. its durable record failed).
+    pub fn discard(&mut self, prepared_id: &str) {
+        self.prepared.remove(prepared_id);
+    }
+
+    /// D-062: re-derive a prepared share from its persisted prepare inputs and
+    /// the caller's current saved view. Accepted only while unexpired and when
+    /// the re-derived preview digest equals the one recorded at prepare time;
+    /// never extends the original expiry, enqueues or sends anything.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_view(
+        &mut self,
+        prepared_id: &str,
+        object_cid: &str,
+        view: &KuViewV1,
+        expected_node_id: &str,
+        address: SocketAddr,
+        selector: &str,
+        namespace: &str,
+        prepared_at: u64,
+        preview_digest: [u8; 32],
+        now: u64,
+    ) -> Result<(), &'static str> {
+        if self.prepared.contains_key(prepared_id) {
+            return Ok(());
+        }
+        let expires_at = prepared_at
+            .checked_add(PUBLIC_KU_CONSENT_SECONDS)
+            .ok_or("prepared_share_missing")?;
+        if expires_at <= now {
+            return Err("prepared_share_missing");
+        }
+        let (peer, selector_id, namespace_id) =
+            share_targets(expected_node_id, selector, namespace)
+                .map_err(|_| "prepared_share_missing")?;
+        let proposal =
+            prepare_public_ku(view, peer, address, selector_id, namespace_id, prepared_at)
+                .map_err(|_| "saved_access_changed")?;
+        let preview = share_preview_json(
+            prepared_id,
+            &proposal,
+            expected_node_id,
+            address,
+            selector,
+            namespace,
+        )
+        .map_err(|_| "prepared_share_missing")?;
+        if prepared_preview_digest(&preview)? != preview_digest {
+            return Err("prepared_share_missing");
+        }
+        self.prepared.insert(
+            prepared_id.to_owned(),
+            (object_cid.to_owned(), proposal, preview),
+        );
+        Ok(())
     }
 
     pub fn check_capacity(&mut self, now: u64) -> Result<(), &'static str> {
@@ -231,35 +356,20 @@ impl PublicKuShareCoordinator {
         now: u64,
     ) -> Result<serde_json::Value, &'static str> {
         self.check_capacity(now)?;
-        let peer =
-            NodeId::from_bytes(decode_hex::<32>(expected_node_id).map_err(|_| "invalid_peer")?);
-        let selector_id =
-            SelectorCid::from_bytes(decode_hex::<32>(selector).map_err(|_| "invalid_selector")?);
-        let namespace_id = NamespaceCommitment::from_bytes(
-            decode_hex::<32>(namespace).map_err(|_| "invalid_namespace")?,
-        );
+        let (peer, selector_id, namespace_id) =
+            share_targets(expected_node_id, selector, namespace)?;
         let proposal = prepare_public_ku(view, peer, address, selector_id, namespace_id, now)?;
         let mut nonce = [0; 32];
         getrandom::fill(&mut nonce).map_err(|_| "consent_randomness_unavailable")?;
         let prepared_id = hex(&nonce);
-        let preview = serde_json::json!({
-            "event": "share_prepared",
-            "prepared_id": prepared_id,
-            "intent_id": hex(&proposal.intent_id()),
-            "public_object_cid": hex(&proposal.public_cid()),
-            "semantic_content_cid": hex(&proposal.semantic_cid()),
-            "canonical_base64": STANDARD.encode(proposal.preview()),
-            "semantic": inspect_public_ku(proposal.preview())?,
-            "expected_node_id": expected_node_id,
-            "address": address,
-            "selector": selector,
-            "namespace": namespace,
-            "expires_at": proposal.expires_at(),
-            "consequence": PUBLIC_CONSEQUENCE,
-            "enqueued": false,
-            "payload_sent": false,
-            "support": "one predicate and one text literal only"
-        });
+        let preview = share_preview_json(
+            &prepared_id,
+            &proposal,
+            expected_node_id,
+            address,
+            selector,
+            namespace,
+        )?;
         self.prepared.insert(
             prepared_id,
             (object_cid.to_owned(), proposal, preview.clone()),
@@ -675,6 +785,69 @@ mod tests {
             coord.prepared_object_cid(&first_id, true),
             Err("prepared_share_missing")
         );
+    }
+
+    #[test]
+    fn restored_prepared_share_matches_exact_preview_and_never_extends_expiry() {
+        let view = view();
+        let private_cid = hex(&view.object_cid.0);
+        let peer = "01".repeat(32);
+        let selector = "02".repeat(32);
+        let namespace = "03".repeat(32);
+        let addr: SocketAddr = "127.0.0.1:43000".parse().unwrap();
+        let mut before = PublicKuShareCoordinator::new();
+        let preview = before
+            .prepare_view(&private_cid, &view, &peer, addr, &selector, &namespace, 100)
+            .unwrap();
+        let id = preview["prepared_id"].as_str().unwrap().to_owned();
+        let digest = prepared_preview_digest(&preview).unwrap();
+        let restore = |coord: &mut PublicKuShareCoordinator, v: &KuViewV1, d, now| {
+            coord.restore_view(
+                &id,
+                &private_cid,
+                v,
+                &peer,
+                addr,
+                &selector,
+                &namespace,
+                100,
+                d,
+                now,
+            )
+        };
+        // A fresh coordinator (host restart) restores the identical preview.
+        let mut after = PublicKuShareCoordinator::new();
+        assert!(!after.contains(&id));
+        restore(&mut after, &view, digest, 500).unwrap();
+        let (cid, stored) = after.prepared_preview(&id, 500).unwrap();
+        assert_eq!(cid, private_cid);
+        assert_eq!(stored, &preview);
+        assert_eq!(stored["expires_at"], 100 + PUBLIC_KU_CONSENT_SECONDS);
+        // Restoring is idempotent and confirmation still consumes it once.
+        restore(&mut after, &view, digest, 501).unwrap();
+        assert_eq!(
+            after.prepared_object_cid(&id, true),
+            Ok(private_cid.as_str())
+        );
+        after.discard(&id);
+        assert!(!after.contains(&id));
+        // Mismatched digest, expiry and changed saved access fail closed.
+        let mut other = PublicKuShareCoordinator::new();
+        assert_eq!(
+            restore(&mut other, &view, [9; 32], 500),
+            Err("prepared_share_missing")
+        );
+        assert_eq!(
+            restore(&mut other, &view, digest, 100 + PUBLIC_KU_CONSENT_SECONDS),
+            Err("prepared_share_missing")
+        );
+        let mut changed = view.clone();
+        changed.disclosure_class = ArtifactDisclosure::PUBLIC;
+        assert_eq!(
+            restore(&mut other, &changed, digest, 500),
+            Err("saved_access_changed")
+        );
+        assert!(!other.contains(&id));
     }
 
     #[test]

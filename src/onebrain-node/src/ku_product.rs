@@ -40,6 +40,12 @@ const TEXT_INTAKE: TableDefinition<&[u8], &[u8]> =
 /// write transaction that finishes them and stay as encrypted finished records
 /// for idempotent receipts, reconciliation, cancel evidence and the catalog.
 const TERMINAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_terminal_v1");
+/// D-062: sealed prepare inputs of live D-045 Public KU share preparations,
+/// keyed by prepared_id, so an unexpired preparation survives host restart.
+/// Bounded by `MAX_PREPARED_PUBLIC_KU_SHARES`; a row is deleted before its
+/// single confirmation proceeds and expired rows are pruned on prepare.
+const PUBLIC_SHARE_PREPARED: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("ku_public_share_prepared_v1");
 /// Bound for active (prepared, not yet committed/canceled) operations only.
 const MAX_OPERATIONS: usize = 1024;
 mod review_jobs;
@@ -338,6 +344,33 @@ fn now_unix_seconds() -> Result<u64, BaseServiceError> {
         .map_err(|_| public_share_error("invalid_clock"))
 }
 
+/// D-062 sealed record: only the inputs needed to re-derive a prepared share
+/// plus the digest of the exact preview returned at prepare time. The
+/// prepared capability itself (`PreparedPublicKu`) is never serialized.
+#[cfg(feature = "vnext-network-runtime")]
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreparedShareRecord {
+    dataset: [u8; 32],
+    prepared_id: String,
+    object_cid: String,
+    expected_node_id: String,
+    address: std::net::SocketAddr,
+    selector: String,
+    namespace: String,
+    prepared_at: u64,
+    preview_digest: [u8; 32],
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl PreparedShareRecord {
+    fn live(&self, now: u64) -> bool {
+        self.prepared_at
+            .checked_add(crate::ku_public_share::PUBLIC_KU_CONSENT_SECONDS)
+            .is_some_and(|expires_at| expires_at > now)
+    }
+}
+
 fn public_share_network_unavailable() -> BaseServiceError {
     BaseServiceError::new(
         BaseErrorCodeV1::CapabilityDisabled,
@@ -393,6 +426,143 @@ impl KuStore {
             return Ok(runtime);
         }
         Err(public_share_network_unavailable())
+    }
+    #[cfg(feature = "vnext-network-runtime")]
+    fn share_record_key(&self, id: [u8; 32]) -> [u8; 32] {
+        let mut hash = blake3::Hasher::new_derive_key("onebrain:ku:public-share-prepared:1");
+        hash.update(&self.dataset.0);
+        hash.update(&id);
+        *hash.finalize().as_bytes()
+    }
+    /// `None` when a sealed record fails authentication or names another
+    /// dataset/id: such a row can only be pruned, never used to confirm.
+    #[cfg(feature = "vnext-network-runtime")]
+    fn decode_share_record(&self, id: [u8; 32], sealed: &[u8]) -> Option<PreparedShareRecord> {
+        let bytes = zeroize::Zeroizing::new(
+            self.vault
+                .open_local_metadata(self.share_record_key(id), sealed)
+                .ok()?,
+        );
+        let record: PreparedShareRecord = serde_json::from_slice(&bytes).ok()?;
+        (record.dataset == self.dataset.0 && record.prepared_id == hex(&id)).then_some(record)
+    }
+    /// D-062: durably record one new preparation before its preview is
+    /// returned; prunes expired/unusable rows and enforces the 16-item bound.
+    #[cfg(feature = "vnext-network-runtime")]
+    fn persist_prepared_share(
+        &self,
+        record: &PreparedShareRecord,
+        now: u64,
+    ) -> Result<(), BaseServiceError> {
+        let id = decode_hex::<32>(&record.prepared_id).map_err(|_| invalid())?;
+        let bytes = zeroize::Zeroizing::new(serde_json::to_vec(record).map_err(|_| invalid())?);
+        let sealed = self
+            .vault
+            .seal_local_metadata(self.share_record_key(id), &bytes)
+            .map_err(|_| corrupt())?;
+        let tx = self.journal.begin_write().map_err(|_| unknown())?;
+        {
+            let mut table = tx
+                .open_table(PUBLIC_SHARE_PREPARED)
+                .map_err(|_| corrupt())?;
+            let mut stale = Vec::new();
+            let mut live = 0usize;
+            for row in table.iter().map_err(|_| corrupt())? {
+                let (key, value) = row.map_err(|_| corrupt())?;
+                let key: [u8; 32] = key.value().try_into().map_err(|_| corrupt())?;
+                match self.decode_share_record(key, value.value()) {
+                    Some(existing) if existing.live(now) => live += 1,
+                    _ => stale.push(key),
+                }
+            }
+            for key in stale {
+                table.remove(key.as_slice()).map_err(|_| corrupt())?;
+            }
+            if live >= crate::ku_public_share::MAX_PREPARED_PUBLIC_KU_SHARES {
+                return Err(public_share_error("prepared_limit"));
+            }
+            table
+                .insert(id.as_slice(), sealed.as_slice())
+                .map_err(|_| corrupt())?;
+        }
+        tx.commit().map_err(|_| unknown())
+    }
+    #[cfg(feature = "vnext-network-runtime")]
+    fn load_prepared_share(
+        &self,
+        prepared_id: &str,
+        now: u64,
+    ) -> Result<Option<PreparedShareRecord>, BaseServiceError> {
+        let Ok(id) = decode_hex::<32>(prepared_id) else {
+            return Ok(None);
+        };
+        let tx = self.journal.begin_read().map_err(|_| unknown())?;
+        let table = tx
+            .open_table(PUBLIC_SHARE_PREPARED)
+            .map_err(|_| corrupt())?;
+        let Some(value) = table.get(id.as_slice()).map_err(|_| corrupt())? else {
+            return Ok(None);
+        };
+        Ok(self
+            .decode_share_record(id, value.value())
+            .filter(|record| record.live(now)))
+    }
+    #[cfg(feature = "vnext-network-runtime")]
+    fn remove_prepared_share(&self, prepared_id: &str) -> Result<(), BaseServiceError> {
+        let Ok(id) = decode_hex::<32>(prepared_id) else {
+            return Ok(());
+        };
+        let tx = self.journal.begin_write().map_err(|_| unknown())?;
+        {
+            let mut table = tx
+                .open_table(PUBLIC_SHARE_PREPARED)
+                .map_err(|_| corrupt())?;
+            table.remove(id.as_slice()).map_err(|_| corrupt())?;
+        }
+        tx.commit().map_err(|_| unknown())
+    }
+    /// D-062: when a preparation is not in memory (host restarted), re-derive
+    /// the unexpired persisted one from the caller's current saved view; the
+    /// caller's access is rechecked and the exact preview digest must match.
+    #[cfg(feature = "vnext-network-runtime")]
+    fn restore_prepared_share(
+        &self,
+        principal: [u8; 32],
+        prepared_id: &str,
+        now: u64,
+        access_error: &'static str,
+    ) -> Result<(), BaseServiceError> {
+        if self
+            .public_share
+            .lock()
+            .map_err(|_| corrupt())?
+            .contains(prepared_id)
+        {
+            return Ok(());
+        }
+        let Some(record) = self.load_prepared_share(prepared_id, now)? else {
+            return Err(public_share_error("prepared_share_missing"));
+        };
+        let cid = ObjectCID(decode_hex::<32>(&record.object_cid).map_err(|_| corrupt())?);
+        let view = self
+            .get(principal, cid)
+            .map_err(|_| public_share_error(access_error))?;
+        self.public_share
+            .lock()
+            .map_err(|_| corrupt())?
+            .restore_view(
+                &record.prepared_id,
+                &record.object_cid,
+                &view,
+                &record.expected_node_id,
+                record.address,
+                &record.selector,
+                &record.namespace,
+                record.prepared_at,
+                record.preview_digest,
+                now,
+            )
+            .map_err(public_share_error)
     }
     fn intake_key(&self, operation: [u8; 32]) -> [u8; 32] {
         let mut hash = blake3::Hasher::new_derive_key("onebrain:ku:private-text-intake:1");
@@ -456,6 +626,29 @@ impl KuStore {
                         now,
                     )
                     .map_err(public_share_error)?;
+                // D-062: the preparation is durable before its preview is shown.
+                let prepared_id = preview["prepared_id"]
+                    .as_str()
+                    .ok_or_else(invalid)?
+                    .to_owned();
+                let record = PreparedShareRecord {
+                    dataset: self.dataset.0,
+                    prepared_id: prepared_id.clone(),
+                    object_cid: input.object_cid.clone(),
+                    expected_node_id: input.expected_node_id.clone(),
+                    address: input.address,
+                    selector: input.selector.clone(),
+                    namespace: input.namespace.clone(),
+                    prepared_at: now,
+                    preview_digest: crate::ku_public_share::prepared_preview_digest(&preview)
+                        .map_err(public_share_error)?,
+                };
+                if let Err(error) = self.persist_prepared_share(&record, now) {
+                    if let Ok(mut share) = self.public_share.lock() {
+                        share.discard(&prepared_id);
+                    }
+                    return Err(error);
+                }
                 if serde_json::to_vec(&preview).map_err(|_| invalid())?.len() as u64
                     > budget.max_bytes
                 {
@@ -465,6 +658,15 @@ impl KuStore {
             }
             #[cfg(feature = "vnext-network-runtime")]
             Req::ShareConfirm(input) => {
+                let now = now_unix_seconds()?;
+                if input.confirm_public {
+                    self.restore_prepared_share(
+                        principal,
+                        &input.prepared_id,
+                        now,
+                        "saved_access_changed",
+                    )?;
+                }
                 let cid_hex = self
                     .public_share
                     .lock()
@@ -477,7 +679,9 @@ impl KuStore {
                     .get(principal, cid)
                     .map_err(|_| public_share_error("saved_access_changed"))?;
                 let runtime = self.live_network_runtime()?;
-                let now = now_unix_seconds()?;
+                // D-062: consume the durable record before the single
+                // confirmation proceeds; a crash afterwards needs a re-prepare.
+                self.remove_prepared_share(&input.prepared_id)?;
                 let confirmed = self
                     .public_share
                     .lock()
@@ -502,6 +706,12 @@ impl KuStore {
             #[cfg(feature = "vnext-network-runtime")]
             Req::SharePreview(input) => {
                 let now = now_unix_seconds()?;
+                self.restore_prepared_share(
+                    principal,
+                    &input.prepared_id,
+                    now,
+                    "saved_ku_not_accessible",
+                )?;
                 let (cid_hex, preview) = {
                     let share = self.public_share.lock().map_err(|_| corrupt())?;
                     let (cid, preview) = share
@@ -920,6 +1130,8 @@ impl KuStore {
             tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
             tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
             tx.open_table(TERMINAL).map_err(|_| corrupt())?;
+            tx.open_table(PUBLIC_SHARE_PREPARED)
+                .map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
         let canonical_verified_path = paths

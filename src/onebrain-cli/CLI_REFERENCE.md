@@ -101,10 +101,11 @@ Only one predicate plus one text literal is supported. Preview hides the
 private ObjectCID and source; confirm creates a pending intent, and
 `Acknowledged` is a transport receipt only — not adoption, verification, Use or
 reward. A Public copy cannot be made private again. Accepted Public KUs are
-separate from `onebrain ku list` (private saved knowledge). If the prepared share
-expired, was already confirmed or the host restarted, the preview read-back fails
-with `prepared_share_missing` and confirm stops before the prompt (nothing was
-confirmed); run `share prepare` again.
+separate from `onebrain ku list` (private saved knowledge). An unexpired prepared
+share survives a host restart (D-062), so `share preview`/`share confirm` still work
+with the same id. If the prepared share expired or was already confirmed, the
+preview read-back fails with `prepared_share_missing` and confirm stops before the
+prompt (nothing was confirmed); run `share prepare` again.
 
 The two-node check `scripts/base/check_ku_public_share_demo.py --cli-share`
 drives these commands end to end (prepare → preview read-back → confirm shows the

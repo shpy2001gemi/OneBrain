@@ -1177,7 +1177,7 @@ describe("local KU component journey", () => {
       name: "Public KU share network runtime is disabled",
     });
     expect(screen.getByRole("alert").textContent).toContain(
-      "Any unexpired prepared share preview remains available in memory",
+      "Any unexpired prepared share preview remains available.",
     );
     expect(
       screen.getByRole("article", { name: "Prepared public share preview" })
@@ -1299,9 +1299,9 @@ describe("local KU component journey", () => {
       });
       const alertText = screen.getByRole("alert").textContent ?? "";
       expect(alertText).toContain("15-minute (900-second)");
-      expect(alertText).toContain("16-item in-memory preparation limit");
+      expect(alertText).toContain("16-item preparation limit");
       expect(alertText).toContain("already used once");
-      expect(alertText).toContain("host restarted");
+      expect(alertText).toContain("host restart");
       expect(alertText).toContain(
         "Click Prepare public share preview again to create and review a fresh preview before confirming public disclosure.",
       );
@@ -1385,7 +1385,7 @@ describe("local KU component journey", () => {
             ? "KU is not eligible for D-045 Public share"
             : reason === "saved_ku_not_accessible"
               ? "Saved private KU is no longer accessible for share preparation"
-              : "In-memory Public KU share preparation limit reached",
+              : "Public KU share preparation limit reached",
       });
       const alertText = screen.getByRole("alert").textContent ?? "";
       expect(alertText).toContain(reason);
@@ -1415,12 +1415,13 @@ describe("local KU component journey", () => {
         );
       } else {
         expect(alertText).toContain(
-          "16 unexpired single-use Public KU share previews in memory",
+          "16 unexpired single-use Public KU share previews (kept across host restarts)",
         );
         expect(alertText).toContain("not an AI model timeout or quota");
         expect(alertText).toContain(
-          "Confirm an existing prepared share preview if intended, wait for older 15-minute preparations to expire, or restart the host",
+          "Confirm an existing prepared share preview if intended, or wait for older 15-minute preparations to expire",
         );
+        expect(alertText).not.toContain("restart the host");
       }
       expect(
         screen.queryByRole("article", { name: "Prepared public share preview" }),
@@ -1466,7 +1467,7 @@ describe("local KU component journey", () => {
     options.sharePrepareFailure = "prepared_limit";
     fireEvent.click(prepareBtn);
     await screen.findByRole("heading", {
-      name: "In-memory Public KU share preparation limit reached",
+      name: "Public KU share preparation limit reached",
     });
     expect(
       screen.queryByRole("article", { name: "Prepared public share preview" }),
@@ -1499,7 +1500,7 @@ describe("local KU component journey", () => {
     ).toBe(false);
   });
   it.each([
-    ["prepared_limit", "In-memory Public KU share preparation limit reached"],
+    ["prepared_limit", "Public KU share preparation limit reached"],
     [
       "consent_randomness_unavailable",
       "Host randomness for share preparation is currently unavailable",
@@ -1982,7 +1983,7 @@ describe("local KU component journey", () => {
       "confirm_public was not set to true",
     );
     expect(explicitConfirmAlert).toContain(
-      "any unexpired prepared share preview remains in memory",
+      "any unexpired prepared share preview remains available",
     );
     expect(explicitConfirmAlert).toContain(
       "explicit_public_confirmation_required",

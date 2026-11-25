@@ -377,6 +377,14 @@ mod tests {
         .unwrap();
         let source_path = host_dir.join("source.canonical");
         std::fs::write(&source_path, &source_bytes).unwrap();
+        let (node, data_dir) = open_normal_host(&host_dir, token).await;
+        (node, ObjectCID(source_cid.into_bytes()), data_dir)
+    }
+
+    /// Open (or reopen after a restart) a normal host prepared by `setup_normal_host`.
+    async fn open_normal_host(host_dir: &Path, token: &str) -> (OneBrainNode, PathBuf) {
+        let key_path = host_dir.join("vault.bin");
+        let source_path = host_dir.join("source.canonical");
         let data_dir = host_dir.join("dataset");
         let node_config = NodeConfig {
             data_dir: data_dir.clone(),
@@ -409,7 +417,7 @@ mod tests {
         let mut base = crate::base_runtime_config_for_api_token(token);
         base.ku = Some(ku);
         node.install_base_runtime(base).unwrap();
-        (node, ObjectCID(source_cid.into_bytes()), data_dir)
+        (node, data_dir)
     }
 
     async fn save_manual_private_ku(
@@ -1093,6 +1101,39 @@ mod tests {
         let (status, missing) = share_preview("ff".repeat(32)).await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
         assert_eq!(missing["error"]["message"], "prepared_share_missing");
+
+        // D-062: an unexpired preparation survives a sender host restart. The
+        // exact preview reads back and the same prepared_id stays confirmable.
+        drop(sender_router);
+        let (sender_node, _) = open_normal_host(&temp.path().join("http-sender"), token).await;
+        let sender_router = ApiServer::new(sender_node, token.into(), 0).build_router();
+        let (status, sender_status) = http_json(
+            sender_router.clone(),
+            Method::GET,
+            "/api/vnext/ku/status",
+            token,
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let sender_session = sender_status["data"]["session"].clone();
+        let share_preview = |id: String| {
+            http_json(
+                sender_router.clone(),
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(
+                    &sender_session,
+                    "share_preview",
+                    json!({ "prepared_id": id }),
+                )),
+            )
+        };
+        let (status, restored) = share_preview(prepared_id.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{restored}");
+        assert_eq!(&restored["data"]["payload"], preview);
+        assert!(!restored.to_string().contains(&private_cid_hex));
 
         // Explicit confirmation is required before network or outbox checks.
         let (status, unconfirmed_resp) = http_json(

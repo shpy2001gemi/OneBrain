@@ -198,11 +198,30 @@ D-059 adds `share_preview` (owner-approved 2026-11-25; network-feature-gated lik
 `share_prepare`, new-work admission): a read-only read-back of the exact preview
 stored when `share_prepare` returned `prepared_id`. The host rechecks the
 caller's current access to the saved private KU (`saved_ku_not_accessible`
-otherwise); an expired, consumed or unknown id (including after restart, since
-prepared shares are in memory) returns `prepared_share_missing`. It never
+otherwise); an expired, consumed or unknown id returns `prepared_share_missing`
+(D-062 below covers restart). It never
 consumes, extends, enqueues or sends anything and does not replace the explicit
 `share_confirm` gesture. `onebrain ku share confirm` prints this preview on stderr
 before the typed-prepared_id prompt and stops without confirming when the read-back
 fails; `onebrain ku share preview --prepared-id <id>` projects the action alone.
 `/ku` Web keeps its in-memory preview; existing actions, DTOs and wire fields are
 unchanged.
+
+D-062 (owner-approved 2026-11-26) makes an unexpired normal-host preparation survive
+host restart. Before `share_prepare` returns, the host's `KuStore` writes one record
+to journal table `ku_public_share_prepared_v1`, sealed with the dataset's Vault key
+(`seal_local_metadata`): the prepare inputs (private ObjectCID, expected NodeID,
+loopback address, selector, namespace, prepare time) and a digest of the exact
+returned preview. The prepared capability itself is never serialized. When a
+`share_preview` or `share_confirm` names an id the process no longer holds, the host
+reads the caller's current saved view (normal access recheck), re-derives the
+preparation and accepts it only when unexpired and when the re-derived preview digest
+matches; otherwise `prepared_share_missing` (or `saved_access_changed` /
+`saved_ku_not_accessible` for changed access). The original 900-second expiry is
+never extended. The 16-item bound now counts live durable records; expired or
+unauthenticated rows are pruned on the next prepare. `share_confirm` deletes the
+durable record after the network/access checks and before the single confirmation,
+so a prepared id still confirms at most once; a crash after that deletion requires a
+new prepare. Restart never confirms, enqueues or sends anything. The isolated
+`ku_peer_demo` helper and library `PublicKuShareCoordinator` callers stay in memory.
+Existing actions, DTOs and wire fields are unchanged.

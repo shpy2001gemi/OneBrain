@@ -1,5 +1,19 @@
 # Decisions and claim boundary
 
+## D-062 — Prepared Public KU share survives normal-host restart
+
+On 2026-11-26 the owner chose the recommended task 20 backlog item: persist the
+normal host's prepared D-045 Public KU share so an unexpired preparation is not lost
+on restart. `KuStore` seals only the prepare inputs plus a digest of the exact
+returned preview in its journal (`ku_public_share_prepared_v1`) before returning the
+preview; after restart `share_preview`/`share_confirm` re-derive it from the caller's
+current saved view (access recheck) and accept it only when unexpired and
+digest-identical. Expiry (900 s), the 16-item bound, single-use confirmation (durable
+record deleted before confirming) and the explicit confirm gesture are unchanged;
+restart never confirms or sends. Supersedes only the "restart discards it" wording of
+the D-045/D-059 normal-host flow; the isolated peer demo stays in memory. No consent,
+trust, wire, DTO or claim-boundary change.
+
 ## D-061 — Bounded repair for OR branch scope and order (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: `branch_scope_or_order`
