@@ -104,26 +104,27 @@ fn ku_config(root: &Path) -> config::DesktopConfig {
     let key_file = root.join("vault.key");
     std::fs::write(&key_file, [8; 32]).unwrap();
     let signing = ed25519_dalek::SigningKey::from_bytes(&[0x42; 32]);
-    let mut cfg = config::DesktopConfig::default();
-    cfg.data_dir = root.join("node");
-    cfg.port = 0;
-    cfg.api_port = 0;
-    cfg.ku_host = Some(onebrain_api::ku_host::KuHostInputsConfig {
-        registry_root: root.join("registry"),
-        registry_public_key: signing
-            .verifying_key()
-            .as_bytes()
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect(),
-        vault_key_file: key_file,
-        sources: vec![onebrain_api::ku_host::Source {
-            label: "Admitted source".into(),
-            canonical_file: source_file,
-        }],
-        ollama: None,
-    });
-    cfg
+    config::DesktopConfig {
+        data_dir: root.join("node"),
+        port: 0,
+        api_port: 0,
+        ku_host: Some(onebrain_api::ku_host::KuHostInputsConfig {
+            registry_root: root.join("registry"),
+            registry_public_key: signing
+                .verifying_key()
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect(),
+            vault_key_file: key_file,
+            sources: vec![onebrain_api::ku_host::Source {
+                label: "Admitted source".into(),
+                canonical_file: source_file,
+            }],
+            ollama: None,
+        }),
+        ..Default::default()
+    }
 }
 
 async fn ku_http(
