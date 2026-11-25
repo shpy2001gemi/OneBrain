@@ -16,6 +16,7 @@ name: KU dev demo scripts
 #   platform/NAT/production qualification. Weekly schedule catches runtime drift.
 # - `windows-two-node` (t10): the same first run on windows-latest, running the
 #   printed PowerShell CLI/CLI and Web/Web lines verbatim (pwsh Invoke-Expression).
+# - t11: `linux-two-node` is a matrix over ubuntu-latest and macos-latest (bash).
 # - Path filter (t8): besides the scripts/workflow, also runs when the surfaces
 #   the two-node checks exercise change: the /ku Web (src/onebrain-web, not
 #   Markdown), the ku_local_web example and the /ku host/API files it shares
@@ -98,10 +99,16 @@ jobs:
       - name: Bootstrap prerequisite check (writes nothing)
         run: python scripts/base/bootstrap_ku_dev_demo.py --check-only
 
+  # t11: the same bash first run also on macos-latest (POSIX next steps, BSD
+  # sed/grep); the job id stays `linux-two-node` for history, the matrix adds macOS.
   linux-two-node:
-    name: Linux first run + CLI/CLI and Web/Web two-node share checks (DEV-ONLY)
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    name: ${{ matrix.os }} first run + CLI/CLI and Web/Web two-node share checks (DEV-ONLY)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     defaults:
       run:
         shell: bash
