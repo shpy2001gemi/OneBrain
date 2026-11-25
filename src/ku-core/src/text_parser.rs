@@ -585,12 +585,11 @@ fn try_parse_consists_of(line: &str, dict: &mut ConceptDict) -> Option<Vec<Instr
         let w = line[..pos].trim();
         let p = line[pos + " includes ".len()..].trim();
         (w, p)
-    } else if let Some(pos) = find_word_boundary(&lower, " contains ") {
+    } else {
+        let pos = find_word_boundary(&lower, " contains ")?;
         let w = line[..pos].trim();
         let p = line[pos + " contains ".len()..].trim();
         (w, p)
-    } else {
-        return None;
     };
 
     if whole_text.is_empty() || parts_text.is_empty() {

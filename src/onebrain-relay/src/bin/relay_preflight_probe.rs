@@ -221,7 +221,7 @@ fn unix_now() -> Result<u64, std::time::SystemTimeError> {
 fn decode_hex(value: &str, maximum: usize) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if value.is_empty()
         || value.len() > maximum.saturating_mul(2)
-        || value.len() % 2 != 0
+        || !value.len().is_multiple_of(2)
         || value
             .bytes()
             .any(|byte| !byte.is_ascii_hexdigit() || byte.is_ascii_uppercase())

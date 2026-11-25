@@ -283,6 +283,7 @@ struct ExtractionEnvelope {
 }
 
 #[derive(Default)]
+#[allow(clippy::type_complexity)]
 struct Catalog {
     keys: BTreeMap<[u8; 32], OperationId>,
     /// Summary plus case-folded literal text (ARCH-08) per owned KU.
@@ -764,8 +765,13 @@ impl KuStore {
         }
         checkpoint.phase = "prepared".into();
         if let Some(remaining) = remaining {
-            checkpoint.work_charged = work_limit.saturating_sub(remaining.remaining());
-            checkpoint.elapsed_ms = remaining.elapsed_ms();
+            // The workflow clock starts before the budget clock, so the budget
+            // can read a few ms lower than the stored checkpoint. Charged work
+            // and elapsed time are monotone; never write a regression.
+            checkpoint.work_charged = checkpoint
+                .work_charged
+                .max(work_limit.saturating_sub(remaining.remaining()));
+            checkpoint.elapsed_ms = checkpoint.elapsed_ms.max(remaining.elapsed_ms());
         }
         for attempt in &mut checkpoint.attempts {
             attempt["phase"] = "prepared".into();
@@ -789,7 +795,7 @@ impl KuStore {
             if let Err(error) = remaining.clone().charge(0) {
                 checkpoint.phase = "failed".into();
                 checkpoint.reason = error.0.into();
-                checkpoint.elapsed_ms = remaining.elapsed_ms();
+                checkpoint.elapsed_ms = checkpoint.elapsed_ms.max(remaining.elapsed_ms());
                 for attempt in &mut checkpoint.attempts {
                     attempt["phase"] = "failed".into();
                     attempt["reason"] = "budget_exhausted".into();

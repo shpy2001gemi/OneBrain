@@ -221,11 +221,11 @@ impl Mediator {
 
         #[cfg(not(feature = "legacy"))]
         {
-            return Ok(MediatorResponse::chat(
+            Ok(MediatorResponse::chat(
                 "Chat mediator does not persist KUs directly. Use the canonical two-step vNext KU workflow at /ku (/api/vnext/ku/extract or /api/vnext/ku/draft, then /api/vnext/ku/confirm) or `onebrain ku` to review and save this knowledge.",
             )
             .with_intent("encode_suggestion")
-            .with_suggestion("Open /ku (/api/vnext/ku) to review and save as a canonical vNext KU"));
+            .with_suggestion("Open /ku (/api/vnext/ku) to review and save as a canonical vNext KU"))
         }
 
         // Encode via legacy AiEncoder (only when compiled with `--features legacy`)

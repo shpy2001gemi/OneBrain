@@ -47,7 +47,9 @@ def check(name: str, expr: str, types: dict, depth: int = 0) -> list[str]:
 
 def render_rust(section: dict) -> str:
     types, dtos = section['types'], section['dtos']
-    lines = ['pub mod ku {', '#![allow(non_camel_case_types)]',
+    # Generated validators borrow/dereference every field uniformly and keep the
+    # IDL wire-id set explicit, so these style lints do not apply to this module.
+    lines = ['pub mod ku {', '#![allow(non_camel_case_types, clippy::needless_borrow, clippy::deref_addrof, clippy::manual_range_patterns)]',
              'use serde::{Serialize, Deserialize};', 'use crate::ku_payload::{ensure, validate_base64, KuPayloadError, KuPayload};']
     lines += [f'pub const MINIMUM_BASE_MINOR: u16 = {section["minimum_base_minor"]};']
     for name, s in types.items():

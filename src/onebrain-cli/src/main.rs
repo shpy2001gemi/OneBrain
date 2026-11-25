@@ -39,6 +39,7 @@ struct CliArgs {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Bounded OBP operations through the authenticated local node-owned API.
     #[cfg(feature = "vnext-outbound-first")]
@@ -1422,6 +1423,7 @@ mod vnext_command_tests {
 
 #[cfg(all(test, feature = "base-v1"))]
 #[path = "../../onebrain-api/src/ku_api/tests/registry_fixture.rs"]
+#[allow(clippy::duplicate_mod)]
 #[allow(dead_code)]
 mod registry_fixture;
 

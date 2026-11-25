@@ -302,15 +302,16 @@ pub fn assemble(
     for (i, choice) in items(selection, "claims").enumerate() {
         for link in items(choice, "links") {
             let to = link["to"].as_str().unwrap();
-            let target = link_target(source, &claims, to, budget)?;
-            if target.is_none() || target == Some(i) {
-                issues.push(format!(
+            match link_target(source, &claims, to, budget)? {
+                Some(target) if target != i => {
+                    claims[i]["relations"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(json!({"statement":target,"kind":link["kind"],"quote":link["via"]}));
+                }
+                _ => issues.push(format!(
                     "selection[{i}].links: absent_ambiguous_or_self_target"
-                ));
-            } else {
-                claims[i]["relations"].as_array_mut().unwrap().push(
-                    json!({"statement":target.unwrap(),"kind":link["kind"],"quote":link["via"]}),
-                );
+                )),
             }
         }
     }
@@ -417,7 +418,7 @@ pub fn apply_repair(
     require(
         reply
             .get("unresolved")
-            .map_or(true, |v| v.as_array().unwrap().is_empty()),
+            .is_none_or(|v| v.as_array().unwrap().is_empty()),
         "selection_repair_unresolved",
     )?;
     let mut changed = base.clone();

@@ -412,6 +412,9 @@ impl SystemPublicEndpointResolver {
         })
     }
 
+    // `fetch_update` is deprecated (renamed `try_update`) on newer stable Rust;
+    // keep it so older local toolchains still build.
+    #[allow(deprecated)]
     fn acquire_dns_job(&self) -> Result<(), RelayAdmissionError> {
         self.active_dns_jobs
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
@@ -1829,7 +1832,7 @@ fn decode_hex_32(value: &str) -> Result<[u8; 32], RelayAdmissionError> {
         return Err(RelayAdmissionError::TrustedBootstrapInvalid);
     }
     let mut out = [0; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         out[index] = (hex_digit(pair[0])? << 4) | hex_digit(pair[1])?;
     }
     Ok(out)

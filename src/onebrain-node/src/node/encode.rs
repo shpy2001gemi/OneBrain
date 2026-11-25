@@ -36,10 +36,10 @@ impl OneBrainNode {
         #[cfg(not(feature = "legacy"))]
         {
             let _ = (text, progress_tx);
-            return Err(NodeError::InvalidArgument(
+            Err(NodeError::InvalidArgument(
                 "Legacy Core DNA encoding (/api/encode) is disabled in the default build; use the canonical vNext KU workflow (/api/vnext/ku or `onebrain ku`) or build with `--features legacy`."
                     .into(),
-            ));
+            ))
         }
 
         #[cfg(feature = "legacy")]

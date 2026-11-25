@@ -314,6 +314,7 @@ pub async fn confirm_host_public_ku_share(
 
 #[cfg(test)]
 #[path = "ku_api/tests/registry_fixture.rs"]
+#[allow(clippy::duplicate_mod)]
 mod registry_fixture;
 
 #[cfg(test)]

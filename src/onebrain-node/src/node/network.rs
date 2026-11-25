@@ -33,23 +33,19 @@ impl OneBrainNode {
     /// Whether [`Self::start_network`] has anything to start: the explicitly
     /// opted-in legacy TCP listener or the configured vNext OBP-RP runtime.
     pub fn network_listener_requested(&self) -> bool {
-        if self
-            .config
-            .legacy_tcp_listener
-            .bind_addr(self.config.port)
-            .is_some()
-        {
-            return true;
-        }
         #[cfg(feature = "vnext-network-runtime")]
-        if self
+        let vnext = self
             .config
             .vnext
-            .is_active(crate::vnext_config::VNextFeature::ObpRp)
-        {
-            return true;
-        }
-        false
+            .is_active(crate::vnext_config::VNextFeature::ObpRp);
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        let vnext = false;
+        vnext
+            || self
+                .config
+                .legacy_tcp_listener
+                .bind_addr(self.config.port)
+                .is_some()
     }
 
     /// Start the configured network listeners.

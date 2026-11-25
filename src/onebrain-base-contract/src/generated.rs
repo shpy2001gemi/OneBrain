@@ -746,7 +746,12 @@ pub const BASE_OPERATION_DISCRIMINATORS: &[(&str, u16)] = &[
 ];
 
 pub mod ku {
-    #![allow(non_camel_case_types)]
+    #![allow(
+        non_camel_case_types,
+        clippy::needless_borrow,
+        clippy::deref_addrof,
+        clippy::manual_range_patterns
+    )]
     use crate::ku_payload::{ensure, validate_base64, KuPayload, KuPayloadError};
     use serde::{Deserialize, Serialize};
     pub const MINIMUM_BASE_MINOR: u16 = 2;

@@ -125,6 +125,7 @@ pub async fn accept_authenticated_session(
 /// A carrier record whose session/context binding has been checked. This does
 /// not imply semantic authority, adoption, truth, or global completeness.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum AuthenticatedCarrierRecord {
     Reconciliation(ReconciliationMessage),
     BoundPayload(BoundPayloadFrame),

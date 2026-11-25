@@ -722,7 +722,7 @@ fn verify_exact_confirmation(intent: &str, typed: &str) -> Result<(), String> {
 fn confirmation_receipt(intent: &str) -> Result<String, String> {
     validate_hex32("intent", intent)?;
     let mut intent_bytes = [0u8; 32];
-    for (index, pair) in intent.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in intent.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         intent_bytes[index] = (decode_nibble(pair[0])? << 4) | decode_nibble(pair[1])?;
     }
     let mut digest = blake3::Hasher::new();

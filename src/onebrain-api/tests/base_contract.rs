@@ -673,7 +673,7 @@ async fn authenticated_rest_archive_roundtrip_is_lossless_and_reconciles_after_a
         assert_eq!(chunk["offset"].as_u64().unwrap(), offset);
         let encoded = chunk["chunk_hex"].as_str().unwrap().as_bytes();
         assert_eq!(encoded.len() & 1, 0);
-        for pair in encoded.chunks_exact(2) {
+        for pair in encoded.as_chunks::<2>().0 {
             archive.push(u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap());
         }
         offset = archive.len() as u64;

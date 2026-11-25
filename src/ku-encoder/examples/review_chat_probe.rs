@@ -167,10 +167,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(ExtractionError("chat_incomplete"))
                     } else if !thinking.is_empty() {
                         Err(ExtractionError("thinking_not_disabled"))
-                    } else if reply["prompt_eval_count"]
-                        .as_u64()
-                        .map_or(true, |n| n > 6144)
-                        || reply["eval_count"].as_u64().map_or(true, |n| n > 2048)
+                    } else if reply["prompt_eval_count"].as_u64().is_none_or(|n| n > 6144)
+                        || reply["eval_count"].as_u64().is_none_or(|n| n > 2048)
                     {
                         Err(ExtractionError("chat_token_budget"))
                     } else {

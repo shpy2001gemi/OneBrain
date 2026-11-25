@@ -92,6 +92,7 @@ pub struct ExtractionWorkflow {
 }
 
 impl ExtractionWorkflow {
+    #[allow(clippy::too_many_arguments)]
     fn checkpoint(
         &self,
         job: &ExtractionJob,

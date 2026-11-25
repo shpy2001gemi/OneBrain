@@ -413,6 +413,7 @@ impl fmt::Debug for AuthenticatedOuterRelayConnection {
 
 impl AuthenticatedOuterRelayConnection {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     fn from_verified_handshake(
         route: ValidatedRelayDialRoute,
         client_node_id: NodeId,
@@ -469,6 +470,7 @@ impl AuthenticatedOuterRelayConnection {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_verified_quic_handshake(
         route: ValidatedRelayDialRoute,
         client_node_id: NodeId,
@@ -875,7 +877,7 @@ where
     stream
         .write_all(&length.to_be_bytes())
         .await
-        .and_then(|_| Ok(()))
+        .map(|_| ())
         .map_err(|_| OuterRelayIoError::Closed)?;
     stream
         .write_all(bytes)
@@ -1333,6 +1335,7 @@ async fn connect_route(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn client_handshake<W, R>(
     send: &mut W,
     recv: &mut R,

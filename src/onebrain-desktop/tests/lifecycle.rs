@@ -1,5 +1,7 @@
 // Import the product modules without loading a native WebView test harness.
+// Only part of each product module is exercised here, so unused items are expected.
 #[path = "../src/config.rs"]
+#[allow(dead_code)]
 mod config;
 #[path = "../src/ku_start.rs"]
 mod ku_start;
@@ -8,6 +10,7 @@ mod lifecycle_status;
 #[path = "../src/local_listener.rs"]
 mod local_listener;
 #[path = "../src/recovery.rs"]
+#[allow(dead_code)]
 mod recovery;
 #[path = "../../onebrain-api/src/ku_api/tests/registry_fixture.rs"]
 mod registry_fixture;

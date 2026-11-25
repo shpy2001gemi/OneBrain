@@ -24,6 +24,7 @@ pub const MAX_PUBLIC_KU_QUERY_BYTES: usize = 256;
 /// Read-only view of the already owned public acceptance store.
 pub trait KuPublicReader: Send + Sync {
     fn get_public_object(&self, cid: [u8; 32]) -> Result<Option<Vec<u8>>, BaseServiceError>;
+    #[allow(clippy::type_complexity)]
     fn list_public_objects(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, BaseServiceError> {
         Ok(Vec::new())
     }

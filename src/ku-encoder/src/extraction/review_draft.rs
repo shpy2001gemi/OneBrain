@@ -200,7 +200,7 @@ impl TaskRequest {
                 schema["enum"] = json!(values
                     .into_iter()
                     .filter(|s| s.chars().count() <= max)
-                    .filter(|s| existing.as_ref().map_or(true, |a| a.contains(&json!(s))))
+                    .filter(|s| existing.as_ref().is_none_or(|a| a.contains(&json!(s))))
                     .collect::<Vec<_>>());
             }
             if name == "value_quote" && !numeric.is_empty() {

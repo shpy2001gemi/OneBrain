@@ -278,19 +278,19 @@ pub fn assemble(
     let mut covered = BTreeSet::new();
     // Addressable objects have host-created identities, never model-assigned IDs.
     let mut targets: Vec<(usize, String, String, (usize, usize))> = Vec::new();
+    let cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hoặc|or)(?:\s|$)")
+        .map_err(|_| ExtractionError("schema"))?;
+    let comparison_cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hơn|than)(?:\s|$)")
+        .map_err(|_| ExtractionError("schema"))?;
     for (i, c) in items(selection, "claims").enumerate() {
         let scope = c["anchor"].as_str().unwrap_or(source);
         // Lexical cues expose missing structure; they never assign a semantic
         // operator or resolve its scope. False positives remain reviewable.
-        let cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hoặc|or)(?:\s|$)")
-            .map_err(|_| ExtractionError("schema"))?;
         for arg in items(c, "arguments") {
             if cue.is_match(text(arg)) && !items(c, "alternatives").any(|g| g["quote"] == *arg) {
                 issue(&mut v, i, "alternatives", "unrepresented_choice_cue");
             }
         }
-        let comparison_cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hơn|than)(?:\s|$)")
-            .map_err(|_| ExtractionError("schema"))?;
         if comparison_cue.is_match(text(&c["predicate"]))
             && items(c, "comparisons").next().is_none()
         {
@@ -579,6 +579,9 @@ pub fn assemble(
             v.issues.push("numeric: unsupported_number_form".into());
         }
     }
+    let numeric =
+        regex::Regex::new(r"[+-]?(?:[0-9]+|\.[0-9]+)(?:[.,/][0-9]+)*(?:[eE][+-]?[0-9]+)?")
+            .map_err(|_| ExtractionError("number_pattern"))?;
     for (i, c) in items(selection, "claims").enumerate() {
         for q in items(c, "quantities") {
             let candidates = semantic_selection::numeric_candidates(text(&q["quote"]), b)?;
@@ -587,9 +590,6 @@ pub fn assemble(
             {
                 issue(&mut v, i, "quantities", "unsupported_number_form");
             }
-            let numeric =
-                regex::Regex::new(r"[+-]?(?:[0-9]+|\.[0-9]+)(?:[.,/][0-9]+)*(?:[eE][+-]?[0-9]+)?")
-                    .map_err(|_| ExtractionError("number_pattern"))?;
             let scope = c["anchor"].as_str().unwrap_or(source);
             if let Some(qspan) = span(source, &json!({"quote":q["quote"]}), scope, b)? {
                 if !numeric.find_iter(source).any(|m| {

@@ -154,7 +154,7 @@ pub(crate) fn endpoint_is_public(endpoint: &ReachabilityEndpointV1) -> bool {
 }
 
 fn ipv4_is_global([a, b, c, d]: [u8; 4]) -> bool {
-    if a == 0
+    !(a == 0
         || a == 10
         || a == 127
         || (a == 100 && (64..=127).contains(&b))
@@ -164,11 +164,7 @@ fn ipv4_is_global([a, b, c, d]: [u8; 4]) -> bool {
         || (a == 192 && b == 0 && c == 0)
         || (a == 198 && (b == 18 || b == 19))
         || a >= 224
-        || [a, b, c, d] == [255, 255, 255, 255]
-    {
-        return false;
-    }
-    true
+        || [a, b, c, d] == [255, 255, 255, 255])
 }
 
 fn ipv6_is_global(octets: [u8; 16]) -> bool {

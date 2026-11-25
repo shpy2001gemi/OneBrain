@@ -662,7 +662,7 @@ fn bytes32(field: &'static str, value: &str) -> Result<[u8; 32], VNextHttpError>
         )));
     }
     let mut output = [0u8; 32];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let high = hex_nibble(pair[0]).expect("validated lowercase hex");
         let low = hex_nibble(pair[1]).expect("validated lowercase hex");
         output[index] = high << 4 | low;

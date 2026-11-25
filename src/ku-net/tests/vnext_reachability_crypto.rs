@@ -182,10 +182,16 @@ fn history_rejects_forks_keys_gaps_config_changes_and_bounds() {
     let mut good = signed_descriptor(&key, 2, 10_000);
     good.previous_descriptor_blake3 = Some(*blake3::hash(&old).as_bytes());
     let terminal = history_bytes(&key, good.clone());
-    assert!(VerifiedDescriptorHistory::verify(&[old.clone()], &terminal, 10_000).is_ok());
+    assert!(
+        VerifiedDescriptorHistory::verify(std::slice::from_ref(&old), &terminal, 10_000).is_ok()
+    );
     assert!(VerifiedDescriptorHistory::verify(&[], &terminal, 10_000).is_err());
-    assert!(VerifiedDescriptorHistory::verify(&[old.clone()], &terminal, 9000).is_err());
-    assert!(VerifiedDescriptorHistory::verify(&[old.clone()], &terminal, 11_000).is_err());
+    assert!(
+        VerifiedDescriptorHistory::verify(std::slice::from_ref(&old), &terminal, 9000).is_err()
+    );
+    assert!(
+        VerifiedDescriptorHistory::verify(std::slice::from_ref(&old), &terminal, 11_000).is_err()
+    );
     assert!(VerifiedDescriptorHistory::verify(&vec![old.clone(); 16], &terminal, 10_000).is_err());
     assert!(VerifiedDescriptorHistory::verify(&[vec![0; 8193]], &terminal, 10_000).is_err());
     for mutate in [0, 1, 2, 3] {
@@ -197,7 +203,7 @@ fn history_rejects_forks_keys_gaps_config_changes_and_bounds() {
             _ => bad.endpoints[0].port = 444,
         }
         assert!(VerifiedDescriptorHistory::verify(
-            &[old.clone()],
+            std::slice::from_ref(&old),
             &history_bytes(&key, bad),
             10_000
         )
@@ -205,7 +211,7 @@ fn history_rejects_forks_keys_gaps_config_changes_and_bounds() {
     }
     let wrong = SigningKey::from_bytes(&[8; 32]);
     assert!(VerifiedDescriptorHistory::verify(
-        &[old.clone()],
+        std::slice::from_ref(&old),
         &history_bytes(&wrong, good),
         10_000
     )

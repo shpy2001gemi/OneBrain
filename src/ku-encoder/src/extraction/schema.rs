@@ -344,7 +344,7 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 pub(crate) fn unhex<const N: usize>(s: &str) -> Result<[u8; N]> {
     require(s.len() == N * 2, "identity_width")?;
     let mut out = [0; N];
-    for (i, chunk) in s.as_bytes().chunks_exact(2).enumerate() {
+    for (i, chunk) in s.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let digit = |b: u8| match b {
             b'0'..=b'9' => Ok(b - b'0'),
             b'a'..=b'f' => Ok(b - b'a' + 10),

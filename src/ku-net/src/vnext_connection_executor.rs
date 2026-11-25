@@ -835,6 +835,7 @@ impl AdmittedRelayExecution {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum AdmittedExecutionInput {
     Direct(AdmittedDirectExecution),
     HolePunch(AdmittedHolePunchExecution),

@@ -78,7 +78,7 @@ fn ccid(value: &str) -> Result<[u8; 16], BaseServiceError> {
         return Err(super::invalid());
     }
     let mut out = [0u8; 16];
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let pair = std::str::from_utf8(pair).map_err(|_| super::invalid())?;
         out[index] = u8::from_str_radix(pair, 16).map_err(|_| super::invalid())?;
     }
