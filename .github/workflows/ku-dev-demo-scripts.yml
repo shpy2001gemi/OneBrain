@@ -14,6 +14,8 @@ name: KU dev demo scripts
 #   The DEV-ONLY Registry, keys, token and KU
 #   are disposable demo data, never uploaded; this is not operator trust nor
 #   platform/NAT/production qualification. Weekly schedule catches runtime drift.
+# - `windows-two-node` (t10): the same first run on windows-latest, running the
+#   printed PowerShell CLI/CLI and Web/Web lines verbatim (pwsh Invoke-Expression).
 # - Path filter (t8): besides the scripts/workflow, also runs when the surfaces
 #   the two-node checks exercise change: the /ku Web (src/onebrain-web, not
 #   Markdown), the ku_local_web example and the /ku host/API files it shares
@@ -167,3 +169,99 @@ jobs:
       - name: Disk usage
         if: always()
         run: df -h / && du -sh src/target 2>/dev/null || true
+
+  # t10: the same first run on the MVP's primary host OS. The bootstrap prints
+  # PowerShell next steps on native Windows (single-quoted paths, `;` between the
+  # build and the check), so each printed line is extracted and run verbatim with
+  # Invoke-Expression in pwsh. Only stdout is captured (cargo progress stays on
+  # stderr); each step fails unless the check exits 0 and its own seed passed.
+  windows-two-node:
+    name: Windows first run + CLI/CLI and Web/Web two-node share checks (DEV-ONLY)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/onebrain-web/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build the /ku Web once
+        working-directory: src/onebrain-web
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+
+      - name: Prerequisite check (writes nothing)
+        run: python scripts/base/bootstrap_ku_dev_demo.py --check-only
+
+      - name: DEV-ONLY bootstrap with receiver (throwaway demo root with a space)
+        run: |
+          python scripts/base/bootstrap_ku_dev_demo.py --dev-demo-registry --with-receiver `
+            --demo-root "$env:RUNNER_TEMP\ku dev demo" | Tee-Object -FilePath "$env:RUNNER_TEMP\bootstrap.out"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run the printed CLI/CLI two-node share check verbatim (seeds on the CLI host)
+        run: |
+          $m = Select-String -LiteralPath "$env:RUNNER_TEMP\bootstrap.out" `
+            -Pattern '^\s*CLI hosts \+ onebrain ku get/export:\s+(.+)$' | Select-Object -First 1
+          if (-not $m) { Write-Error "printed CLI/CLI check line not found"; exit 1 }
+          $cmd = $m.Matches[0].Groups[1].Value
+          Write-Host "Running: $cmd"
+          $global:LASTEXITCODE = 0
+          Invoke-Expression $cmd | Tee-Object -FilePath "$env:RUNNER_TEMP\check-cli.out"
+          if ($LASTEXITCODE -ne 0) { Write-Error "CLI/CLI check exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          if (-not (Select-String -LiteralPath "$env:RUNNER_TEMP\check-cli.out" `
+              -Pattern '^\[PASS\] seed: explicit save committed privately' -Quiet)) {
+            Write-Error "CLI/CLI check did not seed the sample KU on the CLI host"; exit 1
+          }
+
+      - name: DEV-ONLY bootstrap with receiver for the Web/Web check (separate demo root)
+        run: |
+          python scripts/base/bootstrap_ku_dev_demo.py --dev-demo-registry --with-receiver `
+            --demo-root "$env:RUNNER_TEMP\ku web demo" | Tee-Object -FilePath "$env:RUNNER_TEMP\bootstrap-web.out"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run the printed Web/Web two-node share check verbatim (seeds on the Web host)
+        run: |
+          $m = Select-String -LiteralPath "$env:RUNNER_TEMP\bootstrap-web.out" `
+            -Pattern '^\s*Web hosts:\s+(.+)$' | Select-Object -First 1
+          if (-not $m) { Write-Error "printed Web/Web check line not found"; exit 1 }
+          $cmd = $m.Matches[0].Groups[1].Value
+          Write-Host "Running: $cmd"
+          $global:LASTEXITCODE = 0
+          Invoke-Expression $cmd | Tee-Object -FilePath "$env:RUNNER_TEMP\check-web.out"
+          if ($LASTEXITCODE -ne 0) { Write-Error "Web/Web check exited $LASTEXITCODE"; exit $LASTEXITCODE }
+          if (-not (Select-String -LiteralPath "$env:RUNNER_TEMP\check-web.out" `
+              -Pattern '^\[PASS\] seed: explicit save committed privately' -Quiet)) {
+            Write-Error "Web/Web check did not seed the sample KU on the Web host"; exit 1
+          }
+
+      - name: Disk usage
+        if: always()
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, Used, Free
+          if (Test-Path src/target) {
+            "src/target: {0:N1} GiB" -f ((Get-ChildItem src/target -Recurse -File -ErrorAction SilentlyContinue |
+              Measure-Object Length -Sum).Sum / 1GB)
+          }
