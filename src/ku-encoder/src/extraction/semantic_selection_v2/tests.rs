@@ -410,3 +410,200 @@ fn qualifier_overlap_dispatches_only_source_local_predicate_repair() {
         BTreeSet::from(["go often home".into()])
     );
 }
+
+#[test]
+fn borrowed_outside_other_branch_dispatches_only_source_local_branch_repair() {
+    // D-060: "dùng" is borrowed into branch "điện" from outside the group.
+    let source = "Máy dùng pin hoặc điện.";
+    let selection = json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện"],"alternatives":[{"quote":"pin hoặc điện","cue":"hoặc","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"},"borrowed":{"quote":"dùng"}}]}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].alternatives: borrowed_ambiguous".into()));
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"],
+        json!({"groups":1,"repairable":[{"group":0,"branch":1,"borrowed":["pin"],"may_omit":true}],"borrowed":["pin"]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let alt = &wire["properties"]["patch"]["properties"]["alternatives"];
+    assert_eq!(
+        (alt["minItems"].clone(), alt["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(
+        alt["items"]["properties"]["branches"]["items"]["properties"]["borrowed"]["properties"]
+            ["quote"]["enum"],
+        json!(["pin"])
+    );
+    // Accepted: drop the reconstruction; the branch keeps its exact surface.
+    let mut dropped = selection["claims"][0]["alternatives"].clone();
+    dropped[0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    let (changed, draft, after) = apply_repair(
+        source,
+        &selection,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":dropped}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(after.clear(), "{:?} {:?}", after.issues, after.uncovered);
+    assert_eq!(
+        draft["statements"][0]["alternatives"][0]["branches"][1]["origin"],
+        "explicit"
+    );
+    assert_eq!(changed["claims"][0]["predicate"], "dùng");
+    // Rejected: unchanged, out-of-choice, extra selector, changed surface/cue, extra group.
+    let reject = |alternatives: Value| {
+        apply_repair(
+            source,
+            &selection,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+        .is_err()
+    };
+    assert!(reject(selection["claims"][0]["alternatives"].clone()));
+    let mut out_of_choice = selection["claims"][0]["alternatives"].clone();
+    out_of_choice[0]["branches"][1]["borrowed"] = json!({"quote":"Máy"});
+    assert!(reject(out_of_choice));
+    let mut with_selector = selection["claims"][0]["alternatives"].clone();
+    with_selector[0]["branches"][1]["borrowed"] = json!({"quote":"pin","within":"pin hoặc điện"});
+    assert!(reject(with_selector));
+    let mut surface = dropped.clone();
+    surface[0]["branches"][1]["surface"] = json!({"quote":"điện","within":"pin hoặc điện"});
+    assert!(reject(surface));
+    let mut cue = dropped.clone();
+    cue[0]["cue"] = json!("và");
+    assert!(reject(cue));
+    let mut extra = dropped.clone();
+    extra.as_array_mut().unwrap().push(dropped[0].clone());
+    assert!(reject(extra));
+}
+
+#[test]
+fn borrowed_branch_repair_keeps_valid_reconstructions_and_flags_only_unsourced_text() {
+    // A valid reconstruction is never dispatched or editable.
+    let base = rocket();
+    let (_, validation) = assemble(ROCKET, &base, &mut budget()).unwrap();
+    assert!(repair_target(ROCKET, &base, &validation, &mut budget())
+        .unwrap()
+        .is_none());
+    let mut renamed = base["claims"][0]["alternatives"].clone();
+    renamed[0]["branches"][1]["borrowed"] = json!({"quote":"liệu"});
+    assert!(apply_repair(
+        ROCKET,
+        &base,
+        0,
+        &["alternatives".into()],
+        &json!({"patch":{"alternatives":renamed}}),
+        &mut budget()
+    )
+    .is_err());
+    // Borrowed cue text inside the group: choices are token runs of the other branch.
+    let mut cue_borrowed = rocket();
+    cue_borrowed["claims"][0]["alternatives"][0]["branches"][1]["borrowed"] =
+        json!({"quote":"hoặc"});
+    let (_, validation) = assemble(ROCKET, &cue_borrowed, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].alternatives: borrowed_outside_other_branch".into()));
+    let (target, fields) = repair_target(ROCKET, &cue_borrowed, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &cue_borrowed,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"]["repairable"][0]["borrowed"],
+        json!([
+            "liệu",
+            "liệu lỏng",
+            "lỏng",
+            "nhiên",
+            "nhiên liệu",
+            "nhiên liệu lỏng"
+        ])
+    );
+    let (changed, _, after) = apply_repair(
+        ROCKET,
+        &cue_borrowed,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":base["claims"][0]["alternatives"]}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(changed, base);
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    // Text outside the group (`borrowed_ambiguous`) gets the same bounded choices.
+    let mut outside = rocket();
+    outside["claims"][0]["alternatives"][0]["branches"][1]["borrowed"] = json!({"quote":"Tên lửa"});
+    let (_, validation) = assemble(ROCKET, &outside, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].alternatives: borrowed_ambiguous".into()));
+    assert_eq!(
+        repair_target(ROCKET, &outside, &validation, &mut budget()).unwrap(),
+        Some((0, vec!["alternatives".into()]))
+    );
+    assert_eq!(
+        borrowed_choices(ROCKET, &outside["claims"][0], &mut budget()).unwrap()[&(0, 1)].len(),
+        6
+    );
+    // Unflagged reconstructions stay byte-identical inside a dispatched repair.
+    let mut both = cue_borrowed["claims"][0]["alternatives"].clone();
+    both[0]["branches"][0]["borrowed"] = json!({"quote":"rắn"});
+    both[0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    assert!(apply_repair(
+        ROCKET,
+        &cue_borrowed,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":both}}),
+        &mut budget()
+    )
+    .is_err());
+    // No branch is flagged when there is no borrowed text at all.
+    let mut plain = rocket();
+    plain["claims"][0]["alternatives"][0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    assert!(borrowed_choices(ROCKET, &plain["claims"][0], &mut budget())
+        .unwrap()
+        .is_empty());
+}

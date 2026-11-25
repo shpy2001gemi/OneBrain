@@ -1,5 +1,19 @@
 # Decisions and claim boundary
 
+## D-060 — Bounded repair for borrowed text outside other branches (SEM-F03 narrow)
+
+On 2026-11-25 the owner chose the recommended KU-SEM-001 item: borrowed text in
+an OR group that is not taken from another branch dispatches one `alternatives`
+repair. The owner's example (`Máy dùng pin hoặc điện`, predicate `dùng` borrowed
+into branch `điện`) surfaces as `borrowed_ambiguous` (text outside the group), so
+both that code and `borrowed_outside_other_branch` route here. For
+each flagged branch the host derives finite choices: drop `borrowed` (the branch
+keeps only its exact surface) or one whitespace-bounded token run of another
+branch surface that resolves uniquely inside that branch. Group/branch counts,
+surfaces, quote/cue/exclusivity and every unflagged reconstruction stay
+byte-identical; the model chooses, the host enforces and fully revalidates.
+Deterministic tests only; no model run, no fidelity claim, user host stays v1.
+
 ## D-059 — Read-only prepared-preview read-back (`share_preview`) before CLI confirm
 
 On 2026-11-25 the owner chose the recommended option for the task 20 backlog item

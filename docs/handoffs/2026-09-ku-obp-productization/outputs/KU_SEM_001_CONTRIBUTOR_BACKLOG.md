@@ -13,7 +13,7 @@ CLI/OBP framework work. This file is a local handoff; no public issues were file
 |---|---|---|
 | SEM-F01 | Rocket source in task 24: omitted group reference, future scope, Qwen branch/target errors | Source-preserving output, correct qualifier roles, reference or explicit faithful unresolved state; separately assessed broader cases |
 | SEM-F02 | Qwen v2 regression on simple OR, condition, water/car roles and units | Original development cases plus independent cases; no loosened assessor or answer leakage |
-| SEM-F03 | Automatic structured repair is not routed; atomic guarded patch support exists | Source-local finite choices, cardinality/provenance/coverage preservation, rejected proposals retained, bounded lifecycle tests |
+| SEM-F03 | Automatic structured repair is not routed; atomic guarded patch support exists. 2026-11-25 (D-060): `borrowed_outside_other_branch` / `borrowed_ambiguous` now route to a bounded `alternatives` repair (drop borrowed or another branch's exact token run); other structured issues remain unrouted | Source-local finite choices, cardinality/provenance/coverage preservation, rejected proposals retained, bounded lifecycle tests |
 | SEM-F04 | Worker startup intermittently failed on Qwen; six-case retry had none | Isolated reproducible worker lifecycle diagnosis; preserve raw failures and retry as distinct jobs |
 | SEM-F05 | Nested alternatives, inner-term qualifier scope, cross-window reference incomplete | Versioned contract first; bounded representation and compatibility tests |
 | SEM-F06 | Independent semantic/factual verification and canonical lowering absent | Separate approved contracts and explicit acceptance/save boundaries; no draft-to-KU shortcut |

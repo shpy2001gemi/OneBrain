@@ -70,6 +70,16 @@ substring; the qualifier stays in its original role. The model chooses; the host
 does not apply this trim automatically. The host independently enforces the same
 finite choices and full revalidation, including no-op and coverage-loss rejection.
 
+Borrowed text in an OR group that is not taken from another branch — it resolves
+in no other branch (`borrowed_outside_other_branch`) or not uniquely inside the
+group (`borrowed_ambiguous`, e.g. a predicate outside the group) — may dispatch an
+`alternatives`-only repair (D-060). Per flagged branch the choices are: omit
+`borrowed`, keeping only the exact branch surface, or one whitespace-bounded token
+run of another branch surface that resolves uniquely inside that branch. Group
+and branch counts, surfaces, quote/cue/exclusivity and every other reconstruction
+are unchanged. Dropping a reconstruction leaves an explicit, source-quoted surface;
+it does not assert that the shorter branch is the intended meaning.
+
 ## Lifecycle, limits and compatibility
 
 Use the existing durable reservations, cancel/restart fencing and consent boundary.

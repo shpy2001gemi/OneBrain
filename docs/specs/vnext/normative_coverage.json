@@ -1077,6 +1077,10 @@
           "needle": "selectors_cannot_escape_scope_and_atomic_patch_cannot_delete_a_branch"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "borrowed_outside_other_branch_dispatches_only_source_local_branch_repair"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

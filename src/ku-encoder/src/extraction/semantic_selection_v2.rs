@@ -2,7 +2,7 @@
 use super::*;
 use review_draft::{quote_positions, Validation};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const PROFILE: &str = "ku-semantic-selection/2.0";
 pub const DRAFT_PROFILE: &str = "ku-semantic-draft/2.0";
@@ -241,6 +241,27 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             .ok_or(ExtractionError("selection_repair_choice"))?;
         require(!options.is_empty(), "selection_repair_choice")?;
         wire["properties"]["patch"]["properties"]["predicate"]["enum"] = json!(options);
+    }
+    if let Some(alt) = wire["properties"]["patch"]["properties"].get_mut("alternatives") {
+        // D-060: same group count; borrowed text only from host-derived choices.
+        let groups = choices["alternatives"]["groups"]
+            .as_u64()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        let quotes = choices["alternatives"]["borrowed"]
+            .as_array()
+            .ok_or(ExtractionError("selection_repair_choice"))?
+            .clone();
+        alt["minItems"] = json!(groups);
+        alt["maxItems"] = json!(groups);
+        let branch = &mut alt["items"]["properties"]["branches"]["items"];
+        if quotes.is_empty() {
+            branch["properties"]
+                .as_object_mut()
+                .ok_or(ExtractionError("schema"))?
+                .remove("borrowed");
+        } else {
+            branch["properties"]["borrowed"]["properties"]["quote"]["enum"] = json!(quotes);
+        }
     }
     for (key, choice) in [("arguments", "arguments"), ("links", "to")] {
         if wire["properties"]["patch"]["properties"].get(key).is_some() {
@@ -654,8 +675,82 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["predicate".into()])));
         }
+        if ["borrowed_outside_other_branch", "borrowed_ambiguous"]
+            .iter()
+            .any(|code| {
+                v.issues
+                    .contains(&format!("selection[{i}].alternatives: {code}"))
+            })
+            && !borrowed_choices(source, claim, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["alternatives".into()])));
+        }
     }
     Ok(None)
+}
+
+/// D-060: branches whose borrowed text is not taken from another branch of the
+/// group: it resolves in no other branch, or not uniquely inside the group at
+/// all (`borrowed_ambiguous`). Each may drop `borrowed` (explicit surface only) or take one
+/// whitespace-bounded token run of another branch surface that resolves to a
+/// unique position inside that branch, mirroring the assembly check. The model
+/// chooses; the host neither picks a meaning nor accepts anything else.
+fn borrowed_choices(
+    source: &str,
+    claim: &Value,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<(usize, usize), BTreeSet<String>>> {
+    let mut out = BTreeMap::new();
+    for (g, group) in items(claim, "alternatives").enumerate() {
+        let quote = text(&group["quote"]);
+        let mut spans = Vec::new();
+        for branch in items(group, "branches") {
+            spans.push(span(source, &branch["surface"], quote, b)?);
+        }
+        for (j, branch) in items(group, "branches").enumerate() {
+            let Some(borrowed) = branch.get("borrowed") else {
+                continue;
+            };
+            // Unresolved inside the group (`borrowed_ambiguous`) is flagged too.
+            if let Some(at) = span(source, borrowed, quote, b)? {
+                if spans
+                    .iter()
+                    .enumerate()
+                    .any(|(k, s)| k != j && s.is_some_and(|s| contains(s, at)))
+                {
+                    continue;
+                }
+            }
+            let mut options = BTreeSet::new();
+            for (k, other) in items(group, "branches").enumerate() {
+                let Some(other_span) = spans[k].filter(|_| k != j) else {
+                    continue;
+                };
+                let surface = text(&other["surface"]["quote"]);
+                let tokens: Vec<(usize, usize)> = surface
+                    .split_whitespace()
+                    .take(16)
+                    .map(|t| {
+                        let start = t.as_ptr() as usize - surface.as_ptr() as usize;
+                        (start, start + t.len())
+                    })
+                    .collect();
+                for s in 0..tokens.len() {
+                    for e in s..tokens.len().min(s + 8) {
+                        let candidate = &surface[tokens[s].0..tokens[e].1];
+                        if options.len() < 64
+                            && span(source, &json!({ "quote": candidate }), quote, b)?
+                                .is_some_and(|c| contains(other_span, c))
+                        {
+                            options.insert(candidate.to_owned());
+                        }
+                    }
+                }
+            }
+            out.insert((g, j), options);
+        }
+    }
+    Ok(out)
 }
 
 // Only trim an already selected qualifier at a whitespace boundary. These are
@@ -705,6 +800,33 @@ pub fn repair_choices(
             .ok_or(ExtractionError("selection_repair_target"))?;
         choices["predicate"] = json!(predicate_choices(claim));
     }
+    if fields.iter().any(|f| f == "alternatives") {
+        let claim = selection["claims"]
+            .as_array()
+            .and_then(|c| c.get(target))
+            .ok_or(ExtractionError("selection_repair_target"))?;
+        let repairable = borrowed_choices(source, claim, b)?;
+        let mut quotes = BTreeSet::new();
+        for (g, group) in items(claim, "alternatives").enumerate() {
+            for (j, branch) in items(group, "branches").enumerate() {
+                if !repairable.contains_key(&(g, j)) {
+                    if let Some(q) = branch["borrowed"]["quote"].as_str() {
+                        quotes.insert(q.to_owned());
+                    }
+                }
+            }
+        }
+        let mut listed = Vec::new();
+        for ((g, j), options) in &repairable {
+            quotes.extend(options.iter().cloned());
+            listed.push(json!({"group":g,"branch":j,"borrowed":options,"may_omit":true}));
+        }
+        choices["alternatives"] = json!({
+            "groups": items(claim, "alternatives").count(),
+            "repairable": listed,
+            "borrowed": quotes,
+        });
+    }
     Ok(choices)
 }
 pub fn apply_repair(
@@ -738,6 +860,7 @@ pub fn apply_repair(
             .as_array()
             .and_then(|a| a.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
+        let repairable = borrowed_choices(source, old, b)?;
         for (key, value) in patch {
             let previous = old[key]
                 .as_array()
@@ -747,7 +870,7 @@ pub fn apply_repair(
                 previous.len() == next.len(),
                 "selection_repair_structure_loss",
             )?;
-            for (before, after) in previous.iter().zip(next) {
+            for (g, (before, after)) in previous.iter().zip(next).enumerate() {
                 let retained: &[&str] = match key.as_str() {
                     "alternatives" => &["quote", "cue", "exclusivity"],
                     "comparisons" => &["property", "cue", "target_kind"],
@@ -764,12 +887,29 @@ pub fn apply_repair(
                     let z: Vec<_> = items(after, "branches").collect();
                     require(
                         a.len() == z.len()
-                            && a.iter().zip(z).all(|(x, y)| {
-                                x["surface"]["quote"] == y["surface"]["quote"]
-                                    && x.get("borrowed").is_some() == y.get("borrowed").is_some()
-                            }),
+                            && a.iter().zip(&z).all(|(x, y)| x["surface"] == y["surface"]),
                         "selection_repair_structure_loss",
                     )?;
+                    // Unflagged reconstructions stay byte-identical; flagged ones
+                    // may only be dropped or replaced by a host-derived choice.
+                    for (j, (x, y)) in a.iter().zip(&z).enumerate() {
+                        if x.get("borrowed") == y.get("borrowed") {
+                            continue;
+                        }
+                        let options = repairable
+                            .get(&(g, j))
+                            .ok_or(ExtractionError("selection_repair_structure_loss"))?;
+                        require(
+                            match y.get("borrowed") {
+                                None => true,
+                                Some(v) => {
+                                    v.as_object().is_some_and(|o| o.len() == 1)
+                                        && v["quote"].as_str().is_some_and(|q| options.contains(q))
+                                }
+                            },
+                            "selection_repair_choice",
+                        )?;
+                    }
                 }
             }
             result["claims"][target][key] = value.clone();
