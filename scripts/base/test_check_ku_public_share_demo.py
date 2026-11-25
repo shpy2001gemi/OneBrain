@@ -66,6 +66,7 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
             "peer_exe": sender_path.parent / "ku_peer_demo",
             "require_cli_client": False,
             "skip_cli_client": False,
+            "cli_share": False,
             "ack_timeout": 5,
             "seed_sample_ku": False,
             "seed_predicate_label": "water",
@@ -353,6 +354,91 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                 check_amb.seed_sample_ku()
             self.assertEqual([c[1] for c in calls], ["catalog", "resolve"])
             self.assertFalse(check_amb.results[-1]["pass"])
+
+    def test_cli_share_routes_share_actions_through_onebrain_ku_share(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            sender_path, receiver_path, receiver_secret = self._write_host_configs(root)
+            cli_exe = root / "onebrain-fake"
+            cli_exe.write_text("placeholder", encoding="utf-8")
+
+            # Mapping: one sub-command per registered editor action; never confirm_public=false.
+            self.assertEqual(demo.share_cli_args("share_list", {"query": "-x y", "limit": 5}),
+                             ["share", "list", "--query=-x y", "--limit", "5"])
+            self.assertEqual(demo.share_cli_args("share_confirm",
+                                                 {"prepared_id": "ab" * 32, "confirm_public": True}),
+                             ["share", "confirm", "--prepared-id", "ab" * 32])
+            with self.assertRaises(ValueError):
+                demo.share_cli_args("share_confirm", {"prepared_id": "ab" * 32,
+                                                      "confirm_public": False})
+
+            # Missing binary fails before any process starts.
+            with self.assertRaisesRegex(SystemExit, "--cli-share needs the CLI binary"):
+                demo.Check(self._make_args(sender_path, receiver_path, cli_share=True,
+                                           skip_cli_client=True))
+
+            check = demo.Check(self._make_args(sender_path, receiver_path, sender_kind="cli",
+                                               receiver_kind="cli", cli_exe=cli_exe,
+                                               cli_share=True))
+            prepared_id, intent_id = "ab" * 32, "cd" * 32
+            calls: list[tuple[list[str], dict]] = []
+
+            def fake_run(argv, **kwargs):
+                calls.append((argv, kwargs))
+                self.assertIn("--api-token-file", argv)
+                self.assertNotIn("--api-token", argv)
+                self.assertEqual(kwargs["env"]["ONEBRAIN_API_TOKEN"], demo.IGNORED_ENV_TOKEN)
+                res = MagicMock()
+                typed = kwargs.get("input")
+                if "confirm" in argv and typed != prepared_id + "\n":
+                    res.returncode, res.stdout = 2, ""
+                    res.stderr = ("vNext CLI error: public share confirmation rejected: type the "
+                                  "exact prepared_id; nothing was confirmed")
+                elif "intent" in argv:
+                    res.returncode = 2
+                    res.stdout = json.dumps({"ok": False, "error": {"code": "not_found"}})
+                    res.stderr = "vNext CLI error: KU API failure"
+                else:
+                    self.assertEqual("stdin" in kwargs, typed is None)
+                    res.returncode = 0
+                    res.stdout = json.dumps({"ok": True, "data": {"payload": {"event": "x"}}})
+                    res.stderr = demo.SHARE_SCOPE_MARKER + " preview never enqueues"
+                return res
+
+            http_calls = []
+            with patch.object(demo.subprocess, "run", side_effect=fake_run), \
+                    patch.object(check.api, "editor",
+                                 side_effect=lambda a, p: http_calls.append(a) or (400, {})), \
+                    patch.object(check.receiver.api, "editor",
+                                 side_effect=lambda a, p: http_calls.append("r:" + a) or (503, {})), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                code, _ = check.editor("share_confirm", {"prepared_id": prepared_id,
+                                                         "confirm_public": True})
+                self.assertEqual(code, 200)
+                # confirm_public=false stays on HTTP (host-side refusal).
+                check.editor("share_confirm", {"prepared_id": prepared_id, "confirm_public": False})
+                check.check_cli_confirm_mistyped({"prepared_id": prepared_id,
+                                                  "intent_id": intent_id}, False)
+                # Receiver: CLI only while the networked host is up.
+                check.receiver.online = True
+                check.receiver.editor("share_list", {})
+                check.receiver.online = False
+                check.receiver.editor("share_inspect", {"object_cid": "aa" * 32,
+                                                        "selector": demo.SELECTOR})
+                check.check_share_cli_summary()
+            self.assertEqual(http_calls, ["share_confirm", "r:share_inspect"])
+            self.assertEqual(calls[0][1]["input"], prepared_id + "\n")
+            self.assertTrue(all(r["pass"] for r in check.results), check.results)
+
+            # A token leak in any share call fails the summary.
+            check.receiver.share_cli.leaks = 0
+            with patch.object(demo.subprocess, "run", side_effect=lambda argv, **kw: MagicMock(
+                    returncode=0, stdout="{}", stderr=f"{demo.SHARE_SCOPE_MARKER} {receiver_secret}")), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                check.receiver.online = True
+                check.receiver.editor("share_list", {})
+                check.check_share_cli_summary()
+            self.assertFalse(check.results[-1]["pass"])
 
 
 if __name__ == "__main__":

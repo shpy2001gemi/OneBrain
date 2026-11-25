@@ -17,6 +17,9 @@ name: KU dev demo scripts
 # - `windows-two-node` (t10): the same first run on windows-latest, running the
 #   printed PowerShell CLI/CLI and Web/Web lines verbatim (pwsh Invoke-Expression).
 # - t11: `linux-two-node` is a matrix over ubuntu-latest and macos-latest (bash).
+# - t14: the printed `CLI hosts …` line carries `--cli-share`, so the CLI/CLI
+#   steps drive sender prepare/confirm/intent and receiver share list/inspect
+#   through `onebrain ku share` (typed prepared_id on stdin) instead of HTTP.
 # - Path filter (t8): besides the scripts/workflow, also runs when the surfaces
 #   the two-node checks exercise change: the /ku Web (src/onebrain-web, not
 #   Markdown), the ku_local_web example and the /ku host/API files it shares

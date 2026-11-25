@@ -6,7 +6,34 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — share projection reconciled + `onebrain ku share` CLI parity (t13, 2026-11-25)
+## Latest follow-up — CI two-node check drives `onebrain ku share` (`--cli-share`, t14, 2026-11-25)
+
+Next step of the t13 checkpoint (CI did not run the new CLI share commands). Before starting,
+the t13 push-runs on `06c8f70` were all green (Base v1 45598853308, KU dev demo, vNext).
+
+[check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py) gets an
+opt-in `--cli-share`: the sender's `share_prepare` / `share_confirm` / `share_intent` and the
+online receiver's `share_inspect` / `share_list` run through `onebrain ku share …`
+(`--api-token-file`, `ONEBRAIN_API_TOKEN` set to an ignored value) instead of direct HTTP.
+`confirm` types the exact `prepared_id` on stdin; a new check types a wrong id and requires the
+CLI refusal (`confirmation rejected`) with no intent created. The host-side
+`confirm_public=false` refusal and the offline receiver checks stay on HTTP (the CLI cannot send
+`confirm_public=false` by design). A final per-side check requires ≥1 CLI call, no token in any
+stdout/stderr and the `Public share scope:` note on every success. The
+[bootstrap](../../../../scripts/base/bootstrap_ku_dev_demo.py) prints `--cli-share` in its
+`CLI hosts …` line, so the existing CI CLI/CLI steps (Linux/macOS/Windows, t6/t10/t11) run it
+verbatim; no workflow step change (comment only). [CLI_REFERENCE](../../../../src/onebrain-cli/CLI_REFERENCE.md) notes it.
+
+Checks: script unit tests 20/20 (1 new: action→argv mapping, routing, typed stdin, mistyped
+refusal, HTTP for `confirm_public=false`/offline, leak fails summary). Live on a fresh DEV-ONLY
+bootstrap (Windows), the printed CLI/CLI line verbatim: **55/55** (52 earlier + mistyped confirm
++ two CLI summaries; sender 10 / receiver 6 CLI share calls, 0 leaks). Web/Web path code is
+unchanged apart from the routing hook (no CLI when `--cli-share` is absent).
+
+Not covered: still no prepared-preview lookup action (CLI cannot re-show the preview at confirm);
+same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — share projection reconciled + `onebrain ku share` CLI parity (t13, 2026-11-25)
 
 Next step of the t12 checkpoint. MASTER_PLAN row "Task 20 follow-up — share projection" still said
 "current concept uses the isolated helper". Checked against main: the D-045 share module is already

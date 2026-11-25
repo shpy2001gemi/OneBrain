@@ -427,7 +427,8 @@ def print_next_steps(plan: Plan, posix: bool | None = None) -> None:
         print("     CLI hosts + onebrain ku get/export:  cargo build --locked --manifest-path "
               f"src/Cargo.toml -p onebrain-cli --features vnext-network-runtime{then}"
               f"{check} {configs} "
-              "--sender-kind cli --receiver-kind cli --require-cli-client --seed-sample-ku")
+              "--sender-kind cli --receiver-kind cli --require-cli-client --cli-share "
+              "--seed-sample-ku")
     print("  Keep the same demo root, Vault keys and data_dir on restart. Delete the whole demo "
           "root to discard the demo; it is unrelated to any real dataset.")
 

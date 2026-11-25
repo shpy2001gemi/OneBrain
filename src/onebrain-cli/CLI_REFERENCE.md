@@ -100,6 +100,12 @@ private ObjectCID and source; confirm creates a pending intent, and
 reward. A Public copy cannot be made private again. Accepted Public KUs are
 separate from `onebrain ku list` (private saved knowledge).
 
+The two-node check `scripts/base/check_ku_public_share_demo.py --cli-share`
+drives these commands end to end (prepare → typed confirm, mistyped id refused →
+intent `Acknowledged` → receiver `share list`/`share inspect`); the first-run
+bootstrap prints it in its `CLI hosts …` line, which CI runs on Linux, macOS and
+Windows (DEV-ONLY, not qualification).
+
 ## 1. Overview
 
 OneBrain CLI is the **first interface** of the system — runs directly in the terminal.

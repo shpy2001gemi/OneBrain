@@ -26,6 +26,14 @@ processes and checks durability, idempotent same-intent retry, and (for Web/CLI
 receivers) offline local-only ``workspace_summary`` / ``share_list`` /
 ``saved_semantic`` / ``onebrain ku`` reads with ``share_inspect`` failing closed.
 
+With ``--cli-share`` the sender's ``share_prepare`` / ``share_confirm`` /
+``share_intent`` and the online receiver's ``share_inspect`` / ``share_list``
+run through the client CLI ``onebrain ku share`` (``--api-token-file``) instead
+of direct HTTP; ``confirm`` gets the exact ``prepared_id`` typed on stdin, and a
+mistyped id must be refused before any host call. The host-side
+``confirm_public=false`` refusal and the offline checks stay on HTTP (the CLI
+cannot send ``confirm_public=false`` by design).
+
 API tokens are read from each ``ku_local_web`` config's ``api_token_file`` and
 are never printed. Private ObjectCIDs are never printed. Use a COPY of your dataset as the
 sender ``data_dir`` and a fresh, separate receiver ``data_dir``: the opt-in
@@ -247,8 +255,12 @@ def start_cli_host(exe: Path, cfg: dict, api: Api, name: str,
 
 
 def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
-               timeout: float = 60) -> tuple[int, dict, str, str]:
-    """Invoke ``onebrain ku`` with ``--api-token-file`` overriding ``ONEBRAIN_API_TOKEN``."""
+               timeout: float = 60, stdin_text: str | None = None) -> tuple[int, dict, str, str]:
+    """Invoke ``onebrain ku`` with ``--api-token-file`` overriding ``ONEBRAIN_API_TOKEN``.
+
+    ``stdin_text`` is typed on stdin (``share confirm`` / ``cancel`` prompts);
+    otherwise stdin is closed so a prompt can never wait.
+    """
     argv = [
         str(cli_exe),
         "ku",
@@ -260,15 +272,17 @@ def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
         raise AssertionError("raw --api-token must never be passed on argv")
     env = dict(os.environ)
     env["ONEBRAIN_API_TOKEN"] = IGNORED_ENV_TOKEN
+    stdin_kwargs = ({"stdin": subprocess.DEVNULL} if stdin_text is None
+                    else {"input": stdin_text})
     completed = subprocess.run(
         argv,
         cwd=REPO,
-        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
         env=env,
         timeout=timeout,
+        **stdin_kwargs,
     )
     parsed = {}
     if completed.stdout.strip():
@@ -277,6 +291,65 @@ def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
         except json.JSONDecodeError:
             parsed = {}
     return completed.returncode, parsed, completed.stdout, completed.stderr
+
+
+SENDER_SHARE_ACTIONS = ("share_prepare", "share_confirm", "share_intent")
+RECEIVER_SHARE_ACTIONS = ("share_inspect", "share_list")
+SHARE_SCOPE_MARKER = "Public share scope:"
+
+
+def share_cli_args(action: str, payload: dict) -> list[str]:
+    """Map one registered editor share action to ``onebrain ku share`` sub-args."""
+    if action == "share_prepare":
+        return ["share", "prepare", "--object-cid", payload["object_cid"],
+                "--expected-node-id", payload["expected_node_id"],
+                "--address", payload["address"], "--selector", payload["selector"],
+                "--namespace", payload["namespace"]]
+    if action == "share_confirm":
+        if payload.get("confirm_public") is not True:
+            raise ValueError("onebrain ku share confirm only sends confirm_public=true")
+        return ["share", "confirm", "--prepared-id", payload["prepared_id"]]
+    if action == "share_intent":
+        return ["share", "intent", "--intent-id", payload["intent_id"]]
+    if action == "share_inspect":
+        return ["share", "inspect", "--object-cid", payload["object_cid"],
+                "--selector", payload["selector"]]
+    if action == "share_list":
+        args = ["share", "list"]
+        if payload.get("query") is not None:
+            args.append(f"--query={payload['query']}")
+        if payload.get("limit") is not None:
+            args += ["--limit", str(payload["limit"])]
+        return args
+    raise ValueError(f"not a share action: {action}")
+
+
+class ShareCli:
+    """``--cli-share``: drive one host's editor share actions via ``onebrain ku share``.
+
+    Returns ``(200, envelope)`` on exit 0 like :meth:`Api.editor`, otherwise
+    ``("cli-rc=N", envelope)`` with the host error envelope the CLI printed.
+    Counts calls, token leaks and successes missing the share scope note.
+    """
+
+    def __init__(self, exe: Path, api: Api, token_file: Path):
+        self.exe, self.api, self.token_file = exe, api, token_file
+        self.calls = self.leaks = self.scope_missing = 0
+        self.last_err = ""
+
+    def editor(self, action: str, payload: dict, typed: str | None = None):
+        if typed is None and action == "share_confirm":
+            typed = payload["prepared_id"]
+        stdin_text = None if typed is None else typed + "\n"
+        rc, env, out, err = run_ku_cli(self.exe, self.api.port, self.token_file,
+                                       share_cli_args(action, payload), stdin_text=stdin_text)
+        self.calls += 1
+        self.last_err = err
+        if self.api.contains_token(out, err):
+            self.leaks += 1
+        if rc == 0 and SHARE_SCOPE_MARKER not in err:
+            self.scope_missing += 1
+        return (200 if rc == 0 and env.get("ok") else f"cli-rc={rc}"), env
 
 
 class PeerReceiver:
@@ -315,6 +388,14 @@ class HostReceiver:
         self.api = Api(self.cfg)
         self.proc: Proc | None = None
         self._temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        # --cli-share: online share_inspect/share_list go through onebrain ku share.
+        self.share_cli: ShareCli | None = None
+        self.online = False
+
+    def editor(self, action: str, payload: dict):
+        if self.share_cli is not None and self.online and action in RECEIVER_SHARE_ACTIONS:
+            return self.share_cli.editor(action, payload)
+        return self.api.editor(action, payload)
 
     def _cleanup_temp(self) -> None:
         if self._temp_dir is not None:
@@ -329,10 +410,12 @@ class HostReceiver:
         else:
             exe = self.args.receiver_exe or self.args.web_exe
             self.proc, node_id, addr = start_web_host(exe, self.args.receiver_config, self.api, "receiver")
+        self.online = True
         return node_id, addr
 
     def start_local_only(self) -> None:
         self._cleanup_temp()
+        self.online = False
         if self.is_cli:
             exe = self.args.receiver_exe or self.args.cli_exe
             self.proc, _, _ = start_cli_host(exe, self.cfg, self.api, "receiver-local", with_network=False)
@@ -349,7 +432,7 @@ class HostReceiver:
         # Same call as the receiver page's fieldset 4; poll briefly for arrival.
         code, env = 0, {}
         for _ in range(30):
-            code, env = self.api.editor("share_inspect", {"object_cid": public_cid, "selector": SELECTOR})
+            code, env = self.editor("share_inspect", {"object_cid": public_cid, "selector": SELECTOR})
             if ok(code, env):
                 return payload(env)
             time.sleep(1)
@@ -380,6 +463,17 @@ class Check:
                                if args.receiver_kind == "cli" and args.receiver_exe
                                else args.cli_exe)
         self.cli_client_enabled = self._resolve_cli_client_enabled()
+        self.sender_share_cli: ShareCli | None = None
+        if getattr(args, "cli_share", False):
+            if not args.cli_exe.is_file():
+                raise SystemExit(f"--cli-share needs the CLI binary: {args.cli_exe} "
+                                 "(build -p onebrain-cli --features vnext-network-runtime)")
+            self.sender_share_cli = ShareCli(args.cli_exe, self.api, Path(self.cfg["api_token_file"]))
+            if isinstance(self.receiver, HostReceiver):
+                if not self.cli_client_exe.is_file():
+                    raise SystemExit(f"--cli-share needs the CLI binary: {self.cli_client_exe}")
+                self.receiver.share_cli = ShareCli(self.cli_client_exe, self.receiver.api,
+                                                   Path(self.receiver.cfg["api_token_file"]))
         self.results: list[dict] = []
         self.web: Proc | None = None
 
@@ -416,10 +510,40 @@ class Check:
 
     # ---- authenticated sender KU API ---------------------------------------
     def editor(self, action: str, payload: dict) -> tuple[int, dict]:
+        # --cli-share: sender share actions via onebrain ku share, except the
+        # host-side confirm_public=false refusal the CLI cannot send by design.
+        if (self.sender_share_cli is not None and action in SENDER_SHARE_ACTIONS
+                and payload.get("confirm_public", True) is True):
+            return self.sender_share_cli.editor(action, payload)
         return self.api.editor(action, payload)
 
     def operation(self, op: str, payload: dict) -> tuple[int, dict]:
         return self.api.operation(op, payload)
+
+    def check_cli_confirm_mistyped(self, prepared: dict, intent_preexisting: bool) -> None:
+        """--cli-share: a mistyped prepared_id is refused before any host call."""
+        if self.sender_share_cli is None:
+            return
+        wrong = "0" * 64 if prepared["prepared_id"] != "0" * 64 else "1" * 64
+        code, env = self.sender_share_cli.editor(
+            "share_confirm", {"prepared_id": prepared["prepared_id"], "confirm_public": True},
+            typed=wrong)
+        refused = not ok(code, env) and "confirmation rejected" in self.sender_share_cli.last_err
+        code2, env2 = self.editor("share_intent", {"intent_id": prepared["intent_id"]})
+        self.check("onebrain ku share confirm: mistyped prepared_id refused, no intent created",
+                   refused and (intent_preexisting or not ok(code2, env2)),
+                   f"{code} intent={code2} {error_code(env2) or ''}".rstrip())
+
+    def check_share_cli_summary(self) -> None:
+        sides = [("sender", self.sender_share_cli)]
+        if isinstance(self.receiver, HostReceiver):
+            sides.append(("receiver", self.receiver.share_cli))
+        for side, cli in sides:
+            if cli is None:
+                continue
+            self.check(f"onebrain ku share ({side}): token never printed, scope note on every success",
+                       cli.calls > 0 and cli.leaks == 0 and cli.scope_missing == 0,
+                       f"calls={cli.calls} leaks={cli.leaks} scope_missing={cli.scope_missing}")
 
     # ---- journey -----------------------------------------------------------
     def run(self) -> None:
@@ -467,7 +591,8 @@ class Check:
                    not any(p in canonical for p in private), f"bytes={len(canonical)}")
 
         code, env = self.editor("share_intent", {"intent_id": intent_id})
-        if ok(code, env):
+        intent_preexisting = ok(code, env)
+        if intent_preexisting:
             # Rerun on state from an earlier run: the durable intent already exists,
             # so this run cannot show that prepare alone enqueues nothing.
             print(f"[INFO] intent already exists from an earlier run (state="
@@ -477,6 +602,7 @@ class Check:
         code, env = self.editor("share_confirm", {"prepared_id": prepared["prepared_id"],
                                                   "confirm_public": False})
         self.check("confirm_public=false is refused", not ok(code, env), f"{code} {error_code(env)}")
+        self.check_cli_confirm_mistyped(prepared, intent_preexisting)
         code, env = self.editor("share_confirm", {"prepared_id": prepared["prepared_id"],
                                                   "confirm_public": True})
         confirmed = payload(env) if ok(code, env) else {}
@@ -536,6 +662,7 @@ class Check:
         code, env = self.operation("get", {"object_cid": private_cid})
         self.check("private KU readable after restart", ok(code, env))
         self.check_receiver_local_only_offline(prepared)
+        self.check_share_cli_summary()
 
     def seed_sample_ku(self) -> None:
         """Explicit opt-in: save one private sample KU through the ``/ku`` button API.
@@ -611,7 +738,7 @@ class Check:
         self.check(f"receiver{when}: private Saved local knowledge list stays separate (0 owned items)",
                    items == [],
                    f"{code} count={None if items is None else len(items)}")
-        code, env = self.receiver.api.editor("share_list", {})
+        code, env = self.receiver.editor("share_list", {})
         listed_items = payload(env).get("items", []) if ok(code, env) else []
         listed = next((item for item in listed_items if item.get("object_cid") == pub_cid), None)
         self.check(f"receiver{when}: share_list browses the accepted Public KU",
@@ -622,7 +749,7 @@ class Check:
                    f"{code} count={len(listed_items)}")
         stmt = (prepared.get("semantic", {}).get("statements") or [{}])[0]
         query = (stmt.get("text_arguments") or [stmt.get("predicate_ccid", "")])[0][:64]
-        code, env = self.receiver.api.editor("share_list", {"query": query})
+        code, env = self.receiver.editor("share_list", {"query": query})
         hits = payload(env).get("items", []) if ok(code, env) else []
         found = next((item for item in hits if item.get("object_cid") == pub_cid), None)
         self.check(f"receiver{when}: share_list filter finds the accepted Public KU",
@@ -811,6 +938,10 @@ def main(argv: list[str] | None = None) -> int:
                            help="require onebrain ku get/export --api-token-file checks on web/cli receivers")
     cli_group.add_argument("--skip-cli-client", action="store_true",
                            help="skip onebrain ku client CLI checks on web/cli receivers")
+    parser.add_argument("--cli-share", action="store_true",
+                        help="run sender share_prepare/confirm/intent and online receiver "
+                             "share_inspect/share_list through onebrain ku share (confirm types "
+                             "the exact prepared_id on stdin; a mistyped id must be refused)")
     parser.add_argument("--seed-sample-ku", action="store_true",
                         help="explicit opt-in for disposable demo datasets (e.g. the DEV-ONLY "
                              "bootstrap): if the sender has no saved KU, save one private sample "

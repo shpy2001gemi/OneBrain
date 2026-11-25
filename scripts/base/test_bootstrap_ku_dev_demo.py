@@ -135,7 +135,7 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
         # CLI host and CLI/CLI share check variants are printed; secrets never are.
         self.assertIn("-p onebrain-cli --features vnext-network-runtime -- start", out)
         self.assertIn("--sender-kind cli --receiver-kind cli --require-cli-client "
-                      "--seed-sample-ku", out)
+                      "--cli-share --seed-sample-ku", out)
         self.assertIn("--skip-cli-client --seed-sample-ku", out)
         self.assertNotIn(TOKEN_CANARY, out + err)
 
