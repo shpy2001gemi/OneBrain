@@ -6,7 +6,35 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `Base v1 three-OS` lanes green; closure blocked on dependency advisory triage (2026-11-25)
+## Latest follow-up — `Base v1 three-OS` closure green: patched dependencies + owner-approved advisory triage (2026-11-25)
+
+Owner picked (ci3) on 2026-11-25 for the 24 advisories that blocked the closure job (below).
+`cargo audit` on `a2d360c` showed 17 vulnerabilities, 2 unsound and 5 unmaintained-only warnings
+outside the reviewed policy. Branch `ci/base-v1-advisories`, fast-forwarded into main:
+
+- **`250fd0d` lockfile only:** `cargo update -p` to semver-compatible fixed versions — quinn-proto
+  0.11.19, quinn-udp 0.5.16, rustls 0.23.46, rustls-webpki 0.103.17, webpki-roots 1.0.12, url 2.5.9,
+  cookie 0.18.3, ctutils 0.4.8, tokio 1.54.1, rustix 1.1.6 (pulls aws-lc-rs 1.19 / aws-lc-sys 0.47).
+  `cargo audit` then reports 0 vulnerabilities.
+- **`2551eee` owner-approved triage** in
+  [verify_base_provenance.py](../../../../scripts/release/verify_base_provenance.py), all P3:
+  RUSTSEC-2026-0370/0371/0372 (zvariant, zbus_names, zvariant_derive — Linux D-Bus only via
+  `onebrain-desktop` Tauri notification/single-instance plugins, not in `onebrain-cli`) and
+  RUSTSEC-2026-0543 (chrono — optional `serde_with` dependency recorded in Cargo.lock but not compiled
+  for any target/features) as `documented-non-base`; RUSTSEC-2024-0436 (paste — compile-time
+  proc-macro via tokenizers → `ku-encoder`, in the base build graph, no runtime code) as
+  `accepted-risk`, to revisit when tokenizers drops it. Yanked async-executor 1.14.0 / chacha20
+  0.10.1 are warnings without advisories; the verifier does not gate them.
+- Checks: dispatch run 45568211752 (`2551eee`): identity, Linux/macOS/Windows lanes and
+  `Verify three-OS semantic and supply-chain closure` **success**. Local: `ku-core`, `ku-encoder`,
+  `ku-net`, `onebrain-relay`, `ku-mediator` lib+tests and `onebrain-node` lib (122) PASS; detected
+  advisories minus policy is empty; `test_verify_base_provenance` 10/10; vNext validator PASS.
+  Not yet observed: the Base v1 push-run on main after the merge.
+
+No contract, golden bytes or product behavior changed. This is a green prequalification
+candidate workflow, not a signed Base v1 release or production qualification.
+
+## Earlier follow-up — `Base v1 three-OS` lanes green; closure blocked on dependency advisory triage (2026-11-25)
 
 Owner picked (ci2) on 2026-11-25. A 2026-11-20/21 session had started this item, but its
 conversation data was lost in the app; its uncommitted edits were recovered intact from the
