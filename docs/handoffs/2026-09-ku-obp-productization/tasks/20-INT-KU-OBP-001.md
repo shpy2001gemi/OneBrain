@@ -6,7 +6,43 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `vNext foundation contract` CI green again (2026-11-20)
+## Latest follow-up — `Base v1 three-OS` lanes green; closure blocked on dependency advisory triage (2026-11-25)
+
+Owner picked (ci2) on 2026-11-25. A 2026-11-20/21 session had started this item, but its
+conversation data was lost in the app; its uncommitted edits were recovered intact from the
+working tree, reviewed and finished here. Commits `0eaf719` + `f147232` (branch
+`ci/base-v1-green`, fast-forwarded into main):
+
+- **Linux lane:** installs the Tauri system libraries (`gobject-sys`/`glib-sys` failed to build).
+- **Honest pwsh steps:** the cargo/python steps set `$PSNativeCommandUseErrorActionPreference = $true`.
+  Before this the Windows lane reported success although clippy failed (32 errors in
+  `onebrain-base-contract`, 5 in `ku-core` on dispatch run 44692767804).
+- **clippy `-D warnings` on stable 1.100:** hex decoders use `as_chunks::<2>()`, `map_or(true, …)`
+  became `is_none_or`, `is_multiple_of`, needless `return`/borrow removed, regexes hoisted out of
+  loops, scoped `allow`s (`too_many_arguments`, `large_enum_variant`, `type_complexity`,
+  `duplicate_mod`, test-only `dead_code`, deprecated `fetch_update`). The generator
+  [ku_payloads.py](../../../../scripts/base/ku_payloads.py) allows `needless_borrow`,
+  `deref_addrof` and `manual_range_patterns` in the generated `ku` module (`generated.rs`
+  regenerated, `generate_contract.py --check` passes). The desktop lifecycle test builds
+  `DesktopConfig` with a struct literal.
+- **One small behavior fix:** the KU extraction checkpoint in
+  [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs) no longer lets
+  `work_charged`/`elapsed_ms` move backwards when the budget clock reads lower than the stored value.
+- Checks: dispatch run 45555774725 on `f147232`: Linux, macOS and Windows lanes **success** in every
+  step (fmt, check, clippy, workspace tests, network feature, contract/TypeScript/Dart conformance,
+  archive/Registry/P5 gates, legacy-disabled packaging, SBOM, lane receipts). vNext foundation PR run 45562302025 (PR #4, `f147232`) 6/6 jobs success; KU dev demo scripts PR run 45562302040 3/3 success.
+  Local: `cargo +1.100 fmt --check` clean; clippy 1.100 on the workspace except `onebrain-desktop`
+  (its Tauri build script does not run with the local GNU toolchain) clean; `ku-core`, `ku-encoder`,
+  `ku-net`, `onebrain-relay`, `ku-mediator` lib+tests and `onebrain-node` lib PASS; vNext and
+  mobile validators PASS.
+
+Blocker (owner decision): the closure job `Verify three-OS semantic and supply-chain closure`
+fails in `scripts/release/verify_base_provenance.py` because 24 RustSec advisories reported by
+`cargo audit` have no entry in the reviewed triage policy (RUSTSEC-2024-0436, RUSTSEC-2026-0285, -0338…-0342, -0346, -0348, -0349, -0370…-0372, -0381, -0382, -0385, -0386, -0486, -0523, -0524, -0538, -0543, -0592, -0594). Upgrading dependencies
+or classifying the advisories is a security decision; no triage was written. No Base v1
+qualification is claimed.
+
+## Earlier follow-up — `vNext foundation contract` CI green again (2026-11-20)
 
 Owner picked (ci) on 2026-11-20. The workflow had been red on main since
 September (last success 2026-09-05), hiding regressions from contributors.
