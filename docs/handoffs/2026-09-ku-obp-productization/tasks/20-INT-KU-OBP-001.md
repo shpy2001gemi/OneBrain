@@ -95,7 +95,8 @@ outside the reviewed policy. Branch `ci/base-v1-advisories`, fast-forwarded into
   `Verify three-OS semantic and supply-chain closure` **success**. Local: `ku-core`, `ku-encoder`,
   `ku-net`, `onebrain-relay`, `ku-mediator` lib+tests and `onebrain-node` lib (122) PASS; detected
   advisories minus policy is empty; `test_verify_base_provenance` 10/10; vNext validator PASS.
-  Not yet observed: the Base v1 push-run on main after the merge.
+  Not yet observed at the time: the Base v1 push-run on main after the merge. Observed 2026-11-25
+  17:09: push-run 45577559815 (`127dba2`) identity, Linux, macOS, Windows lanes and closure **success**.
 
 No contract, golden bytes or product behavior changed. This is a green prequalification
 candidate workflow, not a signed Base v1 release or production qualification.
