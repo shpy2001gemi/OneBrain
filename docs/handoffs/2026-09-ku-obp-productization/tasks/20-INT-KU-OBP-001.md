@@ -6,7 +6,29 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — macOS first-run two-node CI job (t11, 2026-11-25)
+## Latest follow-up — CLI-sender dev demo reconciled as covered (t12, 2026-11-25)
+
+Next step of the t11 checkpoint: MASTER_PLAN row 20.C still listed "CLI-sender dev demo"
+(added at t1, when `--sender-kind cli` on the dev demo was not covered). Checked against the
+current code and history; no code change was needed:
+
+- [bootstrap_ku_dev_demo.py](../../../../scripts/base/bootstrap_ku_dev_demo.py) `cli_host_command`
+  prints the `onebrain start --api` (`-p onebrain-cli`) host for the generated `host.json`, adding
+  `--features vnext-network-runtime` + `--ku-network-bind` when the sender has the opt-in
+  `"network"` block (`--with-receiver`); its argv equals `check_ku_public_share_demo.build_cli_host_args`
+  (unit test `test_cli_host_command_matches_share_check_argv`). With `--with-receiver` it also prints
+  `CLI hosts + onebrain ku get/export:` (`--sender-kind cli --receiver-kind cli --require-cli-client
+  --seed-sample-ku`).
+- Evidence already recorded: t4 Windows CLI/CLI 52/52 + printed CLI host `/ku` 200; t5 Linux
+  printed CLI host run verbatim (`/ku` 200, 401 without token) and CLI/CLI 52/52; CI runs the printed
+  CLI/CLI line verbatim on Linux (t6), Windows (t10) and macOS (t11).
+- MASTER_PLAN row 20.C now leaves only real Registry distribution, which needs operator-owned
+  release trust (D-056 keeps the synthetic Registry DEV-ONLY). Check: bootstrap unit tests 10/10.
+
+Not covered: CI does not start the separately printed "Optional CLI host" line itself (the
+share check starts the same argv). Same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — macOS first-run two-node CI job (t11, 2026-11-25)
 
 Next step of the t10 checkpoint (MASTER_PLAN row 20.C still listed a macOS run). Commits `7cd6306`
 (workflow) + `374d958` (docs), branch `ci/ku-dev-demo-macos-two-node`, fast-forwarded into main:
