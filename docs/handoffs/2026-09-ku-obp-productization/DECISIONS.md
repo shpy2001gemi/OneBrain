@@ -1,5 +1,16 @@
 # Decisions and claim boundary
 
+## D-059 — Read-only prepared-preview read-back (`share_preview`) before CLI confirm
+
+On 2026-11-25 the owner chose the recommended option for the task 20 backlog item
+"prepared-preview lookup at confirm": add one read-only editor action
+`share_preview { prepared_id }` that returns the exact stored `share_prepared`
+preview of a live prepared share (rechecking caller access to the saved KU;
+expired/unknown → `prepared_share_missing`; never consumes, enqueues or sends).
+`onebrain ku share confirm` prints that preview before asking for the typed
+prepared_id (`onebrain ku share preview` exposes it alone). Existing DTOs and the
+`/ku` Web flow stay unchanged. No consent, delivery, trust or claim-boundary change.
+
 ## D-058 — Display-only reverse Registry lookup (`describe_ccids`)
 
 On 2026-11-25 the owner chose the recommended option for the task 20 backlog item

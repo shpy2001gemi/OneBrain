@@ -85,7 +85,10 @@ built with `--features vnext-network-runtime`, or `ku_local_web` with
 onebrain ku share prepare --object-cid <saved-private-object-cid> `
   --expected-node-id <receiver-node-id> --address 127.0.0.1:<receiver-port> `
   --selector <64-hex> --namespace <64-hex>
-# Sender: type the exact prepared_id at the stderr prompt; no --yes bypass.
+# Sender (optional, D-059): read back the exact stored preview; read-only.
+onebrain ku share preview --prepared-id <prepared-id>
+# Sender: confirm first prints the host's stored preview (D-059), then asks you to
+# type the exact prepared_id at the stderr prompt; no --yes bypass.
 onebrain ku share confirm --prepared-id <prepared-id>
 # Sender: read the durable outbound intent (read-only; never resends).
 onebrain ku share intent --intent-id <intent-id>
@@ -98,10 +101,14 @@ Only one predicate plus one text literal is supported. Preview hides the
 private ObjectCID and source; confirm creates a pending intent, and
 `Acknowledged` is a transport receipt only — not adoption, verification, Use or
 reward. A Public copy cannot be made private again. Accepted Public KUs are
-separate from `onebrain ku list` (private saved knowledge).
+separate from `onebrain ku list` (private saved knowledge). If the prepared share
+expired, was already confirmed or the host restarted, the preview read-back fails
+with `prepared_share_missing` and confirm stops before the prompt (nothing was
+confirmed); run `share prepare` again.
 
 The two-node check `scripts/base/check_ku_public_share_demo.py --cli-share`
-drives these commands end to end (prepare → typed confirm, mistyped id refused →
+drives these commands end to end (prepare → preview read-back → confirm shows the
+preview, mistyped id refused, typed confirm →
 intent `Acknowledged` → receiver `share list`/`share inspect`); the first-run
 bootstrap prints it in its `CLI hosts …` line, which CI runs on Linux, macOS and
 Windows (DEV-ONLY, not qualification).

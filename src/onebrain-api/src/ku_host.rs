@@ -1073,6 +1073,27 @@ mod tests {
             .to_string()
             .contains("synthetic-private-source-canary"));
 
+        // D-059: share_preview reads back the exact stored preview without consuming it.
+        let share_preview = |id: String| {
+            http_json(
+                sender_router.clone(),
+                Method::POST,
+                "/api/vnext/ku/editor",
+                token,
+                Some(editor_envelope(
+                    &sender_session,
+                    "share_preview",
+                    json!({ "prepared_id": id }),
+                )),
+            )
+        };
+        let (status, read_back) = share_preview(prepared_id.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{read_back}");
+        assert_eq!(&read_back["data"]["payload"], preview);
+        let (status, missing) = share_preview("ff".repeat(32)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+        assert_eq!(missing["error"]["message"], "prepared_share_missing");
+
         // Explicit confirmation is required before network or outbox checks.
         let (status, unconfirmed_resp) = http_json(
             sender_router.clone(),
@@ -1163,6 +1184,10 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{replay_resp}");
         assert_eq!(replay_resp["error"]["message"], "prepared_share_missing");
+        // A consumed prepared share can no longer be read back either.
+        let (status, consumed) = share_preview(prepared_id.clone()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{consumed}");
+        assert_eq!(consumed["error"]["message"], "prepared_share_missing");
 
         // Sender inspects the durable outbound intent via POST /api/vnext/ku/editor.
         let (status, intent_resp) = http_json(

@@ -293,10 +293,12 @@ def run_ku_cli(cli_exe: Path, port: int, token_file: Path, sub_args: list[str],
     return completed.returncode, parsed, completed.stdout, completed.stderr
 
 
-SENDER_SHARE_ACTIONS = ("share_prepare", "share_confirm", "share_intent")
+SENDER_SHARE_ACTIONS = ("share_prepare", "share_preview", "share_confirm", "share_intent")
 RECEIVER_SHARE_ACTIONS = ("share_inspect", "share_list", "describe_ccids")
 SHARE_SCOPE_MARKER = "Public share scope:"
 DESCRIBE_SCOPE_MARKER = "Registry label scope:"
+# D-059: onebrain ku share confirm prints the host's stored preview before the prompt.
+CONFIRM_PREVIEW_MARKER = "Prepared PUBLIC share preview"
 
 
 def share_cli_args(action: str, payload: dict) -> list[str]:
@@ -311,6 +313,8 @@ def share_cli_args(action: str, payload: dict) -> list[str]:
                 "--expected-node-id", payload["expected_node_id"],
                 "--address", payload["address"], "--selector", payload["selector"],
                 "--namespace", payload["namespace"]]
+    if action == "share_preview":
+        return ["share", "preview", "--prepared-id", payload["prepared_id"]]
     if action == "share_confirm":
         if payload.get("confirm_public") is not True:
             raise ValueError("onebrain ku share confirm only sends confirm_public=true")
@@ -528,18 +532,21 @@ class Check:
         return self.api.operation(op, payload)
 
     def check_cli_confirm_mistyped(self, prepared: dict, intent_preexisting: bool) -> None:
-        """--cli-share: a mistyped prepared_id is refused before any host call."""
+        """--cli-share: the host preview is shown, then a mistyped prepared_id is refused."""
         if self.sender_share_cli is None:
             return
         wrong = "0" * 64 if prepared["prepared_id"] != "0" * 64 else "1" * 64
         code, env = self.sender_share_cli.editor(
             "share_confirm", {"prepared_id": prepared["prepared_id"], "confirm_public": True},
             typed=wrong)
-        refused = not ok(code, env) and "confirmation rejected" in self.sender_share_cli.last_err
+        err = self.sender_share_cli.last_err
+        refused = not ok(code, env) and "confirmation rejected" in err
+        shown = CONFIRM_PREVIEW_MARKER in err and prepared["public_object_cid"] in err
         code2, env2 = self.editor("share_intent", {"intent_id": prepared["intent_id"]})
-        self.check("onebrain ku share confirm: mistyped prepared_id refused, no intent created",
-                   refused and (intent_preexisting or not ok(code2, env2)),
-                   f"{code} intent={code2} {error_code(env2) or ''}".rstrip())
+        self.check("onebrain ku share confirm: host preview shown, mistyped prepared_id refused, "
+                   "no intent created",
+                   shown and refused and (intent_preexisting or not ok(code2, env2)),
+                   f"{code} preview_shown={shown} intent={code2} {error_code(env2) or ''}".rstrip())
 
     def check_share_cli_summary(self) -> None:
         sides = [("sender", self.sender_share_cli)]
@@ -606,6 +613,14 @@ class Check:
                   f"{payload(env).get('state')}); use fresh data dirs to check prepare-only", flush=True)
         else:
             self.check("prepare alone creates no outbound intent", True, f"{code} {error_code(env)}")
+        code, env = self.editor("share_preview", {"prepared_id": prepared["prepared_id"]})
+        read_back = payload(env) if ok(code, env) else {}
+        same = all(read_back.get(k) == prepared.get(k) for k in (
+            "prepared_id", "public_object_cid", "intent_id", "canonical_base64", "expires_at"))
+        self.check("share_preview reads back the exact prepared preview; nothing enqueued or sent",
+                   same and read_back.get("enqueued") is False
+                   and read_back.get("payload_sent") is False,
+                   f"{code} {error_code(env) or ''}".rstrip())
         code, env = self.editor("share_confirm", {"prepared_id": prepared["prepared_id"],
                                                   "confirm_public": False})
         self.check("confirm_public=false is refused", not ok(code, env), f"{code} {error_code(env)}")
@@ -616,6 +631,10 @@ class Check:
         self.check("explicit share_confirm creates the durable intent",
                    confirmed.get("intent_id") == intent_id and confirmed.get("authorizes_reward") is False,
                    f"{code} outbox={confirmed.get('outbox')}")
+        if self.sender_share_cli is not None:
+            err = self.sender_share_cli.last_err
+            self.check("onebrain ku share confirm showed the host preview before the prompt",
+                       CONFIRM_PREVIEW_MARKER in err and pub in err)
         self.check_delivery_note(confirmed, "")
 
         state, view = None, {}

@@ -66,6 +66,13 @@ pub struct PublicShareConfirm {
     pub prepared_id: String,
     pub confirm_public: bool,
 }
+/// D-059: read back the exact preview of a live prepared share for review
+/// before confirmation. Read-only; never consumes, enqueues or sends.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicSharePreview {
+    pub prepared_id: String,
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PublicShareInspect {
@@ -136,6 +143,7 @@ pub enum ManualEditorRequest {
     Draft(ManualDraft),
     SharePrepare(PublicSharePrepare),
     ShareConfirm(PublicShareConfirm),
+    SharePreview(PublicSharePreview),
     ShareInspect(PublicShareInspect),
     ShareIntent(PublicShareIntent),
     ShareList(PublicShareList),
@@ -323,6 +331,7 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ReviewLower(_)
             | ManualEditorRequest::SharePrepare(_)
             | ManualEditorRequest::ShareConfirm(_)
+            | ManualEditorRequest::SharePreview(_)
             | ManualEditorRequest::ShareInspect(_)
             | ManualEditorRequest::ShareIntent(_)
             | ManualEditorRequest::ShareList(_)

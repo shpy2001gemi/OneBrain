@@ -373,6 +373,9 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                                                       "confirm_public": False})
             self.assertEqual(demo.share_cli_args("describe_ccids", {"ccids": ["07" * 16, "ab" * 16]}),
                              ["describe", "--ccid", "07" * 16, "--ccid", "ab" * 16])
+            self.assertEqual(demo.share_cli_args("share_preview", {"prepared_id": "ab" * 32}),
+                             ["share", "preview", "--prepared-id", "ab" * 32])
+            self.assertIn("share_preview", demo.SENDER_SHARE_ACTIONS)
 
             # Missing binary fails before any process starts.
             with self.assertRaisesRegex(SystemExit, "--cli-share needs the CLI binary"):
@@ -382,8 +385,9 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
             check = demo.Check(self._make_args(sender_path, receiver_path, sender_kind="cli",
                                                receiver_kind="cli", cli_exe=cli_exe,
                                                cli_share=True))
-            prepared_id, intent_id = "ab" * 32, "cd" * 32
+            prepared_id, intent_id, public_cid = "ab" * 32, "cd" * 32, "ef" * 32
             calls: list[tuple[list[str], dict]] = []
+            preview_shown = f"{demo.CONFIRM_PREVIEW_MARKER} (read back)\n  public_object_cid: {public_cid}\n"
 
             def fake_run(argv, **kwargs):
                 calls.append((argv, kwargs))
@@ -394,8 +398,8 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                 typed = kwargs.get("input")
                 if "confirm" in argv and typed != prepared_id + "\n":
                     res.returncode, res.stdout = 2, ""
-                    res.stderr = ("vNext CLI error: public share confirmation rejected: type the "
-                                  "exact prepared_id; nothing was confirmed")
+                    res.stderr = (preview_shown + "vNext CLI error: public share confirmation "
+                                  "rejected: type the exact prepared_id; nothing was confirmed")
                 elif "intent" in argv:
                     res.returncode = 2
                     res.stdout = json.dumps({"ok": False, "error": {"code": "not_found"}})
@@ -420,8 +424,8 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                 self.assertEqual(code, 200)
                 # confirm_public=false stays on HTTP (host-side refusal).
                 check.editor("share_confirm", {"prepared_id": prepared_id, "confirm_public": False})
-                check.check_cli_confirm_mistyped({"prepared_id": prepared_id,
-                                                  "intent_id": intent_id}, False)
+                check.check_cli_confirm_mistyped({"prepared_id": prepared_id, "intent_id": intent_id,
+                                                  "public_object_cid": public_cid}, False)
                 # Receiver: CLI only while the networked host is up.
                 check.receiver.online = True
                 check.receiver.editor("share_list", {})

@@ -28,6 +28,7 @@ a closed tagged union using `action` and `payload`:
 | draft | `{operation_id,idempotency_key,source_ref,predicate_label,selected_ccid?,argument_text}` | generated `KuPrepareV1` |
 | share_prepare | `{object_cid,expected_node_id,address,selector,namespace}` | `{event:"share_prepared",prepared_id,intent_id,public_object_cid,semantic_content_cid,canonical_base64,semantic,expected_node_id,address,selector,namespace,expires_at,consequence,enqueued:false,payload_sent:false,support}` |
 | share_confirm | `{prepared_id,confirm_public}` | `{event:"share_confirmed",intent_id,public_object_cid,outbox,delivery,authorizes_reward:false}` |
+| share_preview | `{prepared_id}` | the exact stored `share_prepared` preview (same fields as `share_prepare`; `enqueued:false`, `payload_sent:false`) |
 | share_intent | `{intent_id}` | `{event:"intent",intent_id,public_object_cid,state,terminal_sequence,claims_network_completion:false}` |
 | share_inspect | `{object_cid,selector}` | `{event:"public_object",object_cid,canonical_base64,semantic,authenticated_source_peers,provenance,fidelity:"unassessed",authorizes_reward:false}` |
 | share_list | `{query?,limit?}` | `{event:"public_objects",items:[{object_cid,semantic,fidelity:"unassessed",authorizes_reward:false,accepted_selectors?}],has_more,scope,fidelity:"unassessed",authorizes_reward:false}` |
@@ -192,3 +193,16 @@ not at all. `/ku` Web shows the label next to Public predicate CCIDs (share
 preview, browse, inspect and the D-057 prefill note) and shows only the CCID when
 the action is unavailable; `onebrain ku describe --ccid …` projects the same action.
 Existing actions, DTOs and wire fields are unchanged.
+
+D-059 adds `share_preview` (owner-approved 2026-11-25; network-feature-gated like
+`share_prepare`, new-work admission): a read-only read-back of the exact preview
+stored when `share_prepare` returned `prepared_id`. The host rechecks the
+caller's current access to the saved private KU (`saved_ku_not_accessible`
+otherwise); an expired, consumed or unknown id (including after restart, since
+prepared shares are in memory) returns `prepared_share_missing`. It never
+consumes, extends, enqueues or sends anything and does not replace the explicit
+`share_confirm` gesture. `onebrain ku share confirm` prints this preview on stderr
+before the typed-prepared_id prompt and stops without confirming when the read-back
+fails; `onebrain ku share preview --prepared-id <id>` projects the action alone.
+`/ku` Web keeps its in-memory preview; existing actions, DTOs and wire fields are
+unchanged.

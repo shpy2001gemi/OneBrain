@@ -203,7 +203,8 @@ pub async fn saved_ku_view(
 /// normal host and the isolated peer demo.
 #[derive(Default)]
 pub struct PublicKuShareCoordinator {
-    prepared: BTreeMap<String, (String, PreparedPublicKu)>,
+    /// prepared_id -> (private ObjectCID, proposal, exact preview returned by prepare).
+    prepared: BTreeMap<String, (String, PreparedPublicKu, serde_json::Value)>,
 }
 
 impl PublicKuShareCoordinator {
@@ -212,7 +213,7 @@ impl PublicKuShareCoordinator {
     }
 
     pub fn check_capacity(&mut self, now: u64) -> Result<(), &'static str> {
-        self.prepared.retain(|_, (_, p)| p.expires_at() > now);
+        self.prepared.retain(|_, (_, p, _)| p.expires_at() > now);
         if self.prepared.len() >= MAX_PREPARED_PUBLIC_KU_SHARES {
             return Err("prepared_limit");
         }
@@ -259,9 +260,27 @@ impl PublicKuShareCoordinator {
             "payload_sent": false,
             "support": "one predicate and one text literal only"
         });
-        self.prepared
-            .insert(prepared_id, (object_cid.to_owned(), proposal));
+        self.prepared.insert(
+            prepared_id,
+            (object_cid.to_owned(), proposal, preview.clone()),
+        );
         Ok(preview)
+    }
+
+    /// D-059: read back the exact stored preview of a live prepared share
+    /// (with its private ObjectCID so the caller can recheck access). Read-only:
+    /// never consumes, extends, enqueues or sends. Expired or unknown ids fail
+    /// with `prepared_share_missing`.
+    pub fn prepared_preview(
+        &self,
+        prepared_id: &str,
+        now: u64,
+    ) -> Result<(&str, &serde_json::Value), &'static str> {
+        self.prepared
+            .get(prepared_id)
+            .filter(|(_, p, _)| p.expires_at() > now)
+            .map(|(cid, _, preview)| (cid.as_str(), preview))
+            .ok_or("prepared_share_missing")
     }
 
     pub async fn prepare_with_services(
@@ -297,7 +316,7 @@ impl PublicKuShareCoordinator {
         }
         self.prepared
             .get(prepared_id)
-            .map(|(cid, _)| cid.as_str())
+            .map(|(cid, _, _)| cid.as_str())
             .ok_or("prepared_share_missing")
     }
 
@@ -312,7 +331,7 @@ impl PublicKuShareCoordinator {
         if !confirm_public {
             return Err("explicit_public_confirmation_required");
         }
-        let (_, proposal) = self
+        let (_, proposal, _) = self
             .prepared
             .remove(prepared_id)
             .ok_or("prepared_share_missing")?;
@@ -634,6 +653,22 @@ mod tests {
         assert_eq!(
             coord.prepared_object_cid(&first_id, true),
             Ok(private_cid.as_str())
+        );
+        // D-059 read-back returns the exact stored preview without consuming it.
+        let (cid, stored) = coord.prepared_preview(&first_id, 101).unwrap();
+        assert_eq!(cid, private_cid);
+        assert_eq!(stored["prepared_id"], first_id);
+        assert_eq!(stored["enqueued"], false);
+        assert_eq!(stored["payload_sent"], false);
+        assert!(!stored.to_string().contains(&private_cid));
+        assert!(coord.prepared_preview(&first_id, 101).is_ok());
+        assert_eq!(
+            coord.prepared_preview(&"ff".repeat(32), 101),
+            Err("prepared_share_missing")
+        );
+        assert_eq!(
+            coord.prepared_preview(&first_id, 1000),
+            Err("prepared_share_missing")
         );
         assert_eq!(coord.check_capacity(1000), Ok(()));
         assert_eq!(

@@ -497,6 +497,28 @@ impl KuStore {
                 }
                 return Ok(Resp::PublicShare(confirmed));
             }
+            // D-059: read-only read-back of the exact prepared preview; rechecks
+            // caller access to the saved KU; never consumes, enqueues or sends.
+            #[cfg(feature = "vnext-network-runtime")]
+            Req::SharePreview(input) => {
+                let now = now_unix_seconds()?;
+                let (cid_hex, preview) = {
+                    let share = self.public_share.lock().map_err(|_| corrupt())?;
+                    let (cid, preview) = share
+                        .prepared_preview(&input.prepared_id, now)
+                        .map_err(public_share_error)?;
+                    (cid.to_owned(), preview.clone())
+                };
+                let cid = ObjectCID(decode_hex::<32>(&cid_hex).map_err(|_| invalid())?);
+                self.get(principal, cid)
+                    .map_err(|_| public_share_error("saved_ku_not_accessible"))?;
+                if serde_json::to_vec(&preview).map_err(|_| invalid())?.len() as u64
+                    > budget.max_bytes
+                {
+                    return Err(resource());
+                }
+                return Ok(Resp::PublicShare(preview));
+            }
             #[cfg(feature = "vnext-network-runtime")]
             Req::ShareInspect(input) => {
                 let runtime = self.live_network_runtime()?;
@@ -569,6 +591,7 @@ impl KuStore {
             #[cfg(not(feature = "vnext-network-runtime"))]
             Req::SharePrepare(_)
             | Req::ShareConfirm(_)
+            | Req::SharePreview(_)
             | Req::ShareInspect(_)
             | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),

@@ -80,8 +80,9 @@ enum KuCommand {
 }
 
 /// Thin projection of the registered `POST /api/vnext/ku/editor` share actions
-/// (`share_prepare`, `share_confirm`, `share_intent`, `share_inspect`,
-/// `share_list`). The host owns consent, the outbox and the network runtime.
+/// (`share_prepare`, `share_preview`, `share_confirm`, `share_intent`,
+/// `share_inspect`, `share_list`). The host owns consent, the outbox and the
+/// network runtime.
 #[derive(Debug, Subcommand)]
 enum ShareCommand {
     /// Preview one saved private KU as a Public KU for one expected peer; never enqueues or sends.
@@ -100,7 +101,13 @@ enum ShareCommand {
         #[arg(long, value_parser = hex32)]
         namespace: String,
     },
-    /// Type the exact prepared_id on stdin to confirm the previewed Public share; no --yes bypass.
+    /// D-059: read back the exact stored preview of a live prepared share; read-only.
+    Preview {
+        #[arg(long, value_parser = hex32)]
+        prepared_id: String,
+    },
+    /// Show the host's stored preview, then type the exact prepared_id on stdin to
+    /// confirm that Public share; no --yes bypass.
     Confirm {
         #[arg(long, value_parser = hex32)]
         prepared_id: String,
@@ -139,6 +146,9 @@ impl ShareCommand {
                 "share_prepare",
                 json!({"object_cid":object_cid,"expected_node_id":expected_node_id,"address":address.to_string(),"selector":selector,"namespace":namespace}),
             ),
+            Self::Preview { prepared_id } => {
+                ("share_preview", json!({ "prepared_id": prepared_id }))
+            }
             // Only reached after the exact typed prepared_id matched.
             Self::Confirm { prepared_id } => (
                 "share_confirm",
@@ -430,7 +440,7 @@ fn validate_response(operation: &str, value: &Value) -> Result<(), String> {
         return Ok(());
     }
     let share_event = match operation {
-        "share_prepare" => Some("share_prepared"),
+        "share_prepare" | "share_preview" => Some("share_prepared"),
         "share_confirm" => Some("share_confirmed"),
         "share_intent" => Some("intent"),
         "share_inspect" => Some("public_object"),
@@ -438,7 +448,7 @@ fn validate_response(operation: &str, value: &Value) -> Result<(), String> {
         _ => None,
     };
     if let Some(event) = share_event {
-        let pending_preview = operation != "share_prepare"
+        let pending_preview = !matches!(operation, "share_prepare" | "share_preview")
             || (payload["enqueued"] == false && payload["payload_sent"] == false);
         if payload["event"] != event
             || payload.get("authorizes_reward").is_some_and(|v| v != false)
@@ -480,6 +490,37 @@ fn verify_share_confirm(prepared_id: &str, typed: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// D-059: human-readable summary of the host's stored preview, shown on stderr
+/// before the typed confirmation. The preview must be for this exact prepared_id.
+fn share_preview_summary(prepared_id: &str, payload: &Value) -> Result<String, String> {
+    if payload["prepared_id"] != prepared_id {
+        return Err("host preview does not match the prepared_id; nothing was confirmed".into());
+    }
+    let field = |key: &str| match &payload[key] {
+        Value::String(s) => s.clone(),
+        Value::Null => "-".into(),
+        other => other.to_string(),
+    };
+    let mut lines = vec![
+        "Prepared PUBLIC share preview (read back from this host; nothing enqueued or sent):"
+            .to_owned(),
+    ];
+    for key in [
+        "prepared_id",
+        "public_object_cid",
+        "semantic_content_cid",
+        "intent_id",
+        "expected_node_id",
+        "address",
+        "expires_at",
+        "semantic",
+        "consequence",
+    ] {
+        lines.push(format!("  {key}: {}", field(key)));
+    }
+    Ok(lines.join("\n"))
+}
+
 async fn run(args: &KuArgs) -> Result<Value, String> {
     let prompt = match &args.command {
         KuCommand::Share(ShareCommand::Confirm { .. }) => SHARE_CONFIRM_PROMPT,
@@ -508,18 +549,44 @@ async fn run_with_confirmation(
 ) -> Result<Value, String> {
     if let Some((action, payload)) = args.command.editor_request()? {
         let client = Client::new(args)?;
-        if let KuCommand::Share(ShareCommand::Confirm { prepared_id }) = &args.command {
-            verify_share_confirm(prepared_id, &confirm(prepared_id)?)?;
-        }
         let status = client
             .call(Method::GET, "/api/vnext/ku/status", None)
             .await?;
         let session = session(&status)?;
-        return client.call(Method::POST, "/api/vnext/ku/editor", Some(json!({
-            "session":session,
-            "budget":{"max_items":args.max_items,"max_bytes":args.max_bytes,"max_work_units":args.max_work_units},
-            "request":{"action":action,"payload":payload}
-        }))).await;
+        let budget = json!({"max_items":args.max_items,"max_bytes":args.max_bytes,"max_work_units":args.max_work_units});
+        if let KuCommand::Share(ShareCommand::Confirm { prepared_id }) = &args.command {
+            // D-059: show the host's exact stored preview before asking for the typed id.
+            let preview = client
+                .call(
+                    Method::POST,
+                    "/api/vnext/ku/editor",
+                    Some(json!({
+                        "session":session,
+                        "budget":budget,
+                        "request":{"action":"share_preview","payload":{"prepared_id":prepared_id}}
+                    })),
+                )
+                .await
+                .map_err(|e| {
+                    format!("{e}; cannot read back the prepared preview; nothing was confirmed")
+                })?;
+            eprintln!(
+                "{}",
+                share_preview_summary(prepared_id, &preview["data"]["payload"])?
+            );
+            verify_share_confirm(prepared_id, &confirm(prepared_id)?)?;
+        }
+        return client
+            .call(
+                Method::POST,
+                "/api/vnext/ku/editor",
+                Some(json!({
+                    "session":session,
+                    "budget":budget,
+                    "request":{"action":action,"payload":payload}
+                })),
+            )
+            .await;
     }
     let operation = args.command.request()?;
     let client = Client::new(args)?;

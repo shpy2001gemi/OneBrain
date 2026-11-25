@@ -6,7 +6,39 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — display-only reverse Registry lookup `describe_ccids` (D-058, t15, 2026-11-25)
+## Latest follow-up — prepared-preview read-back `share_preview` before CLI confirm (D-059, t16, 2026-11-25)
+
+Next step of the t15 checkpoint: backlog "prepared-preview lookup at confirm". `onebrain ku share
+confirm` only asked for the typed `prepared_id`; the preview lived only in host memory with no
+lookup. The owner approved D-059: one read-only editor action, existing DTOs and Web unchanged.
+
+- **Node:** `PublicKuShareCoordinator` keeps the exact preview JSON next to each live prepared
+  share; `prepared_preview(id, now)` reads it back (expired/unknown → `prepared_share_missing`)
+  in [ku_public_share.rs](../../../../src/onebrain-node/src/ku_public_share.rs).
+  `ManualEditorRequest::SharePreview { prepared_id }` in
+  [ku_product.rs](../../../../src/onebrain-node/src/ku_product.rs) rechecks caller access to the
+  saved KU (`saved_ku_not_accessible`) and returns the stored `share_prepared` preview unchanged;
+  feature-gated like `share_prepare`; never consumes, enqueues or sends.
+- **CLI:** `onebrain ku share confirm` fetches status, calls `share_preview`, prints a summary on
+  stderr (`Prepared PUBLIC share preview (read back from this host; nothing enqueued or sent)` +
+  public CID, intent, peer, address, expiry, semantic, consequence), then prompts for the typed id;
+  a failed read-back or a preview for another id stops with "nothing was confirmed". New
+  read-only `onebrain ku share preview --prepared-id …` in [ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs).
+  A mistyped id now contacts the host for read-only status/preview but never sends `share_confirm`.
+- **Check script:** [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  checks that `share_preview` returns the same prepared id/CIDs/bytes/expiry (HTTP, or CLI under
+  `--cli-share`), and under `--cli-share` that both the mistyped and the real CLI confirm showed the
+  preview with the Public CID first.
+- Docs: [KU_LOCAL_EDITOR_PROFILE_V1](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md) table row +
+  D-059 addendum, [CLI_REFERENCE](../../../../src/onebrain-cli/CLI_REFERENCE.md), DECISIONS D-059.
+
+Checks: see the PROGRESS checkpoint for exact suites and the live DEV-ONLY result.
+
+Not covered: the `/ku` Web flow does not call `share_preview` (keeps its in-memory preview, by
+D-059); prepared shares stay in memory, so a host restart still requires a new `share prepare`.
+Same DEV-ONLY/no-qualification limits.
+
+## Earlier follow-up — display-only reverse Registry lookup `describe_ccids` (D-058, t15, 2026-11-25)
 
 Next step of the t14 checkpoint: backlog "reverse lookup CCID→label". Client-side alone was not
 possible (`resolve` only maps label→CCID), so the owner approved D-058: one read-only editor

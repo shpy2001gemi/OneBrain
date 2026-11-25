@@ -221,6 +221,10 @@ fn share_commands_parse_exact_payloads_and_reject_bypasses() {
     for (argv, action) in [
         (vec!["share", "intent", "--intent-id", &a], "share_intent"),
         (
+            vec!["share", "preview", "--prepared-id", &a],
+            "share_preview",
+        ),
+        (
             vec!["share", "inspect", "--object-cid", &a, "--selector", &s],
             "share_inspect",
         ),
@@ -234,7 +238,7 @@ fn share_commands_parse_exact_payloads_and_reject_bypasses() {
 }
 
 #[tokio::test]
-async fn share_confirm_requires_exact_typed_prepared_id_before_any_request() {
+async fn share_confirm_shows_host_preview_then_requires_exact_typed_prepared_id() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -250,19 +254,6 @@ async fn share_confirm_requires_exact_typed_prepared_id_before_any_request() {
         &id,
     ])
     .unwrap();
-    for typed in ["yes", "", "ab", "y\n"] {
-        let error = run_with_confirmation(&args, |_| Ok(typed.into()))
-            .await
-            .unwrap_err();
-        assert!(error.contains("nothing was confirmed"), "{error}");
-    }
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), listener.accept())
-            .await
-            .is_err(),
-        "a rejected confirmation must not contact the host"
-    );
-    // The exact typed prepared_id sends confirm_public=true to the registered editor action.
     let session =
         json!({"process_generation":"11".repeat(32),"dataset_generation":"22".repeat(32)});
     let envelope = |payload: Value| {
@@ -274,14 +265,19 @@ async fn share_confirm_requires_exact_typed_prepared_id_before_any_request() {
         json!({"lifecycle":"active","coverage":"local_only","limitations":[],
         "registry_ready":true,"local_encoder_ready":false,"remote_encoding_enabled":false,"direct_issuance_enabled":false}),
     );
+    let preview_reply = envelope(json!({"event":"share_prepared","prepared_id":id,
+        "public_object_cid":"44".repeat(32),"expected_node_id":"55".repeat(32),
+        "address":"127.0.0.1:4433","expires_at":1234,"semantic":{"statements":[]},
+        "consequence":"public","enqueued":false,"payload_sent":false}));
     let confirm_reply = envelope(
         json!({"event":"share_confirmed","intent_id":"33".repeat(32),"authorizes_reward":false}),
     );
-    let expected_id = id.clone();
+    // Reply by request kind; record every request until the client goes quiet.
     let host = tokio::spawn(async move {
         let mut requests = Vec::new();
-        for reply in [status_reply, confirm_reply] {
-            let (mut stream, _) = listener.accept().await.unwrap();
+        while let Ok(Ok((mut stream, _))) =
+            tokio::time::timeout(Duration::from_millis(500), listener.accept()).await
+        {
             let mut raw = Vec::new();
             let mut buf = [0u8; 4096];
             loop {
@@ -301,16 +297,35 @@ async fn share_confirm_requires_exact_typed_prepared_id_before_any_request() {
                         break;
                     }
                 }
+                if read == 0 {
+                    break;
+                }
             }
-            requests.push(String::from_utf8_lossy(&raw).to_string());
+            let request = String::from_utf8_lossy(&raw).to_string();
+            let reply = if request.starts_with("GET /api/vnext/ku/status") {
+                &status_reply
+            } else if request.contains("\"share_preview\"") {
+                &preview_reply
+            } else {
+                &confirm_reply
+            };
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                 reply.len()
             );
             stream.write_all(response.as_bytes()).await.unwrap();
+            requests.push(request);
         }
         requests
     });
+    // A wrong typed id sees the preview (read-only) but never sends share_confirm.
+    for typed in ["yes", "", "ab", "y\n"] {
+        let error = run_with_confirmation(&args, |_| Ok(typed.into()))
+            .await
+            .unwrap_err();
+        assert!(error.contains("nothing was confirmed"), "{error}");
+    }
+    let expected_id = id.clone();
     let confirmed = run_with_confirmation(&args, |shown| {
         assert_eq!(shown, expected_id);
         Ok(format!("{shown}\r\n"))
@@ -319,14 +334,41 @@ async fn share_confirm_requires_exact_typed_prepared_id_before_any_request() {
     .unwrap();
     assert_eq!(confirmed["data"]["payload"]["event"], "share_confirmed");
     let requests = host.await.unwrap();
-    assert!(requests[0].starts_with("GET /api/vnext/ku/status"));
-    assert!(requests[1].starts_with("POST /api/vnext/ku/editor"));
-    let body: Value = serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    let body = |r: &String| -> Value {
+        serde_json::from_str(r.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+    };
+    // 4 rejected attempts x (status, share_preview) + accepted (status, share_preview, share_confirm).
+    assert_eq!(requests.len(), 11, "{requests:?}");
+    let confirms: Vec<&String> = requests
+        .iter()
+        .filter(|r| r.contains("\"share_confirm\""))
+        .collect();
+    assert_eq!(confirms.len(), 1, "only the exact typed id may confirm");
+    assert!(requests[8].starts_with("GET /api/vnext/ku/status"));
     assert_eq!(
-        body["request"],
+        body(&requests[9])["request"],
+        json!({"action":"share_preview","payload":{"prepared_id":id}})
+    );
+    let confirm = body(&requests[10]);
+    assert_eq!(
+        confirm["request"],
         json!({"action":"share_confirm","payload":{"prepared_id":id,"confirm_public":true}})
     );
-    assert_eq!(body["session"], session);
+    assert_eq!(confirm["session"], session);
+}
+
+#[test]
+fn share_preview_summary_requires_matching_prepared_id() {
+    let id = "ab".repeat(32);
+    let payload = json!({"event":"share_prepared","prepared_id":id,"public_object_cid":"44".repeat(32),
+        "address":"127.0.0.1:4433","expires_at":9,"semantic":{"statements":[]}});
+    let summary = share_preview_summary(&id, &payload).unwrap();
+    assert!(summary.contains("nothing enqueued or sent"));
+    assert!(summary.contains(&"44".repeat(32)));
+    assert!(summary.contains("expires_at: 9"));
+    assert!(summary.contains("intent_id: -"));
+    let error = share_preview_summary(&"cd".repeat(32), &payload).unwrap_err();
+    assert!(error.contains("nothing was confirmed"), "{error}");
 }
 
 #[test]
@@ -342,7 +384,17 @@ fn share_responses_must_match_event_and_never_claim_reward_or_sending_preview() 
         &env(json!({"event":"share_prepared","enqueued":false,"payload_sent":false}))
     )
     .is_ok());
+    assert!(validate_response(
+        "share_preview",
+        &env(json!({"event":"share_prepared","enqueued":false,"payload_sent":false}))
+    )
+    .is_ok());
     for (op, payload) in [
+        (
+            "share_preview",
+            json!({"event":"share_prepared","enqueued":false,"payload_sent":true}),
+        ),
+        ("share_preview", json!({"event":"share_confirmed"})),
         (
             "share_prepare",
             json!({"event":"share_prepared","enqueued":true,"payload_sent":false}),
