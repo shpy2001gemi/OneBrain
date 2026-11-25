@@ -6,7 +6,32 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — `Base v1 three-OS` closure green: patched dependencies + owner-approved advisory triage (2026-11-25)
+## Latest follow-up — Windows first-run two-node CI job (t10, 2026-11-25)
+
+Owner asked the agent to pick the next item from the shared plan on 2026-11-25; picked (t10)
+because MASTER_PLAN's first contributor row (task 20.C first run) still lacked a CI run of the
+first-run journey on the MVP's primary host OS. Commit `58e5118` (branch
+`ci/ku-dev-demo-windows-two-node`, fast-forwarded into main):
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml)** gains job
+  `windows-two-node` (windows-latest, `shell: pwsh`, Node 22, Python 3.13, stable Rust,
+  `CARGO_PROFILE_DEV_DEBUG=0`, rust-cache saved only on main, timeout 90 min): Web build,
+  `--check-only`, DEV-ONLY bootstrap `--dev-demo-registry --with-receiver` into
+  `$env:RUNNER_TEMP\ku dev demo` (space on purpose), then the **printed PowerShell** `CLI hosts +
+  onebrain ku get/export:` line (single-quoted paths, `;` between build and check) extracted with
+  `Select-String` and run verbatim through `Invoke-Expression`; a second throwaway root
+  `ku web demo` and its printed `Web hosts:` line. Each step tees stdout only (cargo progress stays
+  on stderr), fails on a non-zero exit and requires its own `[PASS] seed: explicit save committed
+  privately`. Same triggers/path filter as the Linux job. CONTRIBUTING and SETUP_GUIDE §5.3 say so.
+- Checks: `workflow_dispatch` on the branch, run 45582601486 (`58e5118`): Windows CLI/CLI
+  **52/52** (seed on the CLI host), Web/Web **46/46** (seed on the Web host), job 7m29s with a
+  cold branch cache (CLI build 2m09s); Linux job and Ubuntu/Windows unit + `--check-only`
+  success in the same run. Local: YAML parse, `git diff --check`.
+
+Not covered: macOS first run, Desktop/GUI click-through, real Registry. A hosted runner is not
+platform/NAT/production qualification; DEV-ONLY Registry stays non-operator trust.
+
+## Earlier follow-up — `Base v1 three-OS` closure green: patched dependencies + owner-approved advisory triage (2026-11-25)
 
 Owner picked (ci3) on 2026-11-25 for the 24 advisories that blocked the closure job (below).
 `cargo audit` on `a2d360c` showed 17 vulnerabilities, 2 unsound and 5 unmaintained-only warnings
