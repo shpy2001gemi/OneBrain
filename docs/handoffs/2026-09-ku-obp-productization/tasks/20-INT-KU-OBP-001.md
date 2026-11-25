@@ -6,7 +6,26 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Windows first-run two-node CI job (t10, 2026-11-25)
+## Latest follow-up — macOS first-run two-node CI job (t11, 2026-11-25)
+
+Next step of the t10 checkpoint (MASTER_PLAN row 20.C still listed a macOS run). Commits `7cd6306`
+(workflow) + `374d958` (docs), branch `ci/ku-dev-demo-macos-two-node`, fast-forwarded into main:
+
+- **[ku-dev-demo-scripts.yml](../../../../.github/workflows/ku-dev-demo-scripts.yml):** job
+  `linux-two-node` becomes a matrix `os: [ubuntu-latest, macos-latest]` (fail-fast off, timeout
+  60→90 min, name `<os> first run + …`); the bash steps are unchanged, so on macOS the printed POSIX
+  `CLI hosts + onebrain ku get/export:` and `Web hosts:` lines are extracted with BSD `sed` and run
+  verbatim, each requiring its own `[PASS] seed`. Job id kept for history. CONTRIBUTING and
+  SETUP_GUIDE §5.3 now say Linux/macOS/Windows.
+- Checks: dispatch run 45584653919 (`7cd6306`): macOS CLI/CLI **52/52** + Web/Web **46/46** (job
+  2m48s, cold branch cache), ubuntu 52/52 + 46/46, Windows 52/52 + 46/46, Ubuntu/Windows unit +
+  `--check-only` success. Push-run `KU dev demo scripts` 45584315111 on `c50bdb5` success.
+  Local: YAML parse, `git diff --check`.
+
+Not covered: Desktop/GUI click-through, real Registry. Hosted runners are not
+platform/NAT/production qualification; DEV-ONLY Registry stays non-operator trust.
+
+## Earlier follow-up — Windows first-run two-node CI job (t10, 2026-11-25)
 
 Owner asked the agent to pick the next item from the shared plan on 2026-11-25; picked (t10)
 because MASTER_PLAN's first contributor row (task 20.C first run) still lacked a CI run of the

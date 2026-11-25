@@ -1,6 +1,6 @@
 # Danh sách task và trạng thái OneBrain
 
-**Cập nhật: 19/11/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
+**Cập nhật: 25/11/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
 
 Đây là bảng xem nhanh ngay trong task index có sẵn, tổng hợp từ
 [PROGRESS](../PROGRESS.md). PROGRESS vẫn là sổ trạng thái chính;
@@ -122,6 +122,7 @@ trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--202
 | 48 | INT-KU-OBP-001 / first-run — check Web/Web trong CI tự seed KU mẫu trên Web host (t9) | Đã commit/push theo D-050 | `beb94dc`: job `linux-two-node` bootstrap DEV-ONLY thêm một demo root tạm riêng (`$RUNNER_TEMP/ku web demo`) và chạy nguyên văn dòng `Web hosts:` của bootstrap đó, nên `--seed-sample-ku` lưu KU mẫu qua API nút `/ku` của Web host; bước CLI/CLI và Web/Web `tee` output và fail nếu không có `[PASS] seed: explicit save committed privately` của chính bước. Run 44488228752: CLI/CLI 52/52 (seed trên CLI host), Web/Web 46/46 (seed trên Web host), job 2m2s; Ubuntu/Windows success. CONTRIBUTING/SETUP_GUIDE cập nhật. |
 | 49 | INT-KU-OBP-001 / follow-up — nút `/ku` Web tạo draft manual riêng tư mới từ Public KU đã nhận (p, D-057) | Đã commit/push theo D-050 | `42c073a`: mỗi item `Browse accepted Public KUs` có **Start a new private draft from …** (chỉ 1 predicate + 1 text literal; không gọi host): chỉ chép text literal, xóa nguồn/nhãn/concept, ghi chú Public ObjectCID + predicate CCID; candidate trùng predicate Public được đánh dấu nhưng không tự chọn; preview/Save tường minh như cũ (`LOCAL_ONLY`, `fidelity=unassessed`, không adopt/link/reward). Bootstrap `--with-receiver` cho receiver admit nguồn mẫu riêng. vitest 149/149 (2 test mới), build, lint 0 lỗi, script unit 15/15, live Web/Web 46/46, browser 8/8 trên receiver `:4472/ku` |
 | 50 | INT-KU-OBP-001 / first-run — job CI Windows chạy first run + check hai node CLI/CLI và Web/Web (t10) | Đã commit/push theo D-050 | `58e5118`: `ku-dev-demo-scripts.yml` thêm job `windows-two-node` (windows-latest, pwsh): build Web, `--check-only`, bootstrap DEV-ONLY vào hai demo root tạm có dấu cách, chạy nguyên văn dòng PowerShell `CLI hosts …` và `Web hosts:` được in ra (`Invoke-Expression`), fail nếu exit ≠ 0 hoặc thiếu `[PASS] seed` của chính bước. Run 45582601486: Windows CLI/CLI 52/52, Web/Web 46/46 (job 7m29s, cache nguội), Linux + unit success. CONTRIBUTING/SETUP_GUIDE cập nhật. |
+| 51 | INT-KU-OBP-001 / first-run — job CI first run hai node chạy cả trên macOS (t11) | Đã commit/push theo D-050 | `7cd6306` + `374d958`: job `linux-two-node` thành matrix `ubuntu-latest`/`macos-latest` (bash, cùng các bước; dòng POSIX in ra chạy nguyên văn). Run 45584653919: macOS CLI/CLI 52/52, Web/Web 46/46 (job 2m48s, cache nguội); ubuntu và Windows 52/52 + 46/46; unit success. CONTRIBUTING/SETUP_GUIDE cập nhật. |
 
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
