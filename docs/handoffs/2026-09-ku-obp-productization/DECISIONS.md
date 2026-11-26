@@ -1,5 +1,28 @@
 # Decisions and claim boundary
 
+## D-075 — Second five-round autonomous continuation and cross-track switching rule
+
+On 2026-11-26 the owner instructed running five consecutive checkpoints
+automatically and asked when work switches to another task track ("Tự động thực
+hiện 5 lượt. Khi nào thì qua nhánh task khác ?"). Execution switches tracks
+immediately when (1) CI on `main` reports a failure/flake, or (2) `KU-SEM-001`'s
+remaining deterministic host-bounded `SEM-F03` mechanical repair surface
+(`references: cycle`) finishes, moving into open `D-044`/`D-050` parity/hygiene
+slices across Desktop (`08`/`09`/`20`), CLI (`06`/`09`/`20`) and Web (`07`/`20`)
+without entering owner-gated tracks (`ARCH-10` mobile per `D-054`, `ARCH-14` new
+VPS/NAT, `D-063` two physical machines, operator Registry release signing
+`D-012`, `KU-ENC-003` formal qualification, live v2 host activation, or `M6`/`M7`).
+
+- **Round 1 (CI Windows `base-v1-projections` QUIC loopback timeout):** GitHub
+  Actions run `45834415573` (`8a06857`) failed on Windows at
+  `vnext_distributed_pomv::tests::public_use_over_one_two_five_paths_is_counted_once_and_survives_restart`
+  (`Elapsed(())` at the 10 s helper deadline while 209 `onebrain-node` tests ran
+  concurrently with heavy redb compaction tests; local debug run alone takes
+  ~10.4 s). Raised test-only loopback QUIC poll deadlines in
+  `vnext_distributed_pomv.rs` (`wait_acknowledged`, `wait_event_sources`) and
+  `vnext_distributed_kql.rs` from 10 s to 30 s (`10 ms` poll interval and all
+  production/runtime budgets unchanged).
+
 ## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
 
 On 2026-11-26 the owner instructed running five consecutive checkpoints and

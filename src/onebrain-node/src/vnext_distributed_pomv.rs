@@ -2957,7 +2957,7 @@ mod tests {
     }
 
     async fn wait_acknowledged(runtime: &VNextNetworkRuntime, intents: &[OutboundTransferIntent]) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if intents.iter().all(|intent| {
                     runtime
@@ -2980,7 +2980,7 @@ mod tests {
         selector: SelectorCid,
         expected: usize,
     ) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 if receiver
                     .record_source_peers(ReconcileManifestKind::Event, event.into_bytes(), selector)

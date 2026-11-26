@@ -1028,7 +1028,7 @@ mod tests {
         sender.enqueue_outbound(&intent).unwrap();
         sender.enqueue_outbound(&nonmatching_intent).unwrap();
 
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let all_observed = [affordance_cid, nonmatching_cid].iter().all(|cid| {
                     receiver
