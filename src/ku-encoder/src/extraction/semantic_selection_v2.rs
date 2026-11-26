@@ -760,13 +760,16 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
-        if ["property_binding", "unexpected_target"]
-            .iter()
-            .any(|code| {
-                v.issues
-                    .contains(&format!("selection[{i}].comparisons: {code}"))
-            })
-            && !comparison_choices(claim).is_empty()
+        if [
+            "property_binding",
+            "unexpected_target",
+            "target_absent_or_ambiguous",
+        ]
+        .iter()
+        .any(|code| {
+            v.issues
+                .contains(&format!("selection[{i}].comparisons: {code}"))
+        }) && !comparison_choices(source, claim, b)?.is_empty()
         {
             return Ok(Some((i, vec!["comparisons".into()])));
         }
@@ -816,10 +819,13 @@ fn ellipsis_choices(
     Ok(out)
 }
 
-/// D-065 finite choices for one flagged comparison.
+/// D-065 / D-067 finite choices for one flagged comparison.
 struct ComparisonRepair {
     rebind: bool,
     omit_target: bool,
+    /// D-067: an explicit/implicit target that does not resolve uniquely may
+    /// only become `target_kind: unspecified` with the target omitted.
+    downgrade: bool,
 }
 
 /// True when the shorter string occurs in the longer one bounded by whitespace
@@ -843,26 +849,45 @@ fn token_extension(a: &str, b: &str) -> bool {
 /// predicate are contiguous whitespace-bounded token extensions of one another
 /// may only be rebound to the exact claim predicate; comparisons flagged
 /// `unexpected_target` (a target with `target_kind: unspecified`) may only omit
-/// that stray target. No target is invented, re-kinded or marked explicit, and
-/// unrelated properties stay unrouted so futile repairs never dispatch.
-fn comparison_choices(claim: &Value) -> BTreeMap<usize, ComparisonRepair> {
+/// that stray target. D-067: comparisons flagged `target_absent_or_ambiguous`
+/// (an explicit or implicit-candidate target that does not resolve uniquely in
+/// its scope) may only be downgraded to `target_kind: unspecified` with that
+/// target omitted, leaving `target_unspecified` visible. No target is invented,
+/// substituted or marked explicit, and unrelated properties stay unrouted so
+/// futile repairs never dispatch.
+fn comparison_choices(
+    source: &str,
+    claim: &Value,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, ComparisonRepair>> {
     let predicate = text(&claim["predicate"]);
+    let scope = claim["anchor"].as_str().unwrap_or(source);
     let mut out = BTreeMap::new();
     for (j, cmp) in items(claim, "comparisons").enumerate() {
         let rebind = cmp["property"] != claim["predicate"]
             && token_extension(text(&cmp["property"]), predicate);
-        let omit_target = cmp["target_kind"] == "unspecified" && cmp.get("target").is_some();
-        if rebind || omit_target {
+        let kind = text(&cmp["target_kind"]);
+        let omit_target = kind == "unspecified" && cmp.get("target").is_some();
+        let downgrade = kind != "unspecified"
+            && span(
+                source,
+                &cmp["target"],
+                if kind == "explicit" { scope } else { source },
+                b,
+            )?
+            .is_none();
+        if rebind || omit_target || downgrade {
             out.insert(
                 j,
                 ComparisonRepair {
                     rebind,
                     omit_target,
+                    downgrade,
                 },
             );
         }
     }
-    out
+    Ok(out)
 }
 
 /// D-064: OR groups flagged `incompatible_or_cue` (a known conjunction or
@@ -1277,7 +1302,8 @@ pub fn repair_choices(
             .ok_or(ExtractionError("selection_repair_target"))?;
         // D-065: same comparison count; property/kind/target only from existing values
         // plus the exact claim predicate for flagged property bindings.
-        let repairs = comparison_choices(claim);
+        // D-067: plus `unspecified` for flagged unresolved targets.
+        let repairs = comparison_choices(source, claim, b)?;
         let mut properties = BTreeSet::new();
         let mut kinds = BTreeSet::new();
         let mut targets = BTreeSet::new();
@@ -1295,7 +1321,11 @@ pub fn repair_choices(
                 properties.insert(text(&claim["predicate"]).to_owned());
                 entry["property"] = claim["predicate"].clone();
             }
-            if r.omit_target {
+            if r.downgrade {
+                kinds.insert("unspecified".to_owned());
+                entry["target_kind"] = json!("unspecified");
+            }
+            if r.omit_target || (r.downgrade && claim["comparisons"][*j].get("target").is_some()) {
                 entry["omit_target"] = json!(true);
             }
             listed.push(entry);
@@ -1349,6 +1379,9 @@ pub fn apply_repair(
     b: &mut WorkBudget,
 ) -> Result<(Value, Value, Validation)> {
     let mut result = base.clone();
+    // D-067: the only issue a repair may introduce is the honest
+    // `target_unspecified` of a downgraded comparison.
+    let mut allowed_new = BTreeSet::new();
     if fields.iter().any(|f| STRUCTURES.contains(&f.as_str())) {
         schema::check_embedded(
             reply,
@@ -1431,16 +1464,30 @@ pub fn apply_repair(
                 "selection_repair_structure_loss",
             )?;
             if key == "comparisons" {
-                // D-065: cue and kind fixed; a flagged property may only become the
-                // exact claim predicate and a flagged stray target may only be omitted.
-                let repairs = comparison_choices(old);
+                // D-065: cue fixed; a flagged property may only become the exact
+                // claim predicate and a flagged stray target may only be omitted.
+                // D-067: kind fixed unless a flagged unresolved target is
+                // downgraded to `unspecified` together with omitting it.
+                let repairs = comparison_choices(source, old, b)?;
                 for (j, (before, after)) in previous.iter().zip(next).enumerate() {
                     let r = repairs.get(&j);
                     require(
-                        before["cue"] == after["cue"]
-                            && before["target_kind"] == after["target_kind"],
+                        before["cue"] == after["cue"],
                         "selection_repair_structure_loss",
                     )?;
+                    let downgraded = before["target_kind"] != after["target_kind"];
+                    require(
+                        !downgraded
+                            || (r.is_some_and(|r| r.downgrade)
+                                && after["target_kind"] == "unspecified"
+                                && after.get("target").is_none()),
+                        "selection_repair_choice",
+                    )?;
+                    if downgraded {
+                        allowed_new.insert(format!(
+                            "selection[{target}].comparisons: target_unspecified"
+                        ));
+                    }
                     require(
                         before["property"] == after["property"]
                             || (r.is_some_and(|r| r.rebind)
@@ -1449,6 +1496,7 @@ pub fn apply_repair(
                     )?;
                     require(
                         before.get("target") == after.get("target")
+                            || downgraded
                             || (r.is_some_and(|r| r.omit_target) && after.get("target").is_none()),
                         "selection_repair_choice",
                     )?;
@@ -1584,7 +1632,10 @@ pub fn apply_repair(
         "selection_repair_no_change",
     )?;
     require(
-        after.issues.iter().all(|s| before.issues.contains(s)),
+        after
+            .issues
+            .iter()
+            .all(|s| before.issues.contains(s) || allowed_new.contains(s)),
         "selection_repair_revalidation",
     )?;
     let positions = |v: &Validation| -> BTreeSet<usize> {

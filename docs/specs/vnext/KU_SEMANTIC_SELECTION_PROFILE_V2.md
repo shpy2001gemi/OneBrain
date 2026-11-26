@@ -113,6 +113,16 @@ emitted with `target_kind: unspecified`) may only omit that ungrounded target; t
 are fixed, no target is added, substituted or marked explicit, and full
 revalidation still applies. Unrelated properties stay unrouted.
 
+A comparison flagged `target_absent_or_ambiguous` (an explicit or
+implicit-candidate target that does not resolve uniquely in its scope) may join
+that `comparisons`-only repair (D-067). Its only finite choice is downgrading to
+`target_kind: unspecified` with the unresolved target omitted; the resulting
+`target_unspecified` issue is the sole new issue revalidation admits and stays
+visible for review. No target is added, substituted or re-resolved, no other kind
+is chosen, cues stay fixed, and a target cannot be dropped without the downgrade.
+An unresolved cue alone (`cue_ambiguous`) and `explicit_target_scope` stay
+unrouted.
+
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound

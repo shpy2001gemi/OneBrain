@@ -1097,6 +1097,10 @@
           "needle": "ellipsis_role_binding_dispatches_only_bound_rebind_or_omission"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "comparison_unresolved_target_dispatches_only_unspecified_downgrade"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

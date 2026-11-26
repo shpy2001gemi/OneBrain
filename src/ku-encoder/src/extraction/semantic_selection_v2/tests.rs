@@ -1191,3 +1191,109 @@ fn ellipsis_role_binding_dispatches_only_bound_rebind_or_omission() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn comparison_unresolved_target_dispatches_only_unspecified_downgrade() {
+    // D-067: an explicit/implicit target that does not resolve uniquely may only
+    // become `target_kind: unspecified` with that target omitted; nothing invented.
+    let source = "Xe đỏ nhanh hơn xe xanh.";
+    let selection_with = |kind: &str| json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh","cue":"hơn","target_kind":kind,"target":{"quote":"xe tải"}}]}]});
+    let selection = selection_with("explicit");
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].comparisons: target_absent_or_ambiguous"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["comparisons".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["comparisons"],
+        json!({"count":1,"property":["nhanh"],"target_kind":["explicit","unspecified"],"targets":["xe tải"],"repairable":[{"comparison":0,"target_kind":"unspecified","omit_target":true}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let props = &wire["properties"]["patch"]["properties"]["comparisons"]["items"]["properties"];
+    assert_eq!(
+        props["target_kind"]["enum"],
+        json!(["explicit", "unspecified"])
+    );
+    let apply = |sel: &Value, comparisons: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"comparisons":comparisons}}),
+            &mut budget(),
+        )
+    };
+    let downgraded = json!([{"property":"nhanh","cue":"hơn","target_kind":"unspecified"}]);
+    // Accepted: downgrade + omit; only `target_unspecified` remains visible.
+    let (changed, draft, after) = apply(&selection, downgraded.clone()).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[0].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0]["arguments"], json!(["xe xanh"]));
+    let cmp = &draft["statements"][0]["comparisons"][0];
+    assert!(cmp.get("target").is_none() && cmp.get("target_span").is_none());
+    // Implicit candidate: downgrade also clears the unassessed inference.
+    let implicit = selection_with("implicit_candidate");
+    let (_, v) = assemble(source, &implicit, &mut budget()).unwrap();
+    assert_eq!(
+        v.issues,
+        vec![
+            "selection[0].comparisons: implicit_target_unassessed",
+            "selection[0].comparisons: target_absent_or_ambiguous",
+        ]
+    );
+    let (_, _, after) = apply(&implicit, downgraded).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[0].comparisons: target_unspecified"]
+    );
+    // Rejected: no-op, kept target, target dropped without downgrade, other kind,
+    // invented resolvable target, dropped comparison, changed cue.
+    let base = selection["claims"][0]["comparisons"].clone();
+    assert!(apply(&selection, base.clone()).is_err());
+    let mut kept_target = base.clone();
+    kept_target[0]["target_kind"] = json!("unspecified");
+    assert!(apply(&selection, kept_target).is_err());
+    let mut dropped_only = base.clone();
+    dropped_only[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, dropped_only).is_err());
+    let mut other_kind = base.clone();
+    other_kind[0]["target_kind"] = json!("implicit_candidate");
+    other_kind[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, other_kind).is_err());
+    let mut invented = base.clone();
+    invented[0]["target"] = json!({"quote":"xe xanh"});
+    assert!(apply(&selection, invented).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+    let mut cue = base.clone();
+    cue[0]["cue"] = json!("nhanh hơn");
+    cue[0]["target_kind"] = json!("unspecified");
+    cue[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, cue).is_err());
+
+    // Unrouted: an unresolved cue alone is not a target repair.
+    let cue_only = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh","cue":"kém","target_kind":"explicit","target":{"quote":"xe xanh"}}]}]});
+    let (_, v) = assemble(source, &cue_only, &mut budget()).unwrap();
+    assert_eq!(v.issues, vec!["selection[0].comparisons: cue_ambiguous"]);
+    assert!(repair_target(source, &cue_only, &v, &mut budget())
+        .unwrap()
+        .is_none());
+}

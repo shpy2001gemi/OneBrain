@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-067 — Bounded downgrade for an unresolved comparison target (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue
+`target_absent_or_ambiguous` (explicit or implicit-candidate target that does not
+resolve uniquely) dispatches the bounded `comparisons` repair. The only finite
+choice is `target_kind: unspecified` with that target omitted; no target is
+invented, substituted or re-resolved and cues stay fixed. Narrow revalidation
+exception: the resulting `target_unspecified` is the only new issue admitted
+(honest, still reviewable); no coverage loss. `cue_ambiguous` and
+`explicit_target_scope` do not dispatch. Deterministic tests only; no model run,
+no fidelity claim, user host stays v1.
+
 ## D-066 — Bounded repair for ellipsis role binding (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: ellipsis issue
