@@ -1,5 +1,8 @@
 # OBT Current Implementation State
 
+> [!WARNING]
+> **Legacy Non-Economic Prototype Snapshot (`P0-ADR-001`):** The legacy `ku-core` OBT modules listed below remain isolated as `simulated_non_economic` compatibility code. Authoritative vNext Pillar 5 economics (`RewardEvidenceNoticeV2`, `D-014` accepted work, `M7` benefit closure, `u128` fixed-point math, and partition-honest finality) are specified in [P5 OBT Benefit and Work Economy Profile v1](vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md) and [Legacy/vNext Product Boundary ADR v1](vnext/LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md).
+
 > Last updated: 2026-07-01
 
 ## Progress: ~82% Implemented

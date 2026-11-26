@@ -1,5 +1,8 @@
 # 🔍 Cross-Pillar Gap Analysis — KU v7 Architecture
 
+> [!WARNING]
+> **Historical v6/v7 Audit Snapshot (Superseded by vNext 10-Pillar Architecture):** This 2026-07-11 audit recorded legacy `Core DNA` / SQLite integration gaps. For the authoritative, closed 10-pillar cross-pillar contract and firewalls (`FW-01..FW-10`), see [Ten-Pillar Architecture & Interaction Matrix v1](vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md) and the `P1`–`P10` profiles in [`docs/specs/vnext/`](vnext/README.md).
+
 > Reviewed by 4 parallel agents (v6), updated for v7 (2026-07-11). Total: **34 original + 5 v7-specific issues**.
 
 ## Executive Summary

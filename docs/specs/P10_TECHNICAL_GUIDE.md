@@ -1,5 +1,8 @@
 # 🔧 Pillar 10: Technical Guide — Chỉ dẫn kỹ thuật chung cho tất cả nền tảng
 
+> [!WARNING]
+> **Historical Legacy UI Handbook (Superseded on vNext Surfaces):** Legacy assumptions in this file (such as `§15` disabling Encode/Chat offline, direct SQLite assumptions, and legacy economic wallet claims) are superseded by `DR-P1.1`, `DR-P3.1..3.4`, `BASE-V1`, the pinned Mobile contract (`docs/design/mobile/mobile_build_contract_v1.json`), and [P10 Multi-Surface Sync and Client Adapter Profile v1](vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md).
+
 > **Tài liệu này là "developer handbook" cho MỌI platform developer (React, Tauri, Flutter, Extension, Bot).**
 > Mọi thông tin cần thiết để implement UI: data model, API endpoints, config, error codes, protocol constants.
 > Ngày: 07/07/2026

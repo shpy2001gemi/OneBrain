@@ -95,6 +95,26 @@ cargo build --features persist
 
 ## Specification Documents
 
+### Canonical vNext 10-Pillar Specification Closure (`ARCH-10P-001`)
+
+All ten OneBrain pillars (`P1`–`P10`) and their mutual interactions/firewalls (`FW-01`–`FW-10`) are normatively specified in [`specs/vnext/`](specs/vnext/README.md) and machine-verified by `scripts/ci/validate_ten_pillar_contracts.py` (`Reachability: spec-only (CI-checked)` for unimplemented future-milestone lanes):
+
+| Pillar | Normative vNext Gap-Closure Profile | Scope & Cross-Pillar Seam Closure |
+|--------|-------------------------------------|-----------------------------------|
+| **Cross-Pillar (`P1`–`P10`)** | [TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1](specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md) | Acyclic authority DAG, partition confluence split, pairwise seam table, `FW-01..FW-10`, end-to-end lifecycles |
+| **P1: Knowledge Unit (KU)** | [P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1](specs/vnext/P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1.md) | Ontology redirect/split/retire, CCID collision quarantine, `ScopedConceptCcid`, `D-012` `.obr` chunk pull, `D-011` v2 lowering |
+| **P2: OneBrain Protocol (OBP)** | [P2_FAST_RECONCILIATION_MAILBOX_AND_BLOB_TRANSPORT_PROFILE_V1](specs/vnext/P2_FAST_RECONCILIATION_MAILBOX_AND_BLOB_TRANSPORT_PROFILE_V1.md) | `RIBLT-1` fast set-sketch diff, `FrontierSummaryPage`, `obp/mailbox/1` E2EE staging, `obp/blob-chunks/1` streaming |
+| **P3: Knowledge Query (KQL)** | [P3_KQL_NEED_COMPILER_AND_ACTIVE_DISCOVERY_PROFILE_V1](specs/vnext/P3_KQL_NEED_COMPILER_AND_ACTIVE_DISCOVERY_PROFILE_V1.md) | Deterministic `FIND → KnowledgeNeedIr` compiler, virtual affordance 3-state match, `M6A` multipath & provider discovery |
+| **P4: PoMV & Fidelity** | [P4_DISTRIBUTED_OUTCOME_BENEFIT_CONVERGENCE_PROFILE_V1](specs/vnext/P4_DISTRIBUTED_OUTCOME_BENEFIT_CONVERGENCE_PROFILE_V1.md) | `M6B` `Derivation`/`Outcome`/`Benefit` consent publishers, out-of-order staging, `OutcomeCaseId` conflict coexistence |
+| **P5: OBT Economy** | [P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1](specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md) | Firewalled `RewardEvidenceNoticeV2`, `u128` fixed-point math, `D-014` work + `M7` benefit tracks, partition-honest finality |
+| **P6: AI Layer** | [P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1](specs/vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md) | `RUN-003` `obp/cognition/1`, `D-013` delegated encode & blind verify leases, `PrivateVault` Personal AI Mediator |
+| **P7: Knowledge Graph (OBKG)** | [P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1](specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md) | 5-plane disposable `OBKG-002`, `KQL-002..011` discovery pipeline, firewalled salience / Dream vNext / CCID-grounded KGE |
+| **P8: Storage (OBS)** | [P8_GENERATION_ARCHIVE_AND_CROSS_STORE_RECOVERY_PROFILE_V1](specs/vnext/P8_GENERATION_ARCHIVE_AND_CROSS_STORE_RECOVERY_PROFILE_V1.md) | `OBARV002` `0x0002` & `0x000B..0x000F` closure, 4-phase Redb recovery, `TombstoneEpochAccumulatorV1` rollover |
+| **P9: BCI Protocol** | [P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1](specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md) | 3-plane capability boundary (`ARBITRARY_NEURAL_WRITE` prohibited), `SomaticBiometricRaw` Vault lock, `SomaticImmediate/1` `0-ms` kill |
+| **P10: Surfaces & Personal Mesh** | [P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1](specs/vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md) | Offline-first law, zero-key-reuse `obp/personal-mesh/1` + epoch rotation, `obc_surface1` Extension/Bot/Glasses ceilings |
+
+### Historical & Legacy Module Specifications
+
 | # | Document | Pillar | Nội dung |
 |---|----------|--------|----------|
 | 1 | [KU Architecture](specs/KU_ARCHITECTURE.md) | P1 | 3-layer architecture overview, KuRuntime, CID |

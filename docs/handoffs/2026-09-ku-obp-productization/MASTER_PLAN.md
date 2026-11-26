@@ -58,10 +58,13 @@ Publication/merge state remains separate.
 D-046), bringing the 24-task KU–OBP workstream to **22 Merged / 2 Deferred**
 (`23-KU-ENC-003` and `24-KU-SEM-001`). In addition, **13 of 15** D-051
 architecture remediation items (`ARCH-01..09`, `ARCH-11..13`, `ARCH-15`),
-multi-OS first-run and two-node share CI (`D-056`–`D-059`, `D-062`, `D-063`), and
+multi-OS first-run and two-node share CI (`D-056`–`D-059`, `D-062`, `D-063`),
 eighteen narrow `SEM-F03` semantic repair slices (`D-060`, `D-061`, `D-064`–`D-075`
-round 2) are merged on `main` with green CI. Active bounded slices are selected from
-the backlogs below and tracked in [PROGRESS](PROGRESS.md).
+round 2), Desktop/CLI/Web `/ku` parity (`t23`–`t25`, `D-075` rounds 3–5), and
+complete 10-pillar vNext specification & cross-pillar firewall closure
+([`TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md`](../../specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md),
+`ARCH-10P-001`, `spec-only` CI-checked) are merged on `main` with green CI. Active
+bounded slices are selected from the backlogs below and tracked in [PROGRESS](PROGRESS.md).
 
 ## MVP checks and stopping rule
 

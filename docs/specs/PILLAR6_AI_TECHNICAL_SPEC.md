@@ -1,5 +1,8 @@
 # Pillar 6 — AI Layer: Technical Specification
 
+> [!WARNING]
+> **Historical v7.1 Crate Baseline (Extended & Governed by vNext P6 Contracts):** For authoritative vNext Pillar 6 contracts — including `CAP-001..005`, `AI-001..005`, `KU-ENC-001`, `KU-SEM-001` v1/v2, `RUN-003` remote cognition, `D-013` delegated encode/verify, and the `PrivateVault`-backed Personal AI Mediator — see [P6 Remote Cognition and Personal Mediator Profile v1](vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md) and [`docs/specs/vnext/README.md`](vnext/README.md).
+
 ## 1. Executive Summary
 
 Pillar 6 introduces a **local-first AI layer** to OneBrain through three new Rust crates that provide pluggable LLM inference, AI-assisted knowledge encoding, and a personal AI mediator interface. The implementation prioritizes offline capability, device adaptability, and seamless integration with the existing 7-pillar architecture.

@@ -1,0 +1,424 @@
+{
+  "format": "onebrain/ten-pillar-architecture/1",
+  "profile_id": "ARCH-10P-001",
+  "master_spec": "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+  "reachability": "spec-only (CI-checked)",
+  "pillars": [
+    {
+      "pillar_id": "P1",
+      "name": "Knowledge Unit & Concept Registry",
+      "profile_id": "P1-KU-LIFECYCLE-001",
+      "gap_closing_spec": "docs/specs/vnext/P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/IDENTITY_OBJECT_PROFILE_V1.md",
+        "docs/specs/vnext/SEMANTIC_PRIMITIVES_V1.md",
+        "docs/specs/vnext/RECEPTOR_PROFILE_V1.md",
+        "docs/specs/vnext/KNOWLEDGE_AFFORDANCE_PROFILE_V1.md",
+        "docs/specs/vnext/ASSEMBLY_MANIFEST_PROFILE_V1.md",
+        "docs/specs/vnext/MAPPING_PROFILE_V1.md",
+        "docs/specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md",
+        "docs/specs/vnext/CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md"
+      ],
+      "fnd001_domains": ["SEMANTIC_IDENTITY", "PROVENANCE_EVIDENCE"],
+      "acyclic_plane_rank": 1,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Concept Lifecycle, Alias Equivalence, and CCID Collision Handling",
+        "## 3. Node-Assisted Content-Addressed Registry Distribution (`D-012`)",
+        "## 4. Rich Draft Lowering (`D-011`) and Signed Revision Lineage"
+      ]
+    },
+    {
+      "pillar_id": "P2",
+      "name": "OneBrain Protocol (OBP)",
+      "profile_id": "P2-OBP-EXTENSIONS-001",
+      "gap_closing_spec": "docs/specs/vnext/P2_FAST_RECONCILIATION_MAILBOX_AND_BLOB_TRANSPORT_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/AUTHENTICATED_SESSION_PROFILE_V1.md",
+        "docs/specs/vnext/HYBRID_INVENTORY_FOREST_PROFILE_V1.md",
+        "docs/specs/vnext/OBP_RECONCILIATION_PROTOCOL_PROFILE_V1.md",
+        "docs/specs/vnext/OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md",
+        "docs/specs/vnext/PROVIDER_LEASE_RETIRE_PROFILE_V1.md"
+      ],
+      "fnd001_domains": ["AVAILABILITY", "RUNTIME_CONTROL"],
+      "acyclic_plane_rank": 3,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Negotiated `RIBLT-1` Fast-Path Sketch Reconciliation (`RIB-001` / `RIB-002`)",
+        "## 3. Resolving `UnexplainedHybridRootDifference` via Feed-Prefix Frontier Exchange",
+        "## 4. Outbound-First E2EE Intermittent Mailbox (`obp/mailbox/1`)",
+        "## 5. Chunked `OwnedBlob` Transport (`obp/blob-chunks/1`)"
+      ]
+    },
+    {
+      "pillar_id": "P3",
+      "name": "Knowledge Query Language (KQL)",
+      "profile_id": "P3-KQL-COMPILER-M6A-001",
+      "gap_closing_spec": "docs/specs/vnext/P3_KQL_NEED_COMPILER_AND_ACTIVE_DISCOVERY_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/KQL_QUERY_BOUNDARY_PROFILE_V1.md",
+        "docs/specs/vnext/KQL_SEMANTIC_INDEX_PROFILE_V1.md",
+        "docs/specs/vnext/KQL_EXACT_TYPED_MATCHER_PROFILE_V1.md",
+        "docs/specs/vnext/STANDING_NEED_MINIMAL_VIEW_PROFILE_V1.md",
+        "docs/specs/vnext/KQL_PRIVATE_MULTIPATH_PROFILE_V1.md",
+        "docs/specs/vnext/DISCLOSURE_POLICY_SANITIZER_V1.md"
+      ],
+      "fnd001_domains": ["LOCAL_PRIVATE_STATE", "RUNTIME_CONTROL", "DERIVED_VIEW"],
+      "acyclic_plane_rank": 4,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Deterministic Bounded `FIND → KnowledgeNeedIr` Compiler (`KQL-CMP-001`)",
+        "## 3. Direct Committed `SemanticFrameSet` ↔ `KnowledgeNeedIr` Matching",
+        "## 4. `M6A` Active Distributed KQL Runtime Persistence & Wire Closure"
+      ]
+    },
+    {
+      "pillar_id": "P4",
+      "name": "Proof of Metabolic Value (PoMV) & Encoding Fidelity",
+      "profile_id": "P4-POMV-CONVERGENCE-001",
+      "gap_closing_spec": "docs/specs/vnext/P4_DISTRIBUTED_OUTCOME_BENEFIT_CONVERGENCE_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/USE_DERIVATION_EVIDENCE_PROFILE_V1.md",
+        "docs/specs/vnext/METABOLIC_EVIDENCE_VIEW_V1.md",
+        "docs/specs/vnext/OUTCOME_BENEFIT_EVIDENCE_PROFILE_V1.md",
+        "docs/specs/vnext/ENCODING_FIDELITY_EVIDENCE_PROFILE_V1.md",
+        "docs/specs/vnext/FIDELITY_ASSESSMENT_REDUCER_V1.md",
+        "docs/specs/vnext/KNOWLEDGE_REWARD_FIREWALL_V1.md"
+      ],
+      "fnd001_domains": ["PROVENANCE_EVIDENCE", "DERIVED_VIEW"],
+      "acyclic_plane_rank": 2,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Two-Step Consent & Transactional Publishers for `Derivation`, `Outcome`, and `Benefit`",
+        "## 3. Out-of-Order Reconciliation & Non-Terminal Dependency Deferral",
+        "## 4. Per-Author Frontier Authority & Conflict-Preserving Convergence"
+      ]
+    },
+    {
+      "pillar_id": "P5",
+      "name": "OneBrain Token (OBT)",
+      "profile_id": "P5-OBT-ECONOMY-VNEXT-001",
+      "gap_closing_spec": "docs/specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md",
+        "docs/specs/vnext/KNOWLEDGE_REWARD_FIREWALL_V1.md"
+      ],
+      "fnd001_domains": ["ECONOMIC_CONSUMER"],
+      "acyclic_plane_rank": 6,
+      "confluence_class": "post_commit_non_i_confluent_isolated",
+      "required_headings": [
+        "## 2. Crate Isolation, Protocol Lane (`obp/obt-ledger/1`), and Durable Firewall v2 (`M7.1`)",
+        "## 4. Dual-Track Issuance Model: Harmonizing `D-014` (Track A) and `M7` (Track B)",
+        "## 5. Pre-Finality Challenge Window & Partition-Honest Account-Chain Settlement (`M7.2–M7.3`)"
+      ]
+    },
+    {
+      "pillar_id": "P6",
+      "name": "AI Layer",
+      "profile_id": "P6-AI-MEDIATOR-RUN003-001",
+      "gap_closing_spec": "docs/specs/vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/CAPABILITY_LAYER_PROFILE_V1.md",
+        "docs/specs/vnext/DELEGATION_PERMIT_VALIDATION_PROFILE_V1.md",
+        "docs/specs/vnext/TYPED_COGNITIVE_EXECUTOR_PROFILE_V1.md",
+        "docs/specs/vnext/AI_LOCAL_OBSERVATION_INTAKE_V1.md",
+        "docs/specs/vnext/AI_MODEL_RECALL_FIREWALL_V1.md",
+        "docs/specs/vnext/AI_LOCAL_KNOWLEDGE_COMPANION_V1.md",
+        "docs/specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md",
+        "docs/specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V2.md"
+      ],
+      "fnd001_domains": ["RUNTIME_CONTROL", "PROVENANCE_EVIDENCE", "AUTHORITY"],
+      "acyclic_plane_rank": 2,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. `RUN-003` Optional Remote Cognition Protocol (`obp/cognition/1`)",
+        "## 3. `D-013` Delegated Encoding and Autonomous Blind Verification Jobs",
+        "## 4. Sovereign Personal AI Mediator (`PAM`) vNext Bridge"
+      ]
+    },
+    {
+      "pillar_id": "P7",
+      "name": "OneBrain Knowledge Graph (OBKG)",
+      "profile_id": "P7-OBKG-UNIFIED-001",
+      "gap_closing_spec": "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/OBKG_DERIVED_PROJECTION_PROFILE_V1.md",
+        "docs/specs/vnext/RECEPTOR_RESOLUTION_PROFILE_V1.md",
+        "docs/specs/vnext/MAPPING_MATERIALIZATION_PROFILE_V1.md"
+      ],
+      "fnd001_domains": ["DERIVED_VIEW"],
+      "acyclic_plane_rank": 4,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Multi-Plane Disposable `ObkgProjectionSnapshot` (`OBKG-002`)",
+        "## 3. Cross-Domain Discovery & Assembly Orchestration (`P7 ↔ P3`)",
+        "## 4. Firewalled Bio-Inspired Heuristics, \"Dream vNext\", and Grounded KGE"
+      ]
+    },
+    {
+      "pillar_id": "P8",
+      "name": "OneBrain Storage (OBS)",
+      "profile_id": "P8-OBS-RECOVERY-001",
+      "gap_closing_spec": "docs/specs/vnext/P8_GENERATION_ARCHIVE_AND_CROSS_STORE_RECOVERY_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/VALIDATED_STORAGE_PROFILE_V1.md",
+        "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",
+        "docs/specs/vnext/BASE_V1_STORAGE_INTEGRITY_PROFILE.md",
+        "docs/specs/vnext/OPERATIONAL_COMPACTION_PROFILE_V1.md",
+        "docs/specs/vnext/CHECKPOINT_COMPACTION_AND_LOCAL_GC_PROFILE_V1.md"
+      ],
+      "fnd001_domains": ["VALIDATED_CUSTODY", "LOCAL_PRIVATE_STATE"],
+      "acyclic_plane_rank": 3,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Complete `OBARV002` Archive & Restore Closure (`0x0002`, `0x000B`–`0x000F`)",
+        "## 3. Deterministic Four-Phase Cross-Store Crash Recovery",
+        "## 4. Proof-Anchored Terminal Tombstone Epoch Rollover & Local GC"
+      ]
+    },
+    {
+      "pillar_id": "P9",
+      "name": "BCI Protocol & Somatic Safety",
+      "profile_id": "P9-BCI-SAFETY-001",
+      "gap_closing_spec": "docs/specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/AI_LOCAL_OBSERVATION_INTAKE_V1.md",
+        "docs/specs/vnext/REVOCATION_FRESHNESS_POLICY_V1.md",
+        "docs/specs/vnext/DISCLOSURE_POLICY_SANITIZER_V1.md",
+        "docs/specs/vnext/THREAT_MODEL_V1.md"
+      ],
+      "fnd001_domains": ["LOCAL_PRIVATE_STATE", "AUTHORITY"],
+      "acyclic_plane_rank": 5,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Strict Three-Plane Somatic Capability Architecture",
+        "## 3. Non-Sanitizable Biometric Taint & Crypto-Shredding (`SEC-001` / `OBS-002`)",
+        "## 4. `SomaticImmediate/1` Authority & Zero-Latency Revocation (`REV-001` Extension)",
+        "## 5. BCI Higher-Risk Threat Model Controls (`THREAT_MODEL_V1` §5 Closure)"
+      ]
+    },
+    {
+      "pillar_id": "P10",
+      "name": "User Interfaces, Personal Mesh & Client Adapters",
+      "profile_id": "P10-SURFACES-SYNC-001",
+      "gap_closing_spec": "docs/specs/vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md",
+      "core_foundation_specs": [
+        "docs/specs/vnext/VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md",
+        "docs/specs/vnext/VNEXT_REST_API_PROFILE_V1.md",
+        "docs/specs/vnext/VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md",
+        "docs/specs/vnext/VNEXT_CLI_PROFILE_V1.md",
+        "docs/specs/vnext/VNEXT_DESKTOP_WEB_UX_PROFILE_V1.md",
+        "docs/specs/vnext/ACTOR_ROOT_AUTHORITY_PROFILE_V1.md"
+      ],
+      "fnd001_domains": ["CLIENT_PROJECTION"],
+      "acyclic_plane_rank": 5,
+      "confluence_class": "validated_union_i_confluent",
+      "required_headings": [
+        "## 2. Offline-First Usability & Honest Surface Law",
+        "## 3. Zero-Key-Reuse Personal Mesh (`obp/personal-mesh/1`)",
+        "## 4. Per-Surface Capability Ceiling (`obc_surface1`) & Auxiliary Adapters"
+      ]
+    }
+  ],
+  "firewalls": [
+    {
+      "id": "FW-01",
+      "name": "Encode != Publish Firewall",
+      "source_pillars": ["P6", "P9", "P10"],
+      "target_pillars": ["P1", "P8", "P2"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-02",
+      "name": "Proposal != Materialize != Adopt Firewall",
+      "source_pillars": ["P3", "P6", "P7"],
+      "target_pillars": ["P1", "P8"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-03",
+      "name": "Symbolic Validity / Model Recall Firewall",
+      "source_pillars": ["P6", "P7"],
+      "target_pillars": ["P1", "P3"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/AI_MODEL_RECALL_FIREWALL_V1.md",
+        "docs/specs/vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md",
+        "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-04",
+      "name": "Private Cognitive Intent & Taint Firewall",
+      "source_pillars": ["P3", "P8", "P9"],
+      "target_pillars": ["P2"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P3_KQL_NEED_COMPILER_AND_ACTIVE_DISCOVERY_PROFILE_V1.md",
+        "docs/specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-05",
+      "name": "Transport & Availability != Authority Firewall",
+      "source_pillars": ["P2"],
+      "target_pillars": ["P1", "P4", "P6"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1.md",
+        "docs/specs/vnext/P2_FAST_RECONCILIATION_MAILBOX_AND_BLOB_TRANSPORT_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-06",
+      "name": "Exposure != Use != Benefit != Truth Firewall",
+      "source_pillars": ["P3", "P6", "P10"],
+      "target_pillars": ["P4", "P1"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P4_DISTRIBUTED_OUTCOME_BENEFIT_CONVERGENCE_PROFILE_V1.md",
+        "docs/specs/vnext/P6_REMOTE_COGNITION_AND_PERSONAL_MEDIATOR_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-07",
+      "name": "One-Way Knowledge -> Economy Firewall",
+      "source_pillars": ["P1", "P2", "P3", "P4", "P6", "P7", "P8"],
+      "target_pillars": ["P5"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/KNOWLEDGE_REWARD_FIREWALL_V1.md",
+        "docs/specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md",
+        "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-08",
+      "name": "Somatic & Cognitive Liberty Firewall",
+      "source_pillars": ["P9"],
+      "target_pillars": ["P6", "P8", "P2", "P10"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-09",
+      "name": "Derived-View Disposability Firewall",
+      "source_pillars": ["P8", "P1", "P4"],
+      "target_pillars": ["P3", "P7"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md",
+        "docs/specs/vnext/P8_GENERATION_ARCHIVE_AND_CROSS_STORE_RECOVERY_PROFILE_V1.md"
+      ]
+    },
+    {
+      "id": "FW-10",
+      "name": "Least-Privilege Surface & Personal-Mesh Epoch Firewall",
+      "source_pillars": ["P10"],
+      "target_pillars": ["P1", "P2", "P8", "P9"],
+      "enforced_in_specs": [
+        "docs/specs/vnext/TEN_PILLAR_ARCHITECTURE_AND_INTERACTION_MATRIX_V1.md",
+        "docs/specs/vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md"
+      ]
+    }
+  ],
+  "canonical_authority_dag_edges": [
+    {"from": "P1", "to": "P4", "relation": "causal_subject_cid_reference"},
+    {"from": "P1", "to": "P6", "relation": "semantic_schema_and_registry_grounding"},
+    {"from": "P1", "to": "P8", "relation": "canonical_envelope_custody"},
+    {"from": "P4", "to": "P8", "relation": "signed_evidence_custody"},
+    {"from": "P6", "to": "P8", "relation": "vault_intake_and_quarantine_custody"},
+    {"from": "P8", "to": "P2", "relation": "validated_inventory_and_outbox_feed"},
+    {"from": "P8", "to": "P3", "relation": "rebuildable_index_and_need_vault_source"},
+    {"from": "P8", "to": "P7", "relation": "disposable_multi_plane_projection_source"},
+    {"from": "P2", "to": "P3", "relation": "scoped_delta_and_capsule_delivery"},
+    {"from": "P3", "to": "P10", "relation": "scoped_query_view_projection"},
+    {"from": "P7", "to": "P10", "relation": "disposable_graph_view_projection"},
+    {"from": "P9", "to": "P10", "relation": "foreground_companion_hud_cue_binding"},
+    {"from": "P4", "to": "P5", "relation": "post_commit_benefit_closure_notice"},
+    {"from": "P6", "to": "P5", "relation": "post_commit_accepted_work_notice"},
+    {"from": "P8", "to": "P5", "relation": "durable_post_commit_notice_outbox"}
+  ],
+  "additive_negative_assertions": [
+    {
+      "id": "NEG-P1-001",
+      "pillar": "P1",
+      "spec": "docs/specs/vnext/P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1.md",
+      "statement": "ConceptLifecycleTable redirects/splits/retirements MUST NOT rewrite historical stored SemanticFrameSet or CoreDna bytes."
+    },
+    {
+      "id": "NEG-P1-002",
+      "pillar": "P1",
+      "spec": "docs/specs/vnext/P1_CONCEPT_LIFECYCLE_AND_REGISTRY_DISTRIBUTION_PROFILE_V1.md",
+      "statement": "Multi-gigabyte Concept Registry (.obr) payloads MUST NOT enter HybridInventoryForest or unsolicited OBP gossip."
+    },
+    {
+      "id": "NEG-P2-001",
+      "pillar": "P2",
+      "spec": "docs/specs/vnext/P2_FAST_RECONCILIATION_MAILBOX_AND_BLOB_TRANSPORT_PROFILE_V1.md",
+      "statement": "RIBLT-1 set-sketch decode MUST NOT bypass exact RadixForest256V1 root verification or manifest-before-payload validation."
+    },
+    {
+      "id": "NEG-P5-001",
+      "pillar": "P5",
+      "spec": "docs/specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md",
+      "statement": "IEEE-754 floating-point arithmetic (f32/f64) MUST NOT execute anywhere on the P5 issuance, fee, or balance state path."
+    },
+    {
+      "id": "NEG-P5-002",
+      "pillar": "P5",
+      "spec": "docs/specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md",
+      "statement": "Offline or partitioned islands (GossipGap / ConnectivityProof absence) MUST NOT trigger OBT balance slashing or knowledge exclusion."
+    },
+    {
+      "id": "NEG-P5-003",
+      "pillar": "P5",
+      "spec": "docs/specs/vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md",
+      "statement": "Unverified KU creation, exposure hits, or unchallenged self-loop Use events MUST NOT mint OBT."
+    },
+    {
+      "id": "NEG-P7-001",
+      "pillar": "P7",
+      "spec": "docs/specs/vnext/P7_UNIFIED_OBKG_AND_CROSS_DOMAIN_DISCOVERY_PROFILE_V1.md",
+      "statement": "Historical OBKG queries MUST bind to cryptographic frontiers/checkpoints rather than unverified wall-clock timestamps, and obkg_rewards.rs MUST NOT mint OBT."
+    },
+    {
+      "id": "NEG-P8-001",
+      "pillar": "P8",
+      "spec": "docs/specs/vnext/P8_GENERATION_ARCHIVE_AND_CROSS_STORE_RECOVERY_PROFILE_V1.md",
+      "statement": "Restoring an OBARV002 archive MUST install per-FeedId highest_issued_seq floors before signing resumes so single-writer feeds never equivocate."
+    },
+    {
+      "id": "NEG-BCI-001",
+      "pillar": "P9",
+      "spec": "docs/specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md",
+      "statement": "EFFECT_ARBITRARY_NEURAL_WRITE MUST fail closed across schema decode, permit validation, executor dispatch, and HAL gateware."
+    },
+    {
+      "id": "NEG-BCI-002",
+      "pillar": "P9",
+      "spec": "docs/specs/vnext/P9_BCI_NEURAL_INTENT_AND_SAFETY_PROFILE_V1.md",
+      "statement": "TaintClass::SomaticBiometricRaw waveforms and neural calibration weights MUST NOT leave local PrivateVault onto OBP, Personal Mesh, or RUN-003 capsules."
+    },
+    {
+      "id": "NEG-P10-001",
+      "pillar": "P10",
+      "spec": "docs/specs/vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md",
+      "statement": "Personal Mesh pairing MUST NOT share FeedEventSigner private keys across devices."
+    },
+    {
+      "id": "NEG-P10-002",
+      "pillar": "P10",
+      "spec": "docs/specs/vnext/P10_MULTI_SURFACE_SYNC_AND_CLIENT_ADAPTER_PROFILE_V1.md",
+      "statement": "Browser extension and chat bot adapters MUST NOT hold obm1 admin tokens, read owner PrivateVault bulk state, or execute step-2 PUBLIC confirmation."
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # 💰 OBT Token — Phân Tích 3 Nguyên Tắc Thiết Kế
 
+> [!WARNING]
+> **Historical Pre-vNext Design Exploration (Superseded in vNext):** Early concepts in this file and `docs/specs/obt/01..09` (such as minting on KU creation, storage PoS-KU rewards, `GossipGap` partition penalties, `f64` math, and `obkg_rewards.rs`) are superseded by `POMV-003`, `D-014`, `M7`, and the normative vNext Pillar 5 specification: [P5 OBT Benefit and Work Economy Profile v1](vnext/P5_OBT_BENEFIT_AND_WORK_ECONOMY_PROFILE_V1.md).
+
 > Owner directives + technical analysis | 30/06/2026
 >
 > *v7 note (2026-07-11): BlobStore introduces `StorageReward` for media hosting. ConceptRegistry hosting does not need separate incentive (bundled with node participation).*

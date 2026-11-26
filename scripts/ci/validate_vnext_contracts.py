@@ -59,6 +59,7 @@ if __package__:
         KuContractError,
         validate_contract as validate_ku_product_profile,
     )
+    from .validate_ten_pillar_contracts import validate_ten_pillar_contracts
 else:
     from vnext_contract_common import (
         ROOT,
@@ -101,6 +102,7 @@ else:
         KuContractError,
         validate_contract as validate_ku_product_profile,
     )
+    from validate_ten_pillar_contracts import validate_ten_pillar_contracts
 
 
 PLAN = ROOT / "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
@@ -6993,6 +6995,12 @@ def main() -> int:
             registry_runner_workflow_checks,
             registry_runner_fixture_checks,
         ) = validate_concept_registry_runner_kit()
+        (
+            ten_pillar_count,
+            ten_pillar_firewalls,
+            ten_pillar_edges,
+            ten_pillar_negative_assertions,
+        ) = validate_ten_pillar_contracts()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -7072,6 +7080,8 @@ def main() -> int:
         f"{registry_runner_guide_checks} guide checks/"
         f"{registry_runner_workflow_checks} workflow checks/"
         f"{registry_runner_fixture_checks} fixture checks, "
+        f"{ten_pillar_count} pillars/{ten_pillar_firewalls} firewalls/"
+        f"{ten_pillar_edges} authority edges/{ten_pillar_negative_assertions} pillar assertions, "
         f"{links} local links"
     )
     return 0
