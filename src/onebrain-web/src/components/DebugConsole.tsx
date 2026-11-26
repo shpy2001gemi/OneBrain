@@ -1,27 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bug, X, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { ws } from '../api/ws';
-
-export interface DebugEntry {
-  id: number;
-  timestamp: Date;
-  type: 'request' | 'response' | 'error' | 'ws' | 'info';
-  method?: string;
-  path?: string;
-  status?: number;
-  duration?: number;
-  body?: string;
-  message?: string;
-}
-
-let entryId = 0;
-const debugListeners: Set<(entry: DebugEntry) => void> = new Set();
-
-/** Call this from the API client to log requests */
-export function logDebug(entry: Omit<DebugEntry, 'id' | 'timestamp'>) {
-  const full: DebugEntry = { ...entry, id: ++entryId, timestamp: new Date() };
-  debugListeners.forEach(fn => fn(full));
-}
+import { logDebug, subscribeDebug, type DebugEntry } from './debugLog';
 
 export function DebugConsole() {
   const [open, setOpen] = useState(false);
@@ -30,11 +10,9 @@ export function DebugConsole() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handler = (entry: DebugEntry) => {
+    return subscribeDebug((entry: DebugEntry) => {
       setEntries(prev => [...prev.slice(-200), entry]); // keep last 200
-    };
-    debugListeners.add(handler);
-    return () => { debugListeners.delete(handler); };
+    });
   }, []);
 
   // Listen to WebSocket events

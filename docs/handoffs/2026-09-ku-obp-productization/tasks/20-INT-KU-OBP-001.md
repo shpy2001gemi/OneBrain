@@ -6,7 +6,14 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — CLI `onebrain ku summary` and `onebrain ku semantic` parity (t24, D-075 round 4, 2026-11-26)
+## Latest follow-up — Web `oxlint` React Hook and Fast Refresh CI warning cleanup (t25, D-075 round 5, 2026-11-26)
+
+Selected as round 5 of 5 under D-075 on the Web CI hygiene track (`Task 07/16/20`): eliminated all 8 `oxlint` warnings (`react-hooks/exhaustive-deps` and `react/only-export-components`) in `src/onebrain-web` so `npm run lint` finishes with 0 errors and 0 warnings and stops emitting GitHub Actions warning annotations on `foundation-contract`.
+
+- **Component/helper split:** extracted `DebugEntry`, `subscribeDebug` and `logDebug` into [debugLog.ts](../../../../src/onebrain-web/src/components/debugLog.ts) so [DebugConsole.tsx](../../../../src/onebrain-web/src/components/DebugConsole.tsx) exports only `DebugConsole`, updating [client.ts](../../../../src/onebrain-web/src/api/client.ts) and [vnextUx.test.tsx](../../../../src/onebrain-web/tests/vnextUx.test.tsx).
+- **Hook dependencies:** wrapped callbacks and declared complete effect dependencies in [KuReviewDraft.tsx](../../../../src/onebrain-web/src/pages/KuReviewDraft.tsx), [Settings.tsx](../../../../src/onebrain-web/src/pages/Settings.tsx), [useNotifications.ts](../../../../src/onebrain-web/src/hooks/useNotifications.ts) and [KqlEditor.tsx](../../../../src/onebrain-web/src/components/KqlEditor.tsx) (`initialValueRef` preserves initial CodeMirror doc while external updates still sync via `view.dispatch`). No UI, route, DTO, consent or trust change.
+
+## Earlier follow-up — CLI `onebrain ku summary` and `onebrain ku semantic` parity (t24, D-075 round 4, 2026-11-26)
 
 Selected as round 4 of 5 under D-075 on the CLI/Web/Desktop `/ku` parity track: added `onebrain ku summary` and `onebrain ku semantic --object-cid <64-hex>…` (1..64 CIDs) in [ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs), projecting the already-registered `POST /api/vnext/ku/editor` actions `workspace_summary` and `saved_semantic` with zero new routes, DTOs or wire fields.
 

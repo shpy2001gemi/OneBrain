@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { StatusResponse, VNextRuntimeStatus } from '../api/types';
 import { Server, Cpu, Database, Shield, RefreshCw, Check, AlertCircle, Bell, ArrowRightLeft, Loader2, Network } from 'lucide-react';
 import { api, VNextApiError } from '../api/client';
@@ -104,22 +104,15 @@ export function SettingsPage() {
   const [msgType, setMsgType] = useState<'ok' | 'err'>('ok');
   const [switching, setSwitching] = useState('');
 
-  useEffect(() => {
-    fetchStatus();
-    fetchVnextStatus();
-    fetchModels();
-    fetchLoaded();
-  }, []);
-
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const s = await api.getStatus();
       setStatus(s);
       setCurrentModel(s.model || '');
     } catch {}
-  };
+  }, []);
 
-  const fetchVnextStatus = async () => {
+  const fetchVnextStatus = useCallback(async () => {
     setVnextStatusError('');
     try {
       const result = await api.getVNextRuntimeStatus();
@@ -132,23 +125,30 @@ export function SettingsPage() {
           : reason instanceof Error ? reason.message : String(reason),
       );
     }
-  };
+  }, []);
 
-  const fetchModels = async () => {
+  const fetchModels = useCallback(async () => {
     try {
       const r = await fetch(`${ollamaUrl}/api/tags`);
       const j = await r.json();
       setModels(j.models || []);
     } catch {}
-  };
+  }, [ollamaUrl]);
 
-  const fetchLoaded = async () => {
+  const fetchLoaded = useCallback(async () => {
     try {
       const r = await fetch(`${ollamaUrl}/api/ps`);
       const j = await r.json();
       setLoadedModels((j.models || []).map((m: { name: string }) => m.name));
     } catch {}
-  };
+  }, [ollamaUrl]);
+
+  useEffect(() => {
+    fetchStatus();
+    fetchVnextStatus();
+    fetchModels();
+    fetchLoaded();
+  }, [fetchStatus, fetchVnextStatus, fetchModels, fetchLoaded]);
 
   const unloadModel = async (name: string) => {
     try {

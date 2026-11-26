@@ -12,7 +12,7 @@ import type {
 } from '../src/api/types';
 
 const debug = vi.hoisted(() => ({ entries: [] as Array<Record<string, unknown>> }));
-vi.mock('../src/components/DebugConsole', async importOriginal => ({
+vi.mock('../src/components/debugLog', async importOriginal => ({
   ...(await importOriginal<object>()),
   logDebug: (entry: Record<string, unknown>) => { debug.entries.push(entry); },
 }));

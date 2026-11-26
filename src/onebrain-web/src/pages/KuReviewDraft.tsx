@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KuClient, Models, ReviewJob, Session, TextIntake } from "../api/ku";
 import { KuDraftClaims } from "./KuDraftClaims";
 import { KuReviewLowering } from "./KuReviewLowering";
@@ -26,9 +26,10 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
   const [recent, setRecent] = useState<{operation_id:string;model:string;state:string;created_ms:number}[]>([]);
   const serial = useRef(0);
   const actionLock = useRef(false);
+  const bumpSerial = useCallback(() => ++serial.current, []);
   const bytes = new TextEncoder().encode(text).length;
-  async function read(id: string) {
-    const n = ++serial.current;
+  const read = useCallback(async (id: string) => {
+    const n = bumpSerial();
     const status = await client.status();
     const result = await client.reviewGet(status.data.session, id);
     if (n === serial.current) {
@@ -36,21 +37,22 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
       setJob(current); setOperation(id);
       setRecent(rows=>rows.map(row=>row.operation_id===id ? {...row,state:current.job.state} : row));
     }
-  }
-  async function list() {
+  }, [bumpSerial, client]);
+  const list = useCallback(async () => {
     const current = await client.status();
     const result = await client.reviewList(current.data.session);
     setRecent(result.data.payload.review_jobs);
     return result.data.payload.review_jobs;
-  }
+  }, [client]);
   useEffect(() => {
     let live = true;
     const selection = serial.current;
     void list().then(rows=>{if(live && selection === serial.current && rows[0]) return read(rows[0].operation_id);}).catch(()=>{if(live) setError("Could not read saved drafts. You can still check a job by its job ID.");});
-    return ()=>{live=false;serial.current++;};
-  }, [client, session.dataset_generation]);
+    return ()=>{live=false;bumpSerial();};
+  }, [bumpSerial, client, list, read, session.dataset_generation]);
+  const jobState = job?.job.state;
   useEffect(() => {
-    if (!operation || !job || !active(job.job.state)) return;
+    if (!operation || !jobState || !active(jobState)) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -59,12 +61,12 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
       if (live) timer = setTimeout(() => void poll(), 2000);
     };
     timer = setTimeout(() => void poll(), 2000);
-    return () => { live = false; clearTimeout(timer); serial.current++; };
-  }, [operation, job?.job.state]);
+    return () => { live = false; clearTimeout(timer); bumpSerial(); };
+  }, [bumpSerial, jobState, operation, read]);
   async function run(action: () => Promise<void>) {
     if (actionLock.current) return;
     actionLock.current = true;
-    serial.current++;
+    bumpSerial();
     setBusy(true); setError("");
     try { await action(); }
     catch { setError("Request not completed. Use Check progress to read the recorded result; this does not rerun AI."); }

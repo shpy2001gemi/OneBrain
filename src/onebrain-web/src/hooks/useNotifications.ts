@@ -45,6 +45,23 @@ export function useNotifications(): UseNotificationsReturn {
     saveToStorage(notifications);
   }, [notifications]);
 
+  const addNotificationInternal = useCallback((n: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+    const notification: Notification = {
+      ...n,
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      read: false,
+    };
+    setNotifications(prev => [notification, ...prev]);
+
+    // Auto-dismiss after 5 seconds
+    if (n.autoDismiss) {
+      setTimeout(() => {
+        setNotifications(prev => prev.filter(x => x.id !== notification.id));
+      }, 5000);
+    }
+  }, []);
+
   // Connect singleton WS and listen for events
   useEffect(() => {
     if (!connectedRef.current) {
@@ -77,24 +94,7 @@ export function useNotifications(): UseNotificationsReturn {
     });
 
     return unsub;
-  }, []);
-
-  const addNotificationInternal = useCallback((n: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
-    const notification: Notification = {
-      ...n,
-      id: crypto.randomUUID(),
-      timestamp: Date.now(),
-      read: false,
-    };
-    setNotifications(prev => [notification, ...prev]);
-
-    // Auto-dismiss after 5 seconds
-    if (n.autoDismiss) {
-      setTimeout(() => {
-        setNotifications(prev => prev.filter(x => x.id !== notification.id));
-      }, 5000);
-    }
-  }, []);
+  }, [addNotificationInternal]);
 
   const addNotification = addNotificationInternal;
 

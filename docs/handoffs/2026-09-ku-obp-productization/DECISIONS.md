@@ -55,6 +55,14 @@ VPS/NAT, `D-063` two physical machines, operator Registry release signing
   (`fidelity: "unassessed"`, `authorizes_reward: false`, unreadable CIDs fail
   closed like `get`) as `/ku` Web and Desktop, with no new route, DTO or wire
   field.
+- **Round 5 (Task 07/16/20 Web `oxlint` React Hook and Fast Refresh CI hygiene,
+  `t25`):** eliminated all 8 `oxlint` warnings in `src/onebrain-web` that emitted
+  GitHub Actions warning annotations on every `foundation-contract` CI run by
+  splitting `debugLog.ts` (`DebugEntry`, `subscribeDebug`, `logDebug`) out of
+  `DebugConsole.tsx` so component files export only components, and fixing
+  `react-hooks/exhaustive-deps` / cleanup ref-mutation patterns in
+  `KuReviewDraft.tsx`, `Settings.tsx`, `useNotifications.ts` and `KqlEditor.tsx`
+  without changing runtime behavior, DTOs, routes or UI text.
 
 ## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
 

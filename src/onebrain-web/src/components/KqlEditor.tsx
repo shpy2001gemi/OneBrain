@@ -37,6 +37,7 @@ interface KqlEditorProps {
 export function KqlEditor({ value, onChange, onSubmit, placeholder = 'Enter KQL query...', minHeight = 120 }: KqlEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const initialValueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
 
@@ -53,7 +54,7 @@ export function KqlEditor({ value, onChange, onSubmit, placeholder = 'Enter KQL 
     if (!containerRef.current) return;
 
     const state = EditorState.create({
-      doc: value,
+      doc: viewRef.current ? viewRef.current.state.doc.toString() : initialValueRef.current,
       extensions: [
         history(),
         keymap.of([
@@ -101,7 +102,7 @@ export function KqlEditor({ value, onChange, onSubmit, placeholder = 'Enter KQL 
       view.destroy();
       viewRef.current = null;
     };
-  }, []); // Only run once on mount
+  }, [handleSubmit, minHeight, placeholder]);
 
   // Sync external value changes
   useEffect(() => {

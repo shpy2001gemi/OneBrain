@@ -9,7 +9,7 @@ import type {
   PublicUsePrepareRequest, PreparedPublicUse, PublicationView,
   MetabolicEvidenceView, VNextRuntimeStatus,
 } from './types';
-import { logDebug } from '../components/DebugConsole';
+import { logDebug } from '../components/debugLog';
 import { isTauri, getApiConfig } from './tauri';
 
 const DEFAULT_API_BASE = 'http://127.0.0.1:4280';
