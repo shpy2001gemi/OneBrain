@@ -1,41 +1,29 @@
-# OneBrain Project Instructions
+# OneBrain Agent & Claude Instructions
 
-## Project Overview
-OneBrain is a decentralized, peer-to-peer knowledge-sharing network inspired by biological systems and blockchain. It encodes human knowledge into compact, language-agnostic Knowledge Units (KU). The project is powered by the OneBrain Protocol (OBP)—a custom 9-layer peer-to-peer network utilizing QUIC, S/Kademlia DHT, SWIM, and bio-inspired Stigmergy routing. It integrates AI and BCI (Brain-Computer Interfaces) concepts with a custom Proof of Knowledge (PoK/PoMV) consensus and an incentive token (OBT).
+> **Primary workspace contract:** Always read and follow [`AGENTS.md`](AGENTS.md)
+> first, then [`docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md`](docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md)
+> and only the bounded `CURRENT_CHECKPOINT_START` / `CURRENT_CHECKPOINT_END` block
+> in [`docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md`](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md).
 
-## Tech Stack
-- **Language**: Rust (Edition 2021)
-- **Project Structure**: Cargo Workspace (`ku-core`, `ku-net`, `ku-kql`, `ku-demo`)
-- **Key Libraries/Technologies**: 
-  - `redb` for persistent storage (ConceptDict, KQL storage)
-  - `nom` for parsing (KQL - Knowledge Query Language)
-  - Custom implementations for CRDT, DHT (S/Kademlia), Gossip, and SWIM protocols.
+## Current Delivery Priority & Continuity
 
-## Architecture (The 10 Pillars)
-Code and features are strictly categorized into 10 pillars. Always align code changes with these pillars (see `docs/PILLAR_REVIEW.md` for completion status):
-- **P1 (Knowledge Unit)**: 3-layer KU Core (CoreDna, Epigenetics, Expression). Found in `ku-core`.
-- **P2 (Network Protocol - OBP)**: OneBrain Protocol (QUIC, S/Kademlia DHT, SWIM, Stigmergy). Found in `ku-net`.
-- **P3 (KQL Query)**: Knowledge Query Language (FIND, CREATE, UPDATE). Found in `ku-kql`.
-- **P4 (Consensus - PoMV)**: Proof of Metabolic Value (consensus without voting, 6 observable signals). Found in `ku-core`.
-- **P5 (OBT Token)**: Incentive Mechanism and Account-Chain ledger. Found in `ku-core` (under `obt_*` modules) and `ku-net`.
-- **P6 (AI Layer)**: Integrating AI for data processing and tool execution (`ku_tools`).
-- **P7 (Knowledge Graph)**: Distributed mapping of connections between Knowledge Units.
-- **P8 (Storage Layer)**: Persistent storage mechanisms (e.g., `redb` concepts).
-- **P9 (BCI Protocol)**: Long-term vision for Brain-Computer Interface integrations.
-- **P10 (User Interface)**: Final user-facing clients and interaction layers.
+- **Active plan (`D-044` / `D-051`):** [`docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md`](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md) owns scope, architecture remediation (`ARCH-01..15`), and the contributor backlog.
+- **Single ledger:** [`docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md`](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md) owns task states, checkpoint status, and retained branch/worktree/dirty-file inventory. Never delete or overwrite retained work (`KU-ENC-003` local prep, retained branches, or secondary worktree).
+- **Standing Git authorization (`D-050`):** Scoped, verified work and its synchronized handoff updates may be merged and pushed to `main` without asking again, while preserving unrelated dirty/untracked/unmerged work and honoring all product, consent, trust, and mobile contracts.
 
-## Coding Conventions & Rules
-1. **Documentation is the Source of Truth**: Before modifying or implementing a feature, always consult the relevant specification in `docs/specs/`. 
-2. **Keep Docs Synchronized**: When adding or updating a module, you MUST update the cross-reference table in `docs/README.md` and `docs/features/FEATURE_DETAILS.md` if applicable.
-3. **Rust Best Practices**: Use strict typing, proper error handling (e.g., custom `KuError` enum), and modular design.
-4. **No Heavy Dependencies**: OneBrain aims to be efficient. Do not introduce heavy dependencies in `Cargo.toml` without verifying it's absolutely necessary.
-5. **Testing**: Write unit tests for all new functionalities, especially for Core DNA parsing, PoMV math formulas, and KQL parsing.
+## Workspace & Architecture Overview
 
-## Build and Test Commands
-- **Build the workspace**: `cargo build`
-- **Run all tests**: `cargo test`
-- **Build with persistent storage enabled**: `cargo build --features persist`
+- **Rust workspace (`src/Cargo.toml`, 21 crates):**
+  - Core & Knowledge: `ku-core` (canonical vNext foundation + `legacy`-gated Core DNA/PoMV/OBT/OBKG), `ku-encoder` (shared extraction, semantic selection v1/v2, simple claim lowering), `ku-kql` (`vnext_semantic_index` KU search, local read-only text KQL, `experimental` vNext discovery), `ku-ai`, `ku-mediator`.
+  - Protocol & Transport: `onebrain-protocol`, `ku-net` (feature-gated authenticated QUIC/OBP reconciliation + `legacy` DHT/SWIM), `onebrain-relay`, `onebrain-seed` (explicit legacy compat only).
+  - Shared Runtime & Storage: `onebrain-node` (host-agnostic façade, 0 layering bypasses), `onebrain-base-contract`, `onebrain-base-abi`, `onebrain-archive` (`OBARV002`), `onebrain-blob-store` (`TX-BLOB-001`), `onebrain-legacy-ku-store`.
+  - Surfaces: `onebrain-cli`, `onebrain-api`, `onebrain-desktop` (Tauri 2.x), `onebrain-mobile-core`, `onebrain-mobile-bridge`, `ku-demo`, plus `src/onebrain-web` (React/Vite TypeScript `/ku` workspace & dashboard) and `src/onebrain-mobile` (Flutter autonomous mobile node).
+- **Contract reachability:** Consult [`docs/specs/vnext/README.md`](docs/specs/vnext/README.md) (`default-build`, `feature-gated`, `library-only`, `spec-only`) rather than historical snapshots such as `docs/PILLAR_REVIEW.md`.
 
-## Behavioral Constraints for AI
-- **Do not guess domain logic**: OneBrain has very specific philosophical and technical definitions (e.g., *Epistemic Ladder*, *Metabolism*, *Stigmergy*). Look them up in `docs/` before implementing.
-- **Maintain Modular Boundaries**: Do not mix network logic (P4) into core logic (P1/P2). Ensure separation of concerns across workspace crates.
+## Mandatory Checks & Mobile Trigger
+
+- **Core / vNext / Layering checks (from repo root):**
+  - `python scripts/ci/validate_vnext_contracts.py`
+  - `python scripts/ci/check_node_layering.py`
+  - Focused `cargo test --manifest-path src/Cargo.toml -p <crate>` and `npm run test:ku --prefix src/onebrain-web` for touched areas.
+- **Mobile build trigger:** Before planning or editing anything under `src/onebrain-mobile`, `src/onebrain-mobile-core`, `src/onebrain-mobile-bridge`, or mobile packaging/evidence, follow the 7-step **Mobile build trigger** in [`AGENTS.md`](AGENTS.md) and [`src/onebrain-mobile/AGENTS.md`](src/onebrain-mobile/AGENTS.md), starting and ending with `python scripts/ci/validate_mobile_build_contracts.py`.

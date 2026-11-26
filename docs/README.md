@@ -5,9 +5,17 @@
 OneBrain encodes human knowledge into compact, language-agnostic **Knowledge Units (KU)** that live, metabolize, and evolve across a peer-to-peer network — no central servers, no cloud dependency.
 
 > [!IMPORTANT]
-> This file is a technical index, not a release-completion claim. See the dated
-> [Project Status](PROJECT_STATUS.md) ([Tiếng Việt](PROJECT_STATUS.vi.md)) for current progress, remaining work,
-> release caveats, and the local Git branch/worktree audit.
+> This file is a technical specification and module index, not a release-completion
+> claim. For current delivery scope, active tasks, and dated status see
+> [MASTER_PLAN](handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
+> [PROGRESS](handoffs/2026-09-ku-obp-productization/PROGRESS.md), and
+> [Project Status](PROJECT_STATUS.md) ([Tiếng Việt](PROJECT_STATUS.vi.md)).
+> Under D-051 (`ARCH-04`, `ARCH-06`, `ARCH-08`, `ARCH-09`, `ARCH-11`), the active
+> user-facing KU runtime is the canonical vNext `/ku` workspace (`SemanticFrameSet` +
+> encrypted Vault + `vnext_semantic_index` search) behind the host-agnostic
+> `onebrain-node` façade, while 3-layer `CoreDna`/`OBT`/DHT-SWIM modules are preserved
+> behind the `legacy` cargo feature and textual KQL is frozen local read-only. See
+> [`specs/vnext/README.md`](specs/vnext/README.md) for per-contract `Reachability`.
 
 ```text
 Text → CoreDna → Epigenetics → Expression
@@ -50,10 +58,12 @@ graph LR
 
 | Pillar | Crate | Mô tả |
 |--------|-------|--------|
-| **P1: KU Core** | `ku-core` | 3-layer architecture: CoreDna (binary instructions) → Epigenetics (trust/bonds) → Expression (natural language) |
-| **P2: PoK / PoMV** | `ku-core` | Proof-of-Metabolic-Value — 6 observable signals score every KU without voting |
-| **P3: KQL** | `ku-kql` | Knowledge Query Language — FIND, CREATE, UPDATE, DEPRECATE, WATCH, EXPLAIN |
-| **P4: OBP Network** | `ku-net` | OneBrain Protocol — identity, SWIM membership, S/Kademlia DHT, stigmergy, gossip |
+| **P1: KU Core** | `ku-core`, `ku-encoder` | Canonical vNext `SemanticFrameSet`/Vault/extraction (`default-build`) + legacy 3-layer `CoreDna` → `Epigenetics` → `Expression` (`legacy`) |
+| **P2: PoK / PoMV** | `ku-core` | vNext Use/Derivation/Outcome/Benefit contracts + legacy 6-signal PoMV local projection |
+| **P3: KQL** | `ku-kql` | `vnext_semantic_index` structured KU search (`default-build`), frozen local read-only text KQL (`FIND`/`EXPLAIN`), + `experimental` typed discovery |
+| **P4: OBP Network** | `ku-net`, `onebrain-relay`, `onebrain-protocol` | Authenticated QUIC/relay/OBP-RP reconciliation (`feature-gated`) + legacy SWIM/DHT/gossip (`legacy`) |
+| **P8: OBS Storage** | `ku-core`, `onebrain-blob-store`, `onebrain-archive`, `onebrain-legacy-ku-store` | Validated Public Store, XChaCha20-Poly1305 Vault, Base `OBARV002` archive, hybrid blob store, legacy redb stores |
+| **P10: Interfaces** | `onebrain-node`, `onebrain-cli`, `onebrain-api`, `onebrain-desktop`, `onebrain-web`, `onebrain-mobile` | Host-agnostic shared runtime façade (`0` layering bypasses) + CLI, REST/WS, Web `/ku`, Tauri Desktop, autonomous Flutter/Rust Mobile |
 
 ### P5: OBT Token (OneBrain Token)
 Incentive mechanism that rewards knowledge contribution, encoding, verification, and storage.
@@ -101,7 +111,7 @@ cargo build --features persist
 | 12 | `obt/04_STORAGE_REWARD.md` | P5 | 5-factor storage reward |
 | 13 | `obt/05_ANTI_GAMING.md` | P5 | Rate limits, quality gates, pattern detection |
 | 14 | `obt/06_TRANSFER.md` | P5 | Peer-to-peer transfer protocol |
-| 15 | `obt/07_GOSSIP_SECURITY.md` | P5 | Gossip gap and connectivity proofs |
+| 15 | `obt/07_TRUST_SECURITY.md` | P5 | Gossip gap and connectivity proofs |
 | 16 | `obt/08_PENALTY.md` | P5 | 5-tier graduated penalty system |
 | 17 | `obt/09_CONSTANTS.md` | P5 | All protocol constants with rationale |
 | 18 | [OBKG_WALKTHROUGH.md](specs/OBKG_WALKTHROUGH.md) | P7 | OBKG Knowledge Graph — 4 phases, 13 modules, 280 tests |
@@ -110,8 +120,9 @@ cargo build --features persist
 
 | Document | Nội dung |
 |----------|----------|
-| [Current Project Status](PROJECT_STATUS.md) | Snapshot tiến độ hiện tại, việc còn mở, ranh giới Base v1 owner-waiver/strict release, branch/worktree audit và validation evidence |
-| [KU Review + OBP Productization Handoff](handoffs/2026-09-ku-obp-productization/README.md) | Gói bắt đầu gọn cho conversation mới: quyết định owner, capability boundary, dependency graph, progress ledger, prompt và 20 task tách theo nhánh |
+| [Current Project Status](PROJECT_STATUS.md) | Snapshot tiến độ 26/11/2026, việc còn mở, ranh giới Base v1 owner-waiver/strict release, CI xanh và tổng hợp Git |
+| [Concept MVP Master Plan](handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md) | Kế hoạch thực thi duy nhất hiện hành (D-044 / D-051): phạm vi MVP, lộ trình củng cố kiến trúc `ARCH-01..15` và backlog cho contributor |
+| [KU–OBP Progress Ledger & Handoff](handoffs/2026-09-ku-obp-productization/README.md) | Điểm bắt đầu gọn cho conversation mới, [NEXT_CONVERSATION](handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md), sổ [PROGRESS](handoffs/2026-09-ku-obp-productization/PROGRESS.md) và [24 task](handoffs/2026-09-ku-obp-productization/tasks/README.md) (22 Merged, 2 Deferred) |
 | [Research Baseline — KU v7.1](research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Baseline 1.5 cho nghiên cứu KU-centric và partition autonomy; §46.3/§56.1 chốt Receptor, Mapping, discovery, OBP-RP, reconciliation, identity, GC và migration; OBT ngoài critical path |
 | [Foundation Implementation Plan — KU v7.1](research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Kế hoạch thực thi chi tiết: dependency graph, 8 milestone (M0–M7), 99 task có acceptance criteria, Anti-Gravity Reunion MVP, verification/migration/rollout gates và topological work-package queue |
 | [vNext Foundation Contracts](specs/vnext/README.md) | Contract/foundation index đã hoàn tất ở phạm vi repository; product defaults và production rollout vẫn là gate riêng |
@@ -138,14 +149,33 @@ cargo build --features persist
 
 ## Code ↔ Documentation Cross-Reference
 
-### Workspace Crates
+### Workspace Crates (21 Rust crates + Web & Mobile)
 
-| Crate | Path | Description |
+| Crate / Surface | Path | Description |
 |-------|------|-------------|
-| `ku-core` | `src/ku-core/` | KU v6 engine — all 3 layers + PoMV |
-| `ku-kql` | `src/ku-kql/` | KQL parser, executor, persistent storage |
-| `ku-net` | `src/ku-net/` | OBP network protocol |
-| `ku-demo` | `src/ku-demo/` | Demo application |
+| `ku-core` | `src/ku-core/` | Canonical vNext foundation (identities, CBOR, semantic frames, Vault, Concept Registry) + `legacy` Core DNA, PoMV, OBT, OBKG |
+| `ku-kql` | `src/ku-kql/` | `vnext_semantic_index` KU search, local read-only text KQL parser/executor, private/standing need persistence, + `experimental` vNext discovery |
+| `ku-net` | `src/ku-net/` | Authenticated QUIC sessions, 5-lane inventory & reconciliation (`feature-gated`) + `legacy` SWIM/DHT/gossip |
+| `ku-ai` | `src/ku-ai/` | Local AI backend policies and feature-gated Ollama HTTP adapter |
+| `ku-encoder` | `src/ku-encoder/` | Shared KU extraction framework, semantic selection v1/v2 (`KU-SEM-001`), simple review-claim lowering (`ARCH-07`), + `legacy` `AiEncoder` |
+| `ku-mediator` | `src/ku-mediator/` | User intent detection, retrieval, `/ku` routing, and AI synthesis |
+| `onebrain-protocol` | `src/onebrain-protocol/` | Shared P2P wire types and canonical codecs |
+| `onebrain-relay` | `src/onebrain-relay/` | Permissionless outbound-first QUIC/TLS-443 relay service (`ARCH-01`) |
+| `onebrain-node` | `src/onebrain-node/` | Host-agnostic shared runtime façade (`OneBrainNode`, Base runtime, `/ku` workspace, OBP orchestration; `ARCH-09`) |
+| `onebrain-cli` | `src/onebrain-cli/` | Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`) |
+| `onebrain-api` | `src/onebrain-api/` | Local REST + private WebSocket API server and `ku_local_web` host example |
+| `onebrain-desktop` | `src/onebrain-desktop/` | Tauri 2.x Desktop application |
+| `onebrain-mobile-core` | `src/onebrain-mobile-core/` | Autonomous Rust mobile runtime/bootstrap/storage profile (`BootstrapOnly/Limited`) |
+| `onebrain-mobile-bridge` | `src/onebrain-mobile-bridge/` | Narrow C ABI/JNI bridge for Flutter Kotlin/Swift NativeHosts |
+| `onebrain-archive` | `src/onebrain-archive/` | Shared encrypted Base `OBARV002` archive container and verified spool (desktop & mobile `MOB-03`) |
+| `onebrain-blob-store` | `src/onebrain-blob-store/` | Persistent hybrid redb + filesystem Base blob storage (`TX-BLOB-001`, extracted in `ARCH-11`) |
+| `onebrain-legacy-ku-store` | `src/onebrain-legacy-ku-store/` | Preserved legacy Core DNA `KuStorage` + OBKG `GraphStorage` (`ARCH-11`) |
+| `onebrain-base-contract` | `src/onebrain-base-contract/` | Generated product-neutral Base v1 semantic contract (Rust, TypeScript, Dart) |
+| `onebrain-base-abi` | `src/onebrain-base-abi/` | Stable C ABI projection of the Base v1 façade |
+| `onebrain-seed` | `src/onebrain-seed/` | Explicit legacy TCP/JSON compatibility daemon (not a vNext relay) |
+| `ku-demo` | `src/ku-demo/` | Multi-node simulation demo |
+| `onebrain-web` *(TS/React)* | `src/onebrain-web/` | React + Vite + TypeScript Web UI (`/ku` workspace, vNext views, dashboard) |
+| `onebrain-mobile` *(Flutter)* | `src/onebrain-mobile/` | Autonomous Android/iOS Flutter app governed by `docs/design/mobile/mobile_build_contract_v1.json` |
 
 ### P1: KU Core Modules
 
@@ -248,7 +278,7 @@ cargo build --features persist
 | `obt_storage_reward` | [obt_storage_reward.rs](../src/ku-core/src/obt_storage_reward.rs) | [§4 Storage](specs/obt/04_STORAGE_REWARD.md) | 5-factor storage reward |
 | `obt_penalty` | [obt_penalty.rs](../src/ku-core/src/obt_penalty.rs) | [§8 Penalty](specs/obt/08_PENALTY.md) | Graduated penalties |
 | `obt_anti_gaming` | [obt_anti_gaming.rs](../src/ku-core/src/obt_anti_gaming.rs) | [§5 Anti-Gaming](specs/obt/05_ANTI_GAMING.md) | Production rate/reward limits, local-only explicit development admission policy, quality gates |
-| `obt_gossip_security` | [obt_gossip_security.rs](../src/ku-core/src/obt_gossip_security.rs) | [§7 Gossip](specs/obt/07_GOSSIP_SECURITY.md) | Gossip gap, connectivity |
+| `obt_gossip_security` | [obt_gossip_security.rs](../src/ku-core/src/obt_gossip_security.rs) | [§7 Gossip](specs/obt/07_TRUST_SECURITY.md) | Gossip gap, connectivity |
 | `obt_fork_pipeline` | [obt_fork_pipeline.rs](../src/ku-core/src/obt_fork_pipeline.rs) | [§8 Penalty](specs/obt/08_PENALTY.md) | Fork → penalty pipeline |
 | `obt_epoch` | [obt_epoch.rs](../src/ku-core/src/obt_epoch.rs) | [§9 Constants](specs/obt/09_CONSTANTS.md) | Epoch boundary settlement |
 | `obt_integration` | [obt_integration.rs](../src/ku-core/src/obt_integration.rs) | — | KU↔OBT integration layer |

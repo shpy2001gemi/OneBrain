@@ -48,12 +48,18 @@ platform shell (PowerShell on Windows, POSIX `sh` elsewhere) and paste as-is.
 It never prints secrets, overwrites files, saves/shares a KU or starts a host. It
 also prints an equivalent `onebrain start --api` (`-p onebrain-cli`) host command
 for the same data and `/ku`. Add `--with-receiver` for a second host config and
-opt-in loopback network blocks (the receiver also admits the sample as its own
+opt-in loopback network blocks (or add `--lan-ip <private-ipv4-or-ula>` on top of
+`--with-receiver` to bind the DEV-ONLY `/ku` OBP-RP share listener to a private LAN
+address for testing across two machines on the same private network while keeping
+HTTP API/Web on `127.0.0.1` — D-063; the receiver also admits the sample as its own
 private source, saving nothing, so its `/ku` **Start a new private draft from …**
-button can copy a received Public KU's text into a new manual private draft; source,
-concept, preview and Save stay explicit — D-057), then run `check_ku_public_share_demo.py` with
+button can copy a received Public KU's text into a new manual private draft while
+source, concept, preview and Save stay explicit — D-057), then run `check_ku_public_share_demo.py` with
 `--receiver-kind web` (Web hosts) or `--sender-kind cli --receiver-kind cli
---require-cli-client` (CLI hosts plus `onebrain ku get/export`); the explicit
+--require-cli-client --cli-share` (CLI hosts driving `onebrain ku share
+prepare|preview|confirm|intent|inspect|list` and `onebrain ku get/export/describe`,
+including a sender restart between `share_prepare` and `share_confirm` — D-058,
+D-059, D-062); the explicit
 `--seed-sample-ku` flag saves the sample KU privately through the `/ku` button API
 only when nothing is saved yet. The
 [ku-dev-demo-scripts](.github/workflows/ku-dev-demo-scripts.yml) workflow runs the
@@ -86,14 +92,19 @@ produce a draft requiring review. A draft is not automatically a saved KU.
 
 Try supported preview → explicit private save → search/read → restart/read, then
 the [manual local-to-peer concept](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
-review a new Public object, explicitly confirm sharing, inspect the same Public
+review a new Public object (unexpired preparations survive normal-host restart —
+D-062), explicitly confirm sharing, inspect the same Public
 CID/bytes on the receiving node and retry/restart. You can run D-045 either
-(1) directly through `/ku` Web and `ku_local_web` (with an opt-in loopback
-`"network"` config block), `onebrain start --api` (with `--api-token-file`,
-`--ku-vault-key-file`, `--ku-network-bind 127.0.0.1:0` and optional
+(1) directly through `/ku` Web, `onebrain ku share` CLI (`prepare`, `preview`,
+`confirm`, `intent`, `inspect`, `list`, plus display-only `onebrain ku describe` —
+D-058, D-059) and `ku_local_web` (with an opt-in loopback `"network"` config block,
+or `"allow_private_lan": true` for DEV-ONLY private LAN — D-063), `onebrain start --api`
+(with `--api-token-file`, `--ku-vault-key-file`, `--ku-network-bind 127.0.0.1:0`,
+optional `--ku-network-allow-lan` for RFC 1918/ULA addresses, and optional
 `--ku-ollama-*`), or a `OneBrainNode` / `onebrain-desktop` host with opt-in
 `VNextProductRuntime` enabled (`POST /api/vnext/ku/editor` `share_prepare`,
-`share_confirm`, `share_intent`, `share_list`, `share_inspect`; see the
+`share_preview`, `share_confirm`, `share_intent`, `share_list`, `share_inspect`,
+`describe_ccids`; see the
 [normal-host share seam](docs/handoffs/2026-09-ku-obp-productization/outputs/KU_WEB_001_IMPLEMENTATION.md#normal-host-public-ku-reader-and-bounded-share-seam-d-045)),
 or (2) through the isolated `ku_peer_demo` helper processes alongside the local
 custody host. To check path (1) end to end on one machine, run
@@ -101,14 +112,17 @@ custody host. To check path (1) end to end on one machine, run
 against a copy of your dataset (instructions in the linked task-20 section);
 `--receiver-kind web` makes the receiver a second `/ku` Web host,
 `--receiver-kind cli` makes the receiver a second `onebrain start --api
---ku-network-bind` host, and `--sender-kind cli` makes the sender
+--ku-network-bind` host, `--sender-kind cli` makes the sender
 `onebrain start --api` (`--api-token-file`, `--ku-network-bind`, plus
-`--ku-ollama-*` if `"ollama"` is configured). On Web and CLI receivers, when
-`onebrain` is built (or `--require-cli-client` is passed), the helper also
-verifies `onebrain ku get` and `onebrain ku export` (`canonical_public_exchange`)
-with `--api-token-file` plus local-only offline receiver reads (`share_list`,
-`workspace_summary`, `saved_semantic`, and fail-closed `share_inspect`).
-Networking remains opt-in (default off), source material and
+`--ku-ollama-*` if `"ollama"` is configured), and `--cli-share` drives the share
+actions through `onebrain ku share` with typed `prepared_id` confirmation. On Web
+and CLI receivers, when `onebrain` is built (or `--require-cli-client` is passed),
+the helper also verifies `onebrain ku get`, `onebrain ku export`
+(`canonical_public_exchange`) and `onebrain ku describe` with `--api-token-file`,
+sender restart between prepare and confirm (`D-062`), plus local-only offline
+receiver reads (`share_list`, `workspace_summary`, `saved_semantic`, and
+fail-closed `share_inspect`). Networking remains opt-in (default off, loopback
+unless `--ku-network-allow-lan` is explicitly set), source material and
 private IDs stay private, and D-045 currently supports one predicate and one text
 literal. Real Registry and local-secret provisioning remain operator prerequisites,
 described in the linked run instructions; the DEV-ONLY bootstrap above is only for
@@ -124,11 +138,11 @@ is more useful than a large private trace. Never commit private inputs or keys.
 
 | Area | Existing code |
 |---|---|
-| Canonical objects, IDs and storage | `src/ku-core`, `src/onebrain-base-contract` |
+| Canonical objects, IDs, archives and storage | `src/ku-core`, `src/onebrain-base-contract`, `src/onebrain-archive`, `src/onebrain-blob-store`, `src/onebrain-legacy-ku-store` |
 | Extraction and model adapters | `src/ku-encoder/src/extraction` |
-| Shared KU workflow and networking orchestration | `src/onebrain-node` |
+| Shared KU workflow, KQL index and networking orchestration | `src/onebrain-node`, `src/ku-kql` |
 | Local API, CLI, Web and Desktop | `src/onebrain-api`, `src/onebrain-cli`, `src/onebrain-web`, `src/onebrain-desktop` |
-| Peer transport and relay | `src/ku-net`, `src/onebrain-relay` |
+| Peer transport and relay | `src/ku-net`, `src/onebrain-relay`, `src/onebrain-protocol` |
 
 Use the relevant contract when changing an interface. Source consent, explicit
 save/share, stable IDs and saved-data preservation matter even in a demo. If a
@@ -160,6 +174,7 @@ Useful focused commands from the repository root:
 npm run test:ku --prefix src/onebrain-web
 cargo test --locked --manifest-path src/Cargo.toml -p ku-encoder extraction:: --lib
 python scripts/ci/validate_vnext_contracts.py
+python scripts/ci/check_node_layering.py
 ```
 
 Choose the command relevant to the changed area; this is not a mandatory bundle

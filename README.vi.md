@@ -14,12 +14,14 @@ Dự án mã hóa tri thức thành những **Knowledge Unit (KU)** nhỏ gọn,
 
 > [!IMPORTANT]
 > OneBrain hiện là một dự án nghiên cứu và kỹ thuật đang phát triển. Foundation
-> vNext, phần tích hợp sản phẩm đến P3 và hardening DR-M5 đã được triển khai với
-> bằng chứng đã ghi nhận. Base v1 đã có bản phát hành được chủ dự án chấp thuận
-> với các ngoại lệ công khai, nhưng tag strict `base-v1.0.0` chưa được phát hành.
-> Mobile hiện là bản triển khai BootstrapOnly/Limited thay vì chỉ là scaffold;
-> các gate offline và production vẫn còn mở. Dự án chưa phải mainnet hay một hệ
-> thống tài chính hoàn chỉnh. Xem [trạng thái dự án có ngày
+> vNext, tích hợp sản phẩm P0–P3, hardening DR-M5, bản concept MVP KU–OBP chạy
+> được (22/24 task đã merge, 2 task hoãn) và đợt củng cố kiến trúc D-051 (hoàn
+> tất 13/15 hạng mục) đã được merge vào `main` với CI xanh. Base v1 đã có bản
+> phát hành được chủ dự án chấp thuận (`base-v1.0.0-owner-waiver.1`) kèm ngoại lệ
+> công khai, nhưng chưa tuyên bố strict `base-v1.0.0`. Mobile hiện là bản triển
+> khai `BootstrapOnly/Limited` (đã dùng chung archive `OBARV002` ở `MOB-03`),
+> trong khi các gate `ReadyOffline` và production vẫn còn mở. Dự án chưa phải
+> mainnet hay một hệ thống tài chính hoàn chỉnh. Xem [trạng thái dự án có ngày
 > chốt](docs/PROJECT_STATUS.vi.md).
 
 Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở nhiều lĩnh vực, nhưng tri thức của họ vẫn bị ngăn cách bởi tổ chức, ngôn ngữ, định dạng dữ liệu và thời gian. Hãy hình dung nếu mỗi người không còn phải bắt đầu từ con số không; nếu một phát hiện nhỏ ở nơi này có thể gặp đúng câu hỏi ở nơi khác; nếu hàng triệu bộ não độc lập có thể cùng suy nghĩ về một vấn đề mà không phải giao quyền kiểm soát cho một “siêu não” trung tâm.
@@ -51,31 +53,35 @@ Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở
 
 ## Trạng thái dự án
 
-**Ưu tiên hiện hành (28/09/2026): MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
-Theo [kế hoạch duy nhất](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
-[sổ công việc gồm cả nhánh chưa merge](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md)
-và [hướng dẫn đóng góp](CONTRIBUTING.md). Qualification model/production là việc
-sau MVP, không chặn demo thử nghiệm. Bảng bên dưới là baseline lịch sử tháng 9.
+**Ưu tiên hiện hành (D-044): concept MVP mã nguồn mở chạy được và các cải tiến có giới hạn cho cộng đồng.**
+Theo dõi [kế hoạch duy nhất](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
+[sổ tiến độ chính thức](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md),
+[bảng tổng quan 24 task](docs/handoffs/2026-09-ku-obp-productization/tasks/README.md)
+và [hướng dẫn đóng góp](CONTRIBUTING.md). Qualification model và production vẫn là các
+gate độc lập sau MVP, không chặn việc thử nghiệm hay đóng góp mã nguồn mở.
 
-Thử [demo KU local tới node nhận](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
-lưu private → xem preview Public → xác nhận riêng → node nhận đọc cùng CID/bytes.
-Hiện cần tự cấu hình Registry/host và dùng dạng manual hẹp đã hỗ trợ.
+Thử nhanh luồng `/ku` từ fresh clone chỉ bằng một lệnh bootstrap DEV-ONLY
+(`python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry`,
+thêm `--with-receiver` cho chia sẻ hai node loopback hoặc `--lan-ip <ip-nội-bộ>` để thử
+mạng LAN riêng DEV-ONLY), hoặc chạy với Concept Registry do operator cấp — xem
+[CONTRIBUTING.md](CONTRIBUTING.md) và
+[hướng dẫn demo hai node D-045](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
+lưu private → xem preview Public bền vững qua restart → xác nhận riêng → node nhận duyệt và kiểm tra cùng CID/bytes.
 
-Snapshot: **2026-09-05**, audit tại commit `main` `c65f1739fcd0`.
+Snapshot: **2026-11-26**, đồng bộ với `main` (`bc1934d`).
 
 | Luồng công việc | Trạng thái hiện tại | Ranh giới chính còn mở |
 |---|---|---|
-| Foundation vNext | Hoàn tất ở phạm vi contract/foundation; validator xanh | Product default và operator rollout là các gate riêng |
-| P0-P3 + DR-M5 | Implementation và bằng chứng CI đã ghi nhận hoàn tất | Các lane vNext vẫn opt-in/default-off; live transport legacy chưa được thay hoàn toàn |
-| Base v1 | Đã phát hành `base-v1.0.0-owner-waiver.1` với các ngoại lệ công khai | Chưa tuyên bố strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` |
-| Mobile | BootstrapOnly/Limited; đã triển khai MOB-05A và phần Android MOB-05B đến Local Import | MOB-05C, private KU, iOS/peer provider, physical-device, networking và store release |
-| M6 / M7 / BCI | Các milestone tương lai có gate riêng | Active distributed KQL, Outcome/Benefit, OBT production và an toàn/triển khai BCI |
+| Concept MVP (`KU–OBP`) | **22/24 task Đã merge**, 2 Hoãn (`KU-ENC-003` qualification model, `KU-SEM-001` độ trung thực ngữ nghĩa rộng; đã merge 8 lát sửa có giới hạn `SEM-F03` đến D-069); CI hai node `CLI↔CLI` và `Web↔Web` xanh trên Linux, macOS và Windows | Phân phối Registry thật của operator, thử trên hai máy vật lý qua LAN (`D-063`), `model_qualified=false`, `consumer_nat_qualified=false` |
+| Củng cố kiến trúc (`D-051`) | **13/15 hạng mục Hoàn tất** (`ARCH-01..09`, `ARCH-11..13`, `ARCH-15`): façade `onebrain-node` độc lập host (0 bypass phân tầng), đóng mặc định TCP legacy, hợp nhất một mô hình `/ku` phía người dùng, tìm kiếm KU qua `vnext_semantic_index`, nén journal/Base, tách crate blob/legacy store, thay snippet-check bằng Rust test | `ARCH-10` nhân dùng chung cho mobile Tạm hoãn sau lát archive `MOB-03`; `ARCH-14` thử nghiệm NAT thực địa Bị chặn chờ cụm VPS mới |
+| Foundation vNext + P0–P3 + DR-M5 | Hoàn tất ở phạm vi contract/foundation (99 task, 18 ADR, 56 vector trên 22 domain); CI `vNext foundation contract` xanh | Các lane mạng vNext vẫn opt-in/default-off; operator rollout và các milestone sau là gate riêng |
+| Base v1 | Đã phát hành `base-v1.0.0-owner-waiver.1` kèm ngoại lệ công khai; CI `Base v1 three-OS` xanh trên `main` hiện tại | Chưa tuyên bố strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` |
+| Mobile | `BootstrapOnly/Limited`; đã triển khai `MOB-01..04` nền tảng/capture, dùng chung `onebrain-archive` (`OBARV002`) ở `MOB-03`, `MOB-05A` và Android `MOB-05B` Local Import; mobile validator xanh | `MOB-05B` iOS/peer provider, `MOB-05C` kích hoạt Registry đầy đủ, hoàn tất private KU `MOB-04`, `MOB-06..09`, physical-device gate và `ReadyOffline` |
+| M6 / M7 / BCI | Các milestone tương lai có gate riêng | Active distributed multipath KQL, Outcome/Benefit, OBT production và an toàn/triển khai BCI |
 
-Audit dọn dẹp xác nhận toàn bộ **46 đầu nhánh local trước đó đều đã nằm trong
-`origin/main`**; không có commit chưa merge. Git local hiện chỉ còn một nhánh và
-một worktree: `main`. Tiến độ chi tiết, phần việc còn lại, ngoại lệ release và
-biên bản dọn dẹp được duy trì tại
-[`docs/PROJECT_STATUS.vi.md`](docs/PROJECT_STATUS.vi.md).
+Tiến độ chi tiết, ngoại lệ release, bằng chứng CI và lịch sử audit Git được duy trì tại
+[`docs/PROJECT_STATUS.vi.md`](docs/PROJECT_STATUS.vi.md); trạng thái task và các nhánh đang bảo toàn chỉ nằm trong
+[`PROGRESS.md`](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md).
 
 ---
 
@@ -181,7 +187,7 @@ Không cần một chỉ mục trung tâm biết ai đang biết gì. Không nod
 
 Kết quả trả về là **candidate hoặc proposal có provenance và evidence**, không phải chân lý hay quyết định tự động. KQL có thể tìm và đề xuất; materialize, adopt, use và publish vẫn là những ranh giới riêng, cần consent và authority phù hợp.
 
-**Trạng thái hiện tại:** KQL local đã chạy trong runtime sản phẩm. Typed matching, Standing Need, private multipath/disclosure và partition–reunion đã có ở foundation vNext và test harness; định tuyến query ngang hàng qua OBP chưa phải đường live end-to-end mặc định.
+**Trạng thái hiện tại:** workspace sản phẩm `/ku` chạy tìm kiếm KU có cấu trúc bền vững trên `vnext_semantic_index` (`concept:`, `predicate:`, `unit:`, `dimension:` cùng nhãn Registry và text literal chuẩn hóa; ARCH-08), trong khi KQL dạng chuỗi legacy (`/api/kql`, CLI `kql`) được đóng băng làm bề mặt truy vấn cục bộ chỉ-đọc có giới hạn (ARCH-04). Khám phá Need một bước (one-hop) chạy sau cờ opt-in `vnext-network-runtime` (ghi rõ giới hạn ánh xạ hash-derived), còn các module multipath/alignment chưa nối người dùng được đặt sau feature `ku-kql/experimental` (ARCH-11) chờ M6.
 
 ### BCI — cánh cổng giữa tư duy và mạng tri thức
 
@@ -273,15 +279,17 @@ Khoảng cách liên hành tinh đặt ra độ trễ lớn, partition dài hạ
 
 ### Knowledge Unit — KU
 
-KU là đơn vị tri thức cơ bản của OneBrain. Kiến trúc KU hiện tại gồm ba lớp:
+KU là đơn vị tri thức cơ bản của OneBrain. Trong workspace sản phẩm vNext hiện hành (`/ku`, `/api/vnext/ku`, `onebrain ku`; ARCH-06), KU phía người dùng là đối tượng canonical định danh theo nội dung, mang các mệnh đề/đại lượng `SemanticFrameSet` gắn CCID, ranh giới tiết lộ tường minh (kho riêng tư mã hóa `LOCAL_ONLY` tách biệt với đối tượng `PUBLIC` được xác nhận riêng) và nguồn gốc có thể kiểm chứng.
+
+Về mặt khái niệm — cũng như trong mô hình tương thích `legacy` (`KuRuntime`) được bảo toàn — một KU tách rõ ba mối quan tâm:
 
 ```text
-CoreDna                 Epigenetics                    Expression
-Ngữ nghĩa lõi      +    bằng chứng, trust, bonds   +   cách trình bày cho người
+CoreDna / SemanticFrameSet      Epigenetics / Evidence           Expression
+Ngữ nghĩa canonical lõi    +    nguồn gốc, trust, bonds    +     cách trình bày cho người
 ```
 
-- **CoreDna** biểu diễn cấu trúc ngữ nghĩa và các instruction.
-- **Epigenetics** lưu trạng thái có thể tiến hóa: bằng chứng, quan hệ, độ tin cậy và tín hiệu sử dụng.
+- **Ngữ nghĩa lõi (`SemanticFrameSet` / legacy `CoreDna`)** biểu diễn khái niệm, vị từ, đơn vị đo và các instruction độc lập ngôn ngữ.
+- **Epigenetics & nguồn gốc** lưu trạng thái bằng chứng, quan hệ, độ tin cậy và tín hiệu sử dụng mà không làm đổi định danh ngữ nghĩa.
 - **Expression** giữ cách diễn đạt bằng ngôn ngữ tự nhiên hoặc định dạng phục vụ giao diện.
 
 ### OneBrain Protocol — OBP Network
@@ -294,7 +302,7 @@ Ngữ nghĩa lõi      +    bằng chứng, trust, bonds   +   cách trình bày
 
 OBP là lớp giao tiếp giúp các node độc lập tìm thấy nhau, thương lượng capability, trao đổi inventory, đối soát khác biệt và truyền đúng phần tri thức được phép chia sẻ. Mạng được thiết kế để tiếp tục hoạt động khi offline, bị partition hoặc phải đi qua carrier có độ trễ lớn; khi kết nối trở lại, các node hội tụ bằng evidence và validation thay vì tin vào một root authority.
 
-**Trạng thái hiện tại:** live node vẫn sử dụng TCP/JSON legacy cho kết nối peer cơ bản. Authenticated session, scoped inventory, reconciliation journal, partition–reunion và các carrier vNext đã có ở protocol/library/test harness nhưng chưa thay thế transport mặc định end-to-end.
+**Trạng thái hiện tại:** listener TCP/JSON legacy không xác thực đã tắt mặc định trừ khi bật tường minh `--legacy-seed-compat` (ARCH-02). Phiên QUIC/OBP-RP có xác thực, inventory 5 làn theo scope, reconciliation journal bền vững, chuyển dự phòng qua relay outbound-first và luồng chia sẻ Public KU hai node tường minh (`D-045` / `D-062` / `D-063`) đã được triển khai và chạy opt-in trên host chuẩn (`--ku-network-bind` ở loopback hoặc mạng LAN riêng DEV-ONLY với `--ku-network-allow-lan`, cùng `VNextProductRuntime`), vẫn tắt mặc định cho tới khi qua các gate triển khai rộng hơn.
 
 ### Receptor, Affordance, Assembly và Mapping
 
@@ -410,7 +418,7 @@ OneBrain tổ chức hệ thống theo 10 trụ cột. README này dùng một t
 | **P5** | **OneBrain Token — OBT** | Nền kinh tế tri thức, ledger, reward và anti-gaming | `ku-core`, `ku-net` |
 | **P6** | **AI Layer** | Local AI, encoding, mediation và fidelity | `ku-ai`, `ku-encoder`, `ku-mediator` |
 | **P7** | **OneBrain Knowledge Graph — OBKG** | Quan hệ, projection, graph learning và discovery | `ku-core`, `ku-kql` |
-| **P8** | **OneBrain Storage — OBS** | KU, graph, blob, vault, quarantine và migration | `ku-core`, `ku-kql` |
+| **P8** | **OneBrain Storage — OBS** | KU, graph, blob, vault, archive, quarantine và migration | `ku-core`, `onebrain-blob-store`, `onebrain-archive`, `onebrain-legacy-ku-store` |
 | **P9** | **BCI Protocol** | Hướng nghiên cứu I/O thần kinh an toàn | Research / future adapters |
 | **P10** | **User Interface** | CLI, API, Web, Desktop và các client tương lai | `onebrain-cli`, `onebrain-api`, `onebrain-web`, `onebrain-desktop` |
 
@@ -480,14 +488,12 @@ flowchart LR
 
 ### Đang chạy trong runtime sản phẩm
 
-- Mã hóa văn bản thành KU thông qua Ollama.
-- Lưu KU, graph index và blob bằng redb/filesystem.
-- Tìm kiếm theo từ khóa, duyệt KU và thực thi KQL local.
-- Xem chi tiết KU, instruction, trust, PoMV và các quan hệ graph hiện có.
-- Chat với local AI khi Ollama và model đã sẵn sàng.
-- Kết nối TCP peer thủ công, gửi/nhận KU và phát sự kiện runtime.
-- Import/export, backup/restore và quản lý blob.
-- Chạy node qua CLI hoặc API; sử dụng Web Dashboard và Tauri Desktop.
+- Soạn thảo, xem preview và lưu tường minh KU riêng tư canonical (`LOCAL_ONLY`, mã hóa trong Vault + nén journal redb) qua `/ku` Web, Desktop, REST API cục bộ (`/api/vnext/ku`) và `onebrain ku` CLI, bảo toàn định danh/bytes sau khi khởi động lại.
+- Chạy trích xuất ngữ nghĩa AI thử nghiệm qua Ollama (`model_qualified=false`) với bản nháp cần review có giới hạn, cơ chế sửa lỗi ngữ nghĩa có kiểm soát bởi host (`KU-SEM-001`) và hạ (lowering) tất định các claim đơn giản đã review (`ARCH-07`).
+- Tìm kiếm KU đã lưu bằng truy vấn có cấu trúc trên `vnext_semantic_index` (`concept:`, `predicate:`, `unit:`, `dimension:`, nhãn Registry và text literal chuẩn hóa; `ARCH-08`), tra ngược CCID sang nhãn Registry chỉ để hiển thị (`describe_ccids`, `D-058`) và chạy KQL chuỗi cục bộ chỉ-đọc (`ARCH-04`).
+- Chia sẻ tường minh một KU đã lưu thành đối tượng `PUBLIC` độc lập giữa hai node (`D-045`): chuẩn bị preview bền vững qua restart (`D-062`), xác nhận riêng tường minh, theo dõi outbound intent bền vững và duyệt/lọc/kiểm tra bên nhận (`share_list` / `share_inspect`) trên Web và `onebrain ku share` CLI qua loopback opt-in hoặc mạng LAN riêng DEV-ONLY (`D-063`), kèm tạo bản nháp riêng tư mới từ Public KU đã nhận (`D-057`).
+- Sao lưu/khôi phục archive mã hóa Base `OBARV002`, quản lý blob lai redb + filesystem (`onebrain-blob-store`), chat với local AI qua Ollama và xem các bề mặt tương thích legacy (được gắn nhãn rõ và đặt sau cờ `legacy` / `--legacy-seed-compat`).
+- Khởi tạo môi trường demo từ fresh clone chỉ bằng một lệnh DEV-ONLY (`scripts/base/bootstrap_ku_dev_demo.py`) với kiểm chứng hai node `CLI↔CLI` và `Web↔Web` tự động trên Linux, macOS và Windows.
 
 ### Đã triển khai trong các đường vNext/Base và test harness
 
@@ -495,31 +501,29 @@ flowchart LR
 - Authority, delegation, revocation và capability permits.
 - Validated storage, encrypted Vault, Quarantine và rollback-safe migration.
 - Receptor/Affordance/Assembly/Mapping workflow.
-- Typed KQL matcher, structural alignment, assembly search và private multipath.
-- Authenticated session, scoped inventory, persisted reconciliation journal và partition/reunion canary.
+- Typed KQL matcher, cùng structural alignment, assembly search và private multipath được đặt sau feature `experimental` (`ku-kql`).
+- Phiên QUIC/relay có xác thực, scoped inventory, persisted reconciliation journal và partition/reunion canary.
 - Use/Derivation/Outcome/Benefit evidence và reward firewall.
 - Checkpoint proofs, restore drill, local retention/GC policy và bounded formal models.
 - Contract Base v1 trung lập sản phẩm, projection Rust/TypeScript/Dart được sinh
-  tự động, stable C ABI, archive mã hóa, khôi phục dataset và qualification tooling.
-- Product surface tùy chọn cho distributed KQL one-hop có giới hạn và Public
-  UseEvidence được xác nhận rõ ràng, với các runtime lane mặc định tắt.
+  tự động, stable C ABI, archive mã hóa `OBARV002`, khôi phục dataset, phân tầng `onebrain-node` độc lập host (`0` bypass) và bộ test Rust gắn chặt profile (`ARCH-13`).
+- Product surface tùy chọn cho điều phối OBP reachability/relay, distributed KQL one-hop có giới hạn và Public UseEvidence được xác nhận rõ ràng, với các runtime lane mặc định tắt.
 
 ### Chưa phải đường production hoàn chỉnh
 
-- Tích hợp sản phẩm vNext đã có sau các gate opt-in/default-off; TCP/JSON legacy
-  chưa được thay hoàn toàn khỏi vai trò live transport mặc định.
+- Các lane mạng và discovery vNext vẫn opt-in/default-off; vượt NAT hộ gia đình và nghiệm thu thực địa hai máy vật lý (`consumer_nat_qualified=false`, `ARCH-14`) vẫn còn mở.
+- Trích xuất AI qua Ollama chạy với `model_qualified=false`; đánh giá holdout đa họ model chính thức (`KU-ENC-003`) và kích hoạt semantic selection v2 trên host người dùng (`KU-SEM-001`) được hoãn sau MVP.
+- Phân phối gói Concept Registry thật do operator ký cho contributor mới vẫn còn mở (cờ bootstrap `--dev-demo-registry` chỉ dành cho `DEV-ONLY` và sinh CCID không tương thích bản phát hành thật).
 - Distributed KQL one-hop có giới hạn đã có, nhưng multipath/provider chủ động
   và discovery tri thức/chuyên gia chưa hoàn thành đường production M6.
 - Public UseEvidence đã có sau explicit consent, nhưng distributed fidelity và
   luồng end-to-end Use -> Outcome -> Benefit vẫn chưa hoàn chỉnh.
-- Base v1 mới phát hành theo owner waiver đã công khai; chưa tuyên bố strict
+- Base v1 được phát hành theo owner waiver đã công khai (`base-v1.0.0-owner-waiver.1`); chưa tuyên bố strict
   `BASE-GATE-V1 qualified=true`.
 - OBT wallet, transfer và finality chưa vận hành thực.
 - Identity recovery và multi-device sync của giao diện còn chưa hoàn thiện.
 - Dream/FedR/STDP orchestration chưa chạy thường trực trong node.
-- Mobile đã là bản BootstrapOnly/Limited với nhiều bằng chứng Android emulator,
-  nhưng các gate `ReadyOffline`, physical-device, networking và store release
-  vẫn còn mở.
+- Mobile là bản `BootstrapOnly/Limited` (đã dùng chung archive `OBARV002` ở `MOB-03` và có bằng chứng Android emulator), nhưng các gate `ReadyOffline`, physical-device, iOS/peer provider, networking và store release vẫn còn mở.
 - Browser extension, bot và glasses vẫn ở mức scaffold.
 - BCI mới là research direction.
 
@@ -527,11 +531,11 @@ flowchart LR
 
 | Giao diện | Trạng thái | Khả năng chính |
 |---|---|---|
-| **CLI** | Hoạt động | Encode, search, KQL, graph, peer, blob, backup, tags, watch, workflow |
-| **REST/WebSocket API** | Hoạt động local | API cho knowledge, AI, network, graph, data và runtime events |
-| **Web Dashboard** | Hoạt động | Dashboard, Explorer, Encode, Chat, Graph, PoMV, Network, Files, Analytics... |
-| **Desktop** | Hoạt động ở source | Tauri nhúng node/API, system tray, setup wizard và event bridge |
-| **Mobile** | BootstrapOnly/Limited | Flutter + native host + Rust core; private capture/media và Android Registry Local Import mới hoàn thành một phần, các gate production còn mở |
+| **CLI (`onebrain-cli`)** | Hoạt động | Host `/ku` (`start --api --ku-*`), `ku` (`get`, `export`, `describe`, `share prepare\|preview\|confirm\|intent\|inspect\|list`), `obp`, `need`, `pomv`, `vnext`, KQL local, sao lưu/khôi phục Base archive, blob |
+| **REST/WebSocket API (`onebrain-api`)** | Hoạt động local | `/api/vnext/ku/*`, opt-in `/api/vnext/obp/*` & `/api/vnext/*` + private WS ticket, endpoint Base archive/dataset và các route legacy `/api/*` có gắn nhãn |
+| **Web Dashboard (`onebrain-web`)** | Hoạt động | Workspace chính `/ku` (nháp manual & AI, tìm kiếm có cấu trúc, chia sẻ/duyệt/kiểm tra Public KU), One-hop Discovery, vNext PoMV, Settings cùng các trang legacy có gắn nhãn |
+| **Desktop (`onebrain-desktop`)** | Hoạt động ở source | Tauri 2.x nhúng node/API, đồng nhất `/ku` editor, vòng đời tắt/khởi động an toàn, system tray và setup wizard |
+| **Mobile (`onebrain-mobile`)** | `BootstrapOnly/Limited` | Flutter + native host + Rust core; private capture/media, archive dùng chung `OBARV002` (`MOB-03`) và Android Registry Local Import; các gate production còn mở |
 | **Extension / Bot / Glasses** | Scaffold | Thiết kế và điểm tích hợp tương lai |
 
 ---
@@ -560,55 +564,53 @@ Các nhóm node tiếp tục tạo và sử dụng tri thức trong thời gian 
 
 ### Yêu cầu
 
-- Rust stable, Cargo và toolchain phù hợp hệ điều hành.
-- Node.js/npm nếu muốn xây Web Dashboard.
-- [Ollama](https://ollama.com/) và một model tương thích nếu muốn dùng AI encode/chat.
+- Rust stable, Cargo và C toolchain phù hợp (`build-essential` trên Linux).
+- Node.js (`20.19+` hoặc `22.12+`) và npm để build giao diện Web.
+- Python 3.10+ để chạy kiểm tra contract và lệnh bootstrap DEV-ONLY lần đầu.
+- Tùy chọn: [Ollama](https://ollama.com/) và một model cục bộ (ví dụ `qwen3:8b`) nếu muốn dùng bản nháp AI thử nghiệm và chat.
 
-### Build workspace
+### Chạy thử nhanh nhất: demo `/ku` cục bộ & hai node (`DEV-ONLY`, `D-056`)
+
+Từ thư mục gốc của repo, build gói Web, tạo thư mục demo DEV-ONLY tách biệt ngoài Git (Registry tổng hợp đã ký, Vault key, API token, nguồn riêng tư mẫu và cấu hình host) rồi chạy theo đúng các lệnh được in ra:
+
+```powershell
+npm ci --prefix src/onebrain-web
+npm run build --prefix src/onebrain-web
+
+python scripts/base/bootstrap_ku_dev_demo.py --check-only
+python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry --with-receiver
+```
+
+Trên Linux/macOS dùng `python3` và đường dẫn như `~/OneBrainLocal/dev-demo`. Script không in secret ra màn hình, không ghi đè tệp cũ, không tự lưu/chia sẻ KU; nó in sẵn lệnh khởi động host `/ku` Web hoặc CLI và lệnh kiểm chứng hai node `scripts/base/check_ku_public_share_demo.py`. Xem [CONTRIBUTING.md](CONTRIBUTING.md) và [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) để cấu hình Registry thật hoặc thử nghiệm qua mạng LAN riêng (`--lan-ip`).
+
+### Build workspace & chạy node thủ công
 
 ```powershell
 cd src
 cargo build --workspace
-```
-
-### Chạy CLI node
-
-```powershell
-cd src
 cargo run -p onebrain-cli -- start --name "My Brain"
 ```
 
-Node vẫn có thể duyệt dữ liệu local khi Ollama hoặc mạng không sẵn sàng; các thao tác encode/chat bằng AI cần Ollama hoạt động.
-
-### Chạy cùng Web Dashboard
+Để phục vụ Web Dashboard đã build từ `onebrain-cli` (mặc định bind loopback `http://127.0.0.1:4280`; truyền thêm `--api-token-file`, cờ Concept Registry và `--ku-vault-key-file` khi muốn bật workspace `/ku` trên `onebrain start --api`):
 
 ```powershell
-cd src/onebrain-web
-npm ci
-npm run build
-
-cd ..
-cargo run -p onebrain-cli -- start --api --web-dir onebrain-web/dist
+cargo run --manifest-path src/Cargo.toml -p onebrain-cli -- start --api --web-dir src/onebrain-web/dist
 ```
 
-Mở `http://127.0.0.1:4280`. API mặc định chỉ bind vào loopback.
+### Kiểm tra mã nguồn và contract
 
-### Kiểm tra mã nguồn
-
-```powershell
-cd src
-cargo fmt --all -- --check
-cargo check --workspace --locked
-```
-
-Kiểm tra contract vNext từ thư mục gốc:
+Từ thư mục gốc của repository:
 
 ```powershell
+cargo fmt --manifest-path src/Cargo.toml --all -- --check
+cargo check --manifest-path src/Cargo.toml --workspace --locked
 python scripts/ci/validate_vnext_contracts.py
+python scripts/ci/check_node_layering.py
+python scripts/ci/validate_mobile_build_contracts.py
 ```
 
 > [!NOTE]
-> Repo đang thay đổi nhanh. Một số integration test legacy có thể cần được cập nhật sau khi type/API vNext thay đổi. Hãy xem CI và issue hiện tại trước khi coi toàn bộ workspace test là release gate xanh.
+> Ba workflow `vNext foundation contract`, `Base v1 three-OS` và `KU dev demo scripts` chạy tự động trên GitHub Actions CI. Các tính năng mạng và thử nghiệm (`vnext-network-runtime`, `vnext-outbound-first`, `ku-kql/experimental`, `legacy`) được đặt sau cargo feature; xem cột Reachability tại [docs/specs/vnext/README.md](docs/specs/vnext/README.md).
 
 ---
 
@@ -616,36 +618,42 @@ python scripts/ci/validate_vnext_contracts.py
 
 ```text
 OneBrain/
-├── src/
-│   ├── ku-core/              # KU, PoMV, OBT, OBKG và foundation vNext
-│   ├── ku-kql/               # KQL local và typed discovery vNext
-│   ├── ku-net/               # DHT, gossip, transport và reconciliation
-│   ├── ku-ai/                # Local AI backends và model policies
-│   ├── ku-encoder/           # Text/observation → KU/Receptor
-│   ├── ku-mediator/          # Intent → retrieve → synthesize
-│   ├── onebrain-protocol/    # Shared wire types và codec
-│   ├── onebrain-node/        # Runtime dùng chung cho các giao diện
-│   ├── onebrain-cli/         # CLI full node
-│   ├── onebrain-api/         # Local REST/WebSocket API
-│   ├── onebrain-desktop/     # Tauri Desktop
-│   ├── onebrain-web/         # React/Vite Web Dashboard
-│   ├── onebrain-mobile/      # UI Flutter/native host cho autonomous mobile node
+├── src/                      # Cargo workspace (21 crate Rust + Web/Mobile/scaffolds)
+│   ├── ku-core/              # Foundation canonical vNext, ngữ nghĩa KU, Vault + legacy Core DNA/PoMV/OBT
+│   ├── ku-kql/               # Chỉ mục ngữ nghĩa vNext, KQL local chỉ-đọc + module discovery thử nghiệm
+│   ├── ku-net/               # Phiên QUIC/OBP reconciliation có xác thực (feature-gated) + legacy DHT/SWIM
+│   ├── ku-ai/                # Local AI backends (Ollama) và model policies
+│   ├── ku-encoder/           # Khung trích xuất KU dùng chung, semantic selection v1/v2, review lowering
+│   ├── ku-mediator/          # Luồng Intent → retrieve → synthesize
+│   ├── onebrain-protocol/    # Kiểu bản tin mạng dùng chung và canonical codec
+│   ├── onebrain-relay/       # Dịch vụ relay QUIC/TLS outbound-first phi tập trung
+│   ├── onebrain-node/        # Runtime dùng chung độc lập host (Base, KU workspace, dịch vụ OBP)
+│   ├── onebrain-cli/         # CLI full node (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`)
+│   ├── onebrain-api/         # Local REST/WebSocket API và example host `ku_local_web`
+│   ├── onebrain-desktop/     # Ứng dụng Tauri 2.x Desktop
+│   ├── onebrain-web/         # Giao diện React/Vite TypeScript (workspace `/ku` + dashboard)
+│   ├── onebrain-mobile/      # UI Flutter và Kotlin/Swift NativeHost cho autonomous mobile node
 │   ├── onebrain-mobile-core/ # Runtime/bootstrap/storage profile bằng Rust cho mobile
 │   ├── onebrain-mobile-bridge/ # C ABI/JNI bridge ổn định cho mobile
-│   ├── onebrain-base-contract/ # Contract ngữ nghĩa Base v1 được sinh tự động
+│   ├── onebrain-base-contract/ # Contract ngữ nghĩa Base v1 sinh tự động (Rust/TS/Dart)
 │   ├── onebrain-base-abi/    # C ABI projection ổn định của Base v1
-│   ├── onebrain-archive/     # Archive/restore mã hóa của Base
-│   ├── onebrain-relay/       # Dịch vụ relay outbound-first
-│   └── onebrain-seed/        # Discovery/relay seed prototype
+│   ├── onebrain-archive/     # Container sao lưu/khôi phục mã hóa `OBARV002` dùng chung
+│   ├── onebrain-blob-store/  # Kho blob Base lai redb + filesystem bền vững (TX-BLOB-001)
+│   ├── onebrain-legacy-ku-store/ # Kho tương thích legacy Core DNA `KuStorage` + OBKG `GraphStorage`
+│   ├── onebrain-seed/        # Daemon tương thích TCP/JSON legacy (không phải relay vNext)
+│   ├── ku-demo/              # Mô phỏng nhiều node
+│   └── test-vectors/         # Bộ vector chuẩn đã đóng băng cho canonical, Base v1, Registry và foundation
 ├── docs/
-│   ├── specs/                # Đặc tả legacy và vNext
-│   ├── research/             # Research baseline và implementation plan
+│   ├── handoffs/             # Kế hoạch MVP MASTER_PLAN, sổ PROGRESS, DECISIONS và đặc tả 24 task
+│   ├── specs/                # Contract vNext (kèm bảng Reachability) và đặc tả legacy
+│   ├── research/             # Research baseline, foundation plan, kế hoạch distributed runtime & mobile
+│   ├── design/mobile/        # Design system, token và build contract bắt buộc của mobile
 │   ├── paper/                # Các paper theo trụ cột
-│   └── features/             # Feature tree và feature details
+│   └── features/             # Cây tính năng và sitemap cho Desktop/Web và mobile
 ├── formal/tla/               # Các bounded formal model TLA+
-├── scripts/                  # Contract validation và Concept Registry tools
-├── installer/                # Build/install scripts
-└── release/                  # Các artifact phát hành
+├── scripts/                  # Công cụ kiểm tra contract/layering/mobile, bootstrap DEV-ONLY & Base
+├── installer/                # Script đóng gói và cài đặt theo nền tảng
+└── release/                  # Các artifact phát hành và qualification
 ```
 
 ---
@@ -679,14 +687,15 @@ v1 vẫn mở vì bản phát hành hiện tại chỉ theo owner waiver.
 
 ### Giai đoạn 2 — Runtime integration
 
-**Trạng thái:** implementation/bằng chứng P0-P3 và DR-M5 đã hoàn tất; việc đưa
-vNext thành đường chạy sản phẩm mặc định vẫn còn mở.
+**Trạng thái:** P0–P3, DR-M5, bản concept MVP KU–OBP chạy được (22/24 task) và đợt
+củng cố kiến trúc D-051 (13/15 hạng mục) đã merge vào `main` với CI xanh; việc bật
+mặc định mạng vNext và hoàn tất định tuyến Standing Need của M6 vẫn còn mở.
 
-- Nối foundation vNext vào `OneBrainNode` sau feature flag/canary.
-- Thay live TCP demo bằng authenticated OBP reconciliation.
+- Nối foundation vNext và workspace `/ku` vào `OneBrainNode` qua một façade độc lập host (`ARCH-09`).
+- Khóa mặc định TCP legacy không xác thực sau cờ opt-in (`ARCH-02`) và trao đổi Public KU qua OBP-RP có xác thực (`D-045` / `D-062` / `D-063`).
 - Nối KQL Standing Need với OBP scoped routing, peer-local matching và evidence-bearing proposal.
 - Hoàn thiện identity, persistence và multi-device semantics.
-- Bổ sung end-to-end test cho node, seed, API, Web và Desktop.
+- Duy trì kiểm thử end-to-end đa hệ điều hành cho CLI, API, Web và Desktop (`ku-dev-demo-scripts`, `Base v1 three-OS`, `vNext foundation contract`).
 
 ### Giai đoạn 3 — Open network
 

@@ -47,11 +47,21 @@ flowchart LR
 | [KU-QA-001](tasks/09-KU-QA-001.md) | A: reconcile available implementation/setup; B: local save/search/restart; C: small experimental AI check and shared-surface smoke | Local concept can be demonstrated and actual limits are recorded; strict ENC-003 is not a dependency |
 | [INT-KU-OBP-001](tasks/20-INT-KU-OBP-001.md) | A: explicit two-node exchange; B: receiver read/identity and one retry or restart; C: contributor build/run instructions and backlog links | Repeatable concept journey plus a usable open-source entry point, without platform qualification claims |
 
-These are existing tasks 09 and 20, not a new milestone/task hierarchy. Planning
-this scope does not mark either task implemented. Each next step fixes the first
-concrete obstacle to the demo, rather than expanding an evaluation framework.
-Dependent local work may use a reviewed available implementation before merge;
-record the actual base in PROGRESS. Publication/merge state remains separate.
+These are existing tasks 09 and 20, not a new milestone/task hierarchy. Each next
+step fixes a concrete obstacle to the demo or contributor onboarding rather than
+expanding an evaluation framework. Dependent local work may use a reviewed
+available implementation before merge; record the actual base in PROGRESS.
+Publication/merge state remains separate.
+
+**Current milestone status (updated 2026-11-26):** Both parent MVP tasks
+(`09-KU-QA-001` and `20-INT-KU-OBP-001`) are **Merged** on `main` (`8d064c4`,
+D-046), bringing the 24-task KU–OBP workstream to **22 Merged / 2 Deferred**
+(`23-KU-ENC-003` and `24-KU-SEM-001`). In addition, **13 of 15** D-051
+architecture remediation items (`ARCH-01..09`, `ARCH-11..13`, `ARCH-15`),
+multi-OS first-run and two-node share CI (`D-056`–`D-059`, `D-062`, `D-063`), and
+eight narrow `SEM-F03` semantic repair slices (`D-060`, `D-061`, `D-064`–`D-069`)
+are merged on `main` with green CI. Active bounded slices are selected from the
+backlogs below and tracked in [PROGRESS](PROGRESS.md).
 
 ## MVP checks and stopping rule
 
@@ -79,7 +89,7 @@ must be apparent to the tester. Do not call manual corrections automatic encodin
 
 | Seam | Existing owner/location | Rule for an MVP contribution |
 |---|---|---|
-| Canonical knowledge, identity and storage | `src/ku-core`, `src/onebrain-base-contract` | Reuse registered types/codec; keep durable identity stable |
+| Canonical knowledge, identity and storage | `src/ku-core`, `src/onebrain-base-contract`, `src/onebrain-archive`, `src/onebrain-blob-store`, `src/onebrain-legacy-ku-store` | Reuse registered types/codec; keep durable identity stable |
 | Extraction and model adapters | `src/ku-encoder/src/extraction` | Models return proposals; reuse the shared workflow and bounded provider interface |
 | KU jobs, save/recovery and orchestration | `src/onebrain-node` | Keep one service owner; avoid frontend-specific knowledge semantics |
 | Local API and user experience | `src/onebrain-api`, `src/onebrain-cli`, `src/onebrain-web`, `src/onebrain-desktop` | Project the same service; improve setup and visible errors in place |
@@ -152,13 +162,13 @@ owners; the entries below link to them rather than spawning new plans.
 
 | Area / existing owner | Bounded contribution | Completion example / dependency |
 |---|---|---|
-| Task 20.C — first-run experience | Make the existing local host easier to provision, document prerequisites and useful errors | A fresh contributor can follow the declared setup and demo; no hidden maintainer-only files. One-command bootstrap with opt-in DEV-ONLY Registry exists (D-056); CI repeats the printed first run + two-node checks on Linux, macOS and Windows (t6–t11); the CLI-sender dev demo is covered by the printed `onebrain start --api` host command and the `--sender-kind cli` check (t4/t5, reconciled t12); remaining: real Registry distribution (needs operator-owned release trust, not DEV-ONLY) |
+| Task 20.C — first-run experience | Make the existing local host easier to provision, document prerequisites and useful errors | A fresh contributor can follow the declared setup and demo; no hidden maintainer-only files. One-command bootstrap with opt-in DEV-ONLY Registry exists (D-056), plus optional `--lan-ip` for DEV-ONLY private-LAN share config (D-063, t19/t22); CI repeats the printed first run + two-node checks on Linux, macOS and Windows (t6–t11, t14, t18); the CLI-sender dev demo is covered by the printed `onebrain start --api` host command and the `--sender-kind cli` check (t4/t5, reconciled t12); remaining: real Registry distribution (needs operator-owned release trust, not DEV-ONLY) and a live two-physical-machine private-LAN run |
 | Task 20 follow-up — share projection | Project the D-045 shared share module through a registered product API/Web action and normal node host composition | Done (reconciled t13): registered `POST /api/vnext/ku/editor` share actions, `/ku` Web, `ku_host`/`ku_local_web`/`OneBrainNode`/`onebrain start --api --ku-network-bind` composition, and `onebrain ku share` CLI parity; preview/confirm, private ID/source suppression and pending/delivery distinction preserved. Further work: none queued here (CI drive of `onebrain ku share` done t14; display-only CCID→Registry label `describe_ccids` done t15, D-058; prepared-preview read-back `share_preview` shown before CLI confirm done t16, D-059; unexpired prepared share survives normal-host restart done t17, D-062; live two-node sender restart check done t18; DEV-ONLY opt-in private-LAN share bind done t19, D-063; browser click-test of `/ku` (D-057/D-058/D-062, loopback) + Web UX fixes done t20; five small `/ku` UX nits left by t20 fixed t21; browser click-test of t21 + private-LAN badge on one machine and share selector/namespace guidance done t22; NAT/relay/public exposure not queued) |
-| KU-SEM-001 | Pick one reference/alternative/qualifier defect from the [semantic backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md) | One reproducible case, shared fix and focused regression; broader fidelity stays deferred |
-| KU-QA-001 follow-up | CLI/Desktop parity and native lifecycle portability | Reproduce one actual difference or host issue and fix it; no full platform lab required to contribute |
+| KU-SEM-001 | Pick one reference/alternative/qualifier defect from the [semantic backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md) | One reproducible case, shared fix and focused regression; broader fidelity stays deferred. Eight narrow `SEM-F03` host-bounded repair slices are merged through D-069 (`D-060`, `D-061`, `D-064`–`D-069`); remaining structured issues (such as comparison `cue_ambiguous`, mixed OR re-cueing, reference/time scope), model runs and v2 host activation remain open |
+| KU-QA-001 follow-up | CLI/Desktop parity and native lifecycle portability | Reproduce one actual difference or host issue and fix it; no full platform lab required to contribute (Desktop `/ku` editor parity locked in `9f8bc2b`; live Desktop D-057 click-through still open) |
 | KU-ENC-003 | Finish one missing harness/provider/measurement/evaluator seam | See [task 23](tasks/23-KU-ENC-003.md); formal qualified claims still require its full original conditions |
 | OBP-QA-001 follow-up | Consumer NAT, native OS lifecycle, non-Linux paths | Reproduce on available real environment; record scope; do not reopen completed functional acceptance |
-| Base / Registry | Simplify contributor setup and later strict release closure | Preserve existing trust/data; [historical status](../../PROJECT_STATUS.md) and runtime plan own production gates |
+| Base / Registry | Simplify contributor setup and later strict release closure | Preserve existing trust/data; `Base v1 three-OS` candidate CI is green on `main` (`ci2`/`ci3`, 2026-11-25/26); [project status](../../PROJECT_STATUS.md) and runtime plan own strict production gates |
 | Mobile | Existing autonomous mobile backlog | Separate later lane under mobile AGENTS/build contract; no mobile implementation is authorized by this plan |
 | M6 — distributed KQL / Outcome / Benefit | Implement a bounded slice when that lane is selected | [Distributed runtime plan](../../research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md), sections 12–13; outside this MVP |
 | M7 — economics and wallet | Reconcile reward-policy decisions, then versioned implementation | Same runtime plan section 14 plus D-013/D-014; no production token promise in MVP |

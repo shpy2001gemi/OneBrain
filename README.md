@@ -16,12 +16,15 @@ The project encodes knowledge into compact **Knowledge Units (KUs)** with conten
 
 > [!IMPORTANT]
 > OneBrain is an active research and engineering project. The vNext foundation,
-> product-integration work through P3, and DR-M5 hardening are implemented with
-> recorded evidence. Base v1 has an owner-approved release with disclosed
-> exceptions, but the strict `base-v1.0.0` tag is not published. Mobile is now a
-> BootstrapOnly/Limited implementation rather than a scaffold; its offline and
-> production gates remain open. OneBrain is not yet a mainnet or a complete
-> financial system. See the dated [project status](docs/PROJECT_STATUS.md).
+> P0–P3 product integration, DR-M5 hardening, the runnable KU–OBP concept MVP
+> (22/24 tasks merged, 2 deferred), and the D-051 architecture remediation
+> (13/15 items complete) are merged on `main` with green CI. Base v1 has an
+> owner-approved release (`base-v1.0.0-owner-waiver.1`) with disclosed
+> exceptions, while strict `base-v1.0.0` is not claimed. Mobile is a
+> `BootstrapOnly/Limited` implementation (reusing the shared `OBARV002` archive
+> in `MOB-03`), with `ReadyOffline` and production gates still open. OneBrain is
+> not yet a mainnet or a complete financial system. See the dated
+> [project status](docs/PROJECT_STATUS.md).
 
 Today, a major problem may require thousands of people across many fields, yet their knowledge remains separated by organizations, languages, data formats, and time. Imagine if no one had to start from zero; if a small discovery in one place could meet the right question somewhere else; if millions of independent brains could think about a problem together without surrendering control to a centralized “superbrain.”
 
@@ -52,32 +55,35 @@ That is the future OneBrain seeks to help create: **every brain is an autonomous
 
 ## Project status
 
-**Current priority (2026-09-28): a runnable open-source concept MVP.** Follow the
-[single MVP plan](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
-[current work including unmerged branches](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md)
-and [contributor entry](CONTRIBUTING.md). Model/production qualification is later
-work, not a prerequisite for the experimental demonstration. The table below is
-the dated September baseline.
+**Active priority (D-044): runnable open-source concept MVP and bounded contributor improvements.**
+Follow the [single MVP plan](docs/handoffs/2026-09-ku-obp-productization/MASTER_PLAN.md),
+[authoritative progress ledger](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md),
+[task overview](docs/handoffs/2026-09-ku-obp-productization/tasks/README.md), and
+[contributor guide](CONTRIBUTING.md). Formal model and production qualification remain
+separate gates, not prerequisites for experimental contributions.
 
-Try the [manual local-to-peer concept](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
-private save → exact Public preview → explicit confirmation → receiver inspection.
-It currently requires operator Registry/host setup and supports a narrow manual form.
+Try the `/ku` local-to-peer concept from a fresh clone in one DEV-ONLY bootstrap command
+(`python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry`,
+plus `--with-receiver` for two-node loopback sharing or `--lan-ip <private-ip>` for DEV-ONLY
+private-LAN testing), or run with an operator-provisioned Concept Registry—see
+[CONTRIBUTING.md](CONTRIBUTING.md) and the
+[two-node D-045 guide](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
+private save → restart-durable Public preview → explicit confirmation → receiver browse & inspection.
 
-Snapshot: **2026-09-05**, audited at `main` commit `c65f1739fcd0`.
+Snapshot: **2026-11-26**, synchronized with `main` (`bc1934d`).
 
 | Workstream | Current status | Main open boundary |
 |---|---|---|
-| vNext foundation | Contract/foundation scope complete; validators pass | Product defaults and operator rollout are separate gates |
-| P0-P3 + DR-M5 | Implementation and recorded CI evidence complete | vNext lanes remain opt-in/default-off; legacy live transport is not fully retired |
-| Base v1 | `base-v1.0.0-owner-waiver.1` released with disclosed exceptions | Strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` is not claimed |
-| Mobile | BootstrapOnly/Limited; MOB-05A and Android MOB-05B through Local Import implemented | MOB-05C, private KU completion, iOS/peer providers, physical-device gates, networking, and store release |
-| M6 / M7 / BCI | Future gated milestones | Active distributed KQL, Outcome/Benefit, production OBT, and BCI safety/implementation |
+| Concept MVP (`KU–OBP`) | **22/24 tasks Merged**, 2 Deferred (`KU-ENC-003` model qualification, `KU-SEM-001` broader semantic fidelity; 8 narrow `SEM-F03` bounded repairs merged through D-069); two-node `CLI↔CLI` and `Web↔Web` CI green on Linux, macOS, and Windows | Real operator Registry distribution, two physical LAN machines (`D-063`), `model_qualified=false`, `consumer_nat_qualified=false` |
+| Architecture remediation (`D-051`) | **13/15 items Done** (`ARCH-01..09`, `ARCH-11..13`, `ARCH-15`): host-agnostic `onebrain-node` façade (0 layering bypasses), fenced legacy TCP listener, single user-facing `/ku` model, `vnext_semantic_index` KU search, journal/Base compaction, leaf blob/legacy stores, Rust profile tests | `ARCH-10` mobile-safe node core Deferred after `MOB-03` shared archive slice; `ARCH-14` consumer-NAT field hardening Blocked pending new VPS setup |
+| vNext foundation + P0–P3 + DR-M5 | Contract/foundation scope complete (99 tasks, 18 ADRs, 56 vectors across 22 domains); `vNext foundation contract` CI green | vNext network lanes remain opt-in/default-off; operator rollout and later milestones remain separate gates |
+| Base v1 | `base-v1.0.0-owner-waiver.1` released with disclosed exceptions; `Base v1 three-OS` candidate CI green on current `main` | Strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` is not claimed |
+| Mobile | `BootstrapOnly/Limited`; `MOB-01..04` foundation/capture, `MOB-03` shared `onebrain-archive` (`OBARV002`), `MOB-05A`, and Android `MOB-05B` Local Import implemented; contract validator green | `MOB-05B` iOS/peer providers, `MOB-05C` full Registry activation, `MOB-04` private KU completion, `MOB-06..09`, physical-device gates, and `ReadyOffline` |
+| M6 / M7 / BCI | Future gated milestones | Active distributed multipath KQL, Outcome/Benefit, production OBT, and BCI safety/implementation |
 
-The cleanup audit found that all **46 former local branch tips were contained in
-`origin/main`**; there were no unmerged commits. Local Git has since been reduced
-to one branch and one worktree: `main`. The detailed progress, remaining work,
-release caveats, and cleanup record are maintained in
-[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
+Detailed status, release caveats, CI validation evidence, and historical Git audit context are maintained in
+[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md); live task and retained-branch state lives only in
+[`PROGRESS.md`](docs/handoffs/2026-09-ku-obp-productization/PROGRESS.md).
 
 ---
 
@@ -183,7 +189,7 @@ No central index needs to know who knows what. No node must expose its entire va
 
 The returned result is a **candidate or proposal with provenance and evidence**, not truth or an automatic decision. KQL may find and propose; materialize, adopt, use, and publish remain separate boundaries requiring appropriate consent and authority.
 
-**Current status:** local KQL runs in the product runtime. Typed matching, Standing Need, private multipath/disclosure, and partition–reunion exist in the vNext foundation and test harness; peer-to-peer OBP query routing is not yet the default live end-to-end path.
+**Current status:** the `/ku` product workspace runs persistent structured KU search over `vnext_semantic_index` (`concept:`, `predicate:`, `unit:`, `dimension:`, plus folded Registry labels and text literals; ARCH-08), while legacy textual KQL (`/api/kql`, CLI `kql`) is frozen as a bounded local read-only query surface (ARCH-04). Bounded one-hop Need discovery runs behind opt-in `vnext-network-runtime` (with hash-derived mapping limits disclosed), while unconsumed multipath/alignment modules are gated behind `ku-kql/experimental` (ARCH-11) until M6.
 
 ### BCI—the gateway between thought and the knowledge network
 
@@ -275,15 +281,17 @@ This is a protocol vision, not an investment promise or a description of an oper
 
 ### Knowledge Unit—KU
 
-A KU is OneBrain's fundamental unit of knowledge. The current KU architecture has three layers:
+A KU is OneBrain's fundamental unit of knowledge. In the active vNext product workspace (`/ku`, `/api/vnext/ku`, `onebrain ku`; ARCH-06), user-facing KUs are canonical content-addressed objects carrying CCID-bound `SemanticFrameSet` statements/quantities, explicit disclosure boundaries (encrypted Private Vault `LOCAL_ONLY` vs explicitly confirmed `PUBLIC` objects), and verifiable provenance.
+
+Conceptually—and in the preserved `legacy` compatibility model (`KuRuntime`)—a KU separates three concerns:
 
 ```text
-CoreDna                 Epigenetics                    Expression
-core semantics     +    evidence, trust, bonds    +    human-facing presentation
+CoreDna / SemanticFrameSet      Epigenetics / Evidence           Expression
+core canonical semantics   +    provenance, trust, bonds    +    human-facing presentation
 ```
 
-- **CoreDna** represents semantic structure and instructions.
-- **Epigenetics** stores evolvable state: evidence, relationships, trust, and use signals.
+- **Core semantics (`SemanticFrameSet` / legacy `CoreDna`)** represent language-independent concepts, predicates, units, and instructions.
+- **Epigenetics & provenance** store evolvable evidence, relationships, trust, and use signals without mutating semantic identity.
 - **Expression** holds natural-language or interface-oriented representations.
 
 ### OneBrain Protocol—OBP Network
@@ -296,7 +304,7 @@ core semantics     +    evidence, trust, bonds    +    human-facing presentation
 
 OBP is the communication layer that helps independent nodes discover one another, negotiate capabilities, exchange inventories, reconcile differences, and transfer exactly the knowledge they are allowed to share. The network is designed to keep operating offline, under partition, or across high-latency carriers; when connectivity returns, nodes converge through evidence and validation rather than trust in a root authority.
 
-**Current status:** the live node still uses legacy TCP/JSON for basic peer connectivity. Authenticated sessions, scoped inventory, reconciliation journals, partition–reunion, and vNext carriers exist in the protocol, libraries, and test harness, but have not yet replaced the default end-to-end transport.
+**Current status:** the unauthenticated legacy TCP/JSON listener is disabled by default unless explicit `--legacy-seed-compat` opt-in is passed (ARCH-02). Authenticated QUIC/OBP-RP sessions, scoped five-lane inventories, persisted reconciliation journals, outbound-first relay failover, and explicit two-node Public KU sharing (`D-045` / `D-062` / `D-063`) are implemented and run opt-in on normal hosts (`--ku-network-bind` on loopback or DEV-ONLY private LAN with `--ku-network-allow-lan`, plus `VNextProductRuntime`), remaining default-off until broader rollout gates pass.
 
 ### Receptor, Affordance, Assembly, and Mapping
 
@@ -412,7 +420,7 @@ OneBrain organizes the system into ten pillars. This README uses one consistent 
 | **P5** | **OneBrain Token—OBT** | Knowledge economy, ledger, rewards, and anti-gaming | `ku-core`, `ku-net` |
 | **P6** | **AI Layer** | Local AI, encoding, mediation, and fidelity | `ku-ai`, `ku-encoder`, `ku-mediator` |
 | **P7** | **OneBrain Knowledge Graph—OBKG** | Relationships, projection, graph learning, and discovery | `ku-core`, `ku-kql` |
-| **P8** | **OneBrain Storage—OBS** | KU, graph, blob, vault, quarantine, and migration | `ku-core`, `ku-kql` |
+| **P8** | **OneBrain Storage—OBS** | KU, graph, blob, vault, archive, quarantine, and migration | `ku-core`, `onebrain-blob-store`, `onebrain-archive`, `onebrain-legacy-ku-store` |
 | **P9** | **BCI Protocol** | Research direction for safe neural I/O | Research / future adapters |
 | **P10** | **User Interface** | CLI, API, Web, Desktop, and future clients | `onebrain-cli`, `onebrain-api`, `onebrain-web`, `onebrain-desktop` |
 
@@ -482,14 +490,12 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 
 ### Running in the product runtime
 
-- Encode text into KUs through Ollama.
-- Store KUs, graph indexes, and blobs with redb and the filesystem.
-- Search by keyword, browse KUs, and execute local KQL.
-- Inspect KU details, instructions, trust, PoMV, and existing graph relationships.
-- Chat with local AI when Ollama and a model are available.
-- Manually connect TCP peers, send and receive KUs, and emit runtime events.
-- Import/export, backup/restore, and manage blobs.
-- Run a node through CLI or API, and use the Web Dashboard and Tauri Desktop.
+- Author, preview, and explicitly save canonical private KUs (`LOCAL_ONLY`, encrypted Vault + compacted redb journal) through `/ku` Web, Desktop, local REST API (`/api/vnext/ku`), and `onebrain ku` CLI, with identity/byte preservation across restarts.
+- Run experimental local Ollama semantic extraction (`model_qualified=false`) with bounded review drafts, targeted host-enforced semantic repair (`KU-SEM-001`), and deterministic lowering of simple reviewed claims (`ARCH-07`).
+- Search saved KUs via persistent `vnext_semantic_index` structured queries (`concept:`, `predicate:`, `unit:`, `dimension:`, folded Registry labels and text literals; `ARCH-08`), display reverse CCID→Registry labels (`describe_ccids`, `D-058`), and run bounded local read-only textual KQL (`ARCH-04`).
+- Explicitly share a saved KU as a separate `PUBLIC` object across two nodes (`D-045`): restart-durable preview preparation (`D-062`), typed/explicit confirmation, durable outbound intent tracking, and receiver browse/filter/inspection (`share_list` / `share_inspect`) on Web and `onebrain ku share` CLI over opt-in loopback or DEV-ONLY private LAN (`D-063`), plus seeding a new manual private draft from a received Public KU (`D-057`).
+- Create and restore encrypted Base `OBARV002` dataset archives, manage hybrid redb + filesystem blobs (`onebrain-blob-store`), chat with local AI via Ollama, and inspect legacy compatibility surfaces (clearly labeled and gated behind `legacy` / `--legacy-seed-compat`).
+- Bootstrap a fresh clone in one DEV-ONLY command (`scripts/base/bootstrap_ku_dev_demo.py`) with automated two-node `CLI↔CLI` and `Web↔Web` verification across Linux, macOS, and Windows.
 
 ### Implemented in vNext/Base paths and test harnesses
 
@@ -497,31 +503,29 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 - Authority, delegation, revocation, and capability permits.
 - Validated storage, encrypted Vault, Quarantine, and rollback-safe migration.
 - Receptor/Affordance/Assembly/Mapping workflows.
-- Typed KQL matching, structural alignment, assembly search, and private multipath.
-- Authenticated sessions, scoped inventories, persisted reconciliation journals, and partition/reunion canaries.
+- Typed KQL matching, plus `experimental`-gated structural alignment, assembly search, and private multipath (`ku-kql`).
+- Authenticated QUIC/relay sessions, scoped inventories, persisted reconciliation journals, and partition/reunion canaries.
 - Use/Derivation/Outcome/Benefit evidence and a reward firewall.
 - Checkpoint proofs, restore drills, local retention/GC policy, and bounded formal models.
 - Product-neutral Base v1 contracts, generated Rust/TypeScript/Dart projections,
-  a stable C ABI, encrypted archives, dataset recovery, and qualification tooling.
-- Optional product surfaces for bounded one-hop distributed KQL and explicitly
-  confirmed Public UseEvidence, with default-off runtime lanes.
+  a stable C ABI, encrypted `OBARV002` archives, dataset recovery, host-agnostic `onebrain-node` layering (`0` bypasses), and profile-bound Rust conformance suites (`ARCH-13`).
+- Optional product surfaces for OBP reachability/relay orchestration, bounded one-hop distributed KQL, and explicitly confirmed Public UseEvidence, with default-off runtime lanes.
 
 ### Not yet a complete production path
 
-- vNext product integration exists behind opt-in/default-off gates; legacy
-  TCP/JSON has not been fully retired as the default live transport.
+- vNext networking and discovery lanes remain opt-in/default-off; consumer-NAT traversal and two-physical-machine field qualification (`consumer_nat_qualified=false`, `ARCH-14`) remain open.
+- Experimental Ollama extraction runs with `model_qualified=false`; formal multi-model holdout qualification (`KU-ENC-003`) and full semantic selection v2 host activation (`KU-SEM-001`) are deferred.
+- Operator-signed Concept Registry release distribution for fresh contributors remains open (the one-command `--dev-demo-registry` bootstrap is strictly `DEV-ONLY` and incompatible with real release CCIDs).
 - Bounded one-hop distributed KQL exists, but active multipath/provider and
   knowledge/expert discovery have not completed the M6 production path.
 - Public UseEvidence exists behind explicit consent, but distributed fidelity
   and the end-to-end Use -> Outcome -> Benefit flow remain incomplete.
-- Base v1 is released only under the disclosed owner waiver; strict
+- Base v1 is released under the disclosed owner waiver (`base-v1.0.0-owner-waiver.1`); strict
   `BASE-GATE-V1 qualified=true` is not claimed.
 - OBT wallet, transfer, and finality are not operational.
 - Interface identity recovery and multi-device synchronization remain incomplete.
 - Dream/FedR/STDP orchestration does not run continuously in the node.
-- Mobile is a BootstrapOnly/Limited implementation with substantial Android
-  emulator evidence, but `ReadyOffline`, physical-device, networking, and store
-  release gates remain open.
+- Mobile is a `BootstrapOnly/Limited` implementation (including shared `OBARV002` archive in `MOB-03` and Android emulator evidence), but `ReadyOffline`, physical-device, iOS/peer provider, networking, and store release gates remain open.
 - Browser extension, bot, and glasses clients remain scaffolds.
 - BCI remains a research direction.
 
@@ -529,11 +533,11 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 
 | Interface | Status | Main capabilities |
 |---|---|---|
-| **CLI** | Operational | Encode, search, KQL, graph, peer, blob, backup, tags, watch, workflow |
-| **REST/WebSocket API** | Operational locally | APIs for knowledge, AI, network, graph, data, and runtime events |
-| **Web Dashboard** | Operational | Dashboard, Explorer, Encode, Chat, Graph, PoMV, Network, Files, Analytics... |
-| **Desktop** | Operational from source | Tauri-embedded node/API, system tray, setup wizard, and event bridge |
-| **Mobile** | BootstrapOnly/Limited | Flutter + native host + Rust core; private capture/media and Android Registry Local Import are partial, with production gates still open |
+| **CLI (`onebrain-cli`)** | Operational | `/ku` host (`start --api --ku-*`), `ku` (`get`, `export`, `describe`, `share prepare\|preview\|confirm\|intent\|inspect\|list`), `obp`, `need`, `pomv`, `vnext`, local KQL, Base archive backup/restore, blobs |
+| **REST/WebSocket API (`onebrain-api`)** | Operational locally | `/api/vnext/ku/*`, opt-in `/api/vnext/obp/*` & `/api/vnext/*` + private WS tickets, Base archive/dataset endpoints, and labeled legacy `/api/*` |
+| **Web Dashboard (`onebrain-web`)** | Operational | Primary `/ku` workspace (manual & AI drafts, structured search, Public KU share/browse/inspect), One-hop Discovery, vNext PoMV, Settings, plus labeled legacy pages |
+| **Desktop (`onebrain-desktop`)** | Operational from source | Tauri 2.x embedded node/API, `/ku` editor parity, graceful lane lifecycle, system tray, and setup wizard |
+| **Mobile (`onebrain-mobile`)** | `BootstrapOnly/Limited` | Flutter + native host + Rust core; private capture/media, shared `OBARV002` archive (`MOB-03`), and Android Registry Local Import implemented; production gates open |
 | **Extension / Bot / Glasses** | Scaffold | Design and future integration points |
 
 ---
@@ -562,55 +566,53 @@ Groups of nodes continue creating and using knowledge while disconnected. When a
 
 ### Requirements
 
-- Stable Rust, Cargo, and the appropriate platform toolchain.
-- Node.js/npm to build the Web Dashboard.
-- [Ollama](https://ollama.com/) and a compatible model for AI encoding and chat.
+- Stable Rust, Cargo, and a C toolchain (`build-essential` on Linux).
+- Node.js (`20.19+` or `22.12+`) and npm to build the Web UI.
+- Python 3.10+ for contract checks and the first-run DEV-ONLY bootstrap helper.
+- Optional: [Ollama](https://ollama.com/) and a local model (such as `qwen3:8b`) for experimental AI drafts and chat.
 
-### Build the workspace
+### Fastest first run: `/ku` local & two-node demo (`DEV-ONLY`, `D-056`)
+
+From the repository root, build the Web bundle, generate an isolated DEV-ONLY demo root outside Git (synthetic signed Registry, Vault key, API token, sample private source, and host configs), and follow the printed shell commands:
+
+```powershell
+npm ci --prefix src/onebrain-web
+npm run build --prefix src/onebrain-web
+
+python scripts/base/bootstrap_ku_dev_demo.py --check-only
+python scripts/base/bootstrap_ku_dev_demo.py --demo-root C:/OneBrainLocal/dev-demo --dev-demo-registry --with-receiver
+```
+
+On Linux/macOS, use `python3` and a path such as `~/OneBrainLocal/dev-demo`. The script never prints secrets, overwrites files, or auto-saves/shares KUs; it prints exact commands to start the `/ku` Web or CLI hosts and run `scripts/base/check_ku_public_share_demo.py`. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for real Registry setup and `--lan-ip` private-LAN testing.
+
+### Build the workspace & run a node manually
 
 ```powershell
 cd src
 cargo build --workspace
-```
-
-### Run a CLI node
-
-```powershell
-cd src
 cargo run -p onebrain-cli -- start --name "My Brain"
 ```
 
-The node can still browse local data when Ollama or the network is unavailable; AI encoding and chat require Ollama to be running.
-
-### Run with the Web Dashboard
+To serve the built Web Dashboard from `onebrain-cli` (loopback `http://127.0.0.1:4280` by default; pass `--api-token-file`, Concept Registry flags, and `--ku-vault-key-file` to enable the `/ku` workspace on `onebrain start --api`):
 
 ```powershell
-cd src/onebrain-web
-npm ci
-npm run build
-
-cd ..
-cargo run -p onebrain-cli -- start --api --web-dir onebrain-web/dist
+cargo run --manifest-path src/Cargo.toml -p onebrain-cli -- start --api --web-dir src/onebrain-web/dist
 ```
 
-Open `http://127.0.0.1:4280`. By default, the API binds only to loopback.
+### Check the source and contracts
 
-### Check the source
-
-```powershell
-cd src
-cargo fmt --all -- --check
-cargo check --workspace --locked
-```
-
-Validate vNext contracts from the repository root:
+From the repository root:
 
 ```powershell
+cargo fmt --manifest-path src/Cargo.toml --all -- --check
+cargo check --manifest-path src/Cargo.toml --workspace --locked
 python scripts/ci/validate_vnext_contracts.py
+python scripts/ci/check_node_layering.py
+python scripts/ci/validate_mobile_build_contracts.py
 ```
 
 > [!NOTE]
-> The repository is changing quickly. Some legacy integration tests may need updates after vNext type or API changes. Check current CI and issues before treating the entire workspace test suite as a green release gate.
+> `vNext foundation contract`, `Base v1 three-OS`, and `KU dev demo scripts` run in GitHub Actions CI. Networking and experimental features (`vnext-network-runtime`, `vnext-outbound-first`, `ku-kql/experimental`, `legacy`) are feature-gated; see [docs/specs/vnext/README.md](docs/specs/vnext/README.md) for each module's reachability.
 
 ---
 
@@ -618,36 +620,42 @@ python scripts/ci/validate_vnext_contracts.py
 
 ```text
 OneBrain/
-├── src/
-│   ├── ku-core/              # KU, PoMV, OBT, OBKG, and the vNext foundation
-│   ├── ku-kql/               # Local KQL and typed vNext discovery
-│   ├── ku-net/               # DHT, gossip, transport, and reconciliation
-│   ├── ku-ai/                # Local AI backends and model policies
-│   ├── ku-encoder/           # Text/observation → KU/Receptor
-│   ├── ku-mediator/          # Intent → retrieve → synthesize
-│   ├── onebrain-protocol/    # Shared wire types and codecs
-│   ├── onebrain-node/        # Runtime shared by all interfaces
-│   ├── onebrain-cli/         # Full-node CLI
-│   ├── onebrain-api/         # Local REST/WebSocket API
-│   ├── onebrain-desktop/     # Tauri Desktop
-│   ├── onebrain-web/         # React/Vite Web Dashboard
-│   ├── onebrain-mobile/      # Flutter autonomous mobile node UI/native hosts
-│   ├── onebrain-mobile-core/ # Mobile Rust runtime/bootstrap/storage profile
+├── src/                      # Cargo workspace (21 Rust crates + Web/Mobile/scaffolds)
+│   ├── ku-core/              # Canonical vNext foundation, KU semantics, Vault, + legacy Core DNA/PoMV/OBT
+│   ├── ku-kql/               # Structured vNext semantic index, local read-only KQL, + experimental discovery
+│   ├── ku-net/               # Authenticated QUIC/OBP reconciliation (feature-gated) + legacy DHT/SWIM
+│   ├── ku-ai/                # Local AI backends (Ollama) and model policies
+│   ├── ku-encoder/           # Shared KU extraction framework, semantic selection v1/v2, review lowering
+│   ├── ku-mediator/          # Intent → retrieve → synthesize pipeline
+│   ├── onebrain-protocol/    # Shared P2P wire types and canonical codecs
+│   ├── onebrain-relay/       # Permissionless outbound-first QUIC/TLS relay service
+│   ├── onebrain-node/        # Host-agnostic shared runtime (Base, KU workspace, OBP services)
+│   ├── onebrain-cli/         # Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`)
+│   ├── onebrain-api/         # Local REST/WebSocket API and `ku_local_web` host example
+│   ├── onebrain-desktop/     # Tauri 2.x Desktop application
+│   ├── onebrain-web/         # React/Vite TypeScript Web UI (`/ku` workspace + dashboard)
+│   ├── onebrain-mobile/      # Flutter autonomous mobile node UI and Kotlin/Swift NativeHosts
+│   ├── onebrain-mobile-core/ # Autonomous Rust mobile runtime/bootstrap/storage profile
 │   ├── onebrain-mobile-bridge/ # Stable mobile C ABI/JNI bridge
-│   ├── onebrain-base-contract/ # Generated Base v1 semantic contract
+│   ├── onebrain-base-contract/ # Generated product-neutral Base v1 semantic contract (Rust/TS/Dart)
 │   ├── onebrain-base-abi/    # Stable Base v1 C ABI projection
-│   ├── onebrain-archive/     # Encrypted Base archive/restore container
-│   ├── onebrain-relay/       # Outbound-first relay service
-│   └── onebrain-seed/        # Discovery/relay seed prototype
+│   ├── onebrain-archive/     # Shared encrypted Base `OBARV002` archive/restore container
+│   ├── onebrain-blob-store/  # Persistent hybrid redb + filesystem Base blob storage (TX-BLOB-001)
+│   ├── onebrain-legacy-ku-store/ # Preserved legacy Core DNA `KuStorage` + OBKG `GraphStorage`
+│   ├── onebrain-seed/        # Explicit legacy TCP/JSON compatibility daemon (not a vNext relay)
+│   ├── ku-demo/              # Multi-node simulation demo
+│   └── test-vectors/         # Frozen canonical, Base v1, Registry, and foundation vectors
 ├── docs/
-│   ├── specs/                # Legacy and vNext specifications
-│   ├── research/             # Research baseline and implementation plans
+│   ├── handoffs/             # Active MVP MASTER_PLAN, PROGRESS ledger, DECISIONS, and task specs
+│   ├── specs/                # vNext contracts (with Reachability index) and legacy specifications
+│   ├── research/             # Research baseline, foundation plan, distributed runtime & mobile plans
+│   ├── design/mobile/        # Mobile design system, tokens, and mandatory build contract
 │   ├── paper/                # Papers organized by pillar
-│   └── features/             # Feature tree and feature details
+│   └── features/             # Desktop/Web and mobile feature trees & sitemaps
 ├── formal/tla/               # Bounded TLA+ formal models
-├── scripts/                  # Contract validation and Concept Registry tools
-├── installer/                # Build and installation scripts
-└── release/                  # Release artifacts
+├── scripts/                  # Contract/layering/mobile validators, DEV-ONLY bootstrap & Base tools
+├── installer/                # Platform build and installation scripts
+└── release/                  # Release and qualification artifacts
 ```
 
 ---
@@ -681,14 +689,16 @@ release gate remains open because the current release is owner-waiver only.
 
 ### Phase 2—Runtime integration
 
-**Status:** P0-P3 and DR-M5 implementation/evidence are complete; adoption as
-the default live product path remains open.
+**Status:** P0–P3, DR-M5, the runnable KU–OBP concept MVP (22/24 tasks), and the
+D-051 architecture remediation (13/15 items) are merged on `main` with green CI;
+turning vNext networking on by default and completing M6 Standing Need routing
+remain open.
 
-- Connect the vNext foundation to `OneBrainNode` behind feature flags and canaries.
-- Replace the live TCP demo with authenticated OBP reconciliation.
+- Connect the vNext foundation and `/ku` workspace to `OneBrainNode` behind one host-agnostic façade (`ARCH-09`).
+- Fence unauthenticated legacy TCP behind explicit opt-in (`ARCH-02`) and exchange Public KUs over authenticated OBP-RP (`D-045` / `D-062` / `D-063`).
 - Connect KQL Standing Need to OBP scoped routing, peer-local matching, and evidence-bearing proposals.
 - Complete identity, persistence, and multi-device semantics.
-- Add end-to-end tests for node, seed, API, Web, and Desktop.
+- Maintain multi-OS end-to-end checks across CLI, API, Web, and Desktop (`ku-dev-demo-scripts`, `Base v1 three-OS`, `vNext foundation contract`).
 
 ### Phase 3—Open network
 

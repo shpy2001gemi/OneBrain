@@ -1,7 +1,7 @@
 # 🛠️ OneBrain — Hướng dẫn cài đặt & chạy
 
-> **Phiên bản**: P10 (Pillar 10 — UI Layer)
-> **Cập nhật**: 08/07/2026
+> **Phiên bản**: P10 & vNext `/ku` Workspace
+> **Cập nhật**: 26/11/2026
 
 ---
 
@@ -25,9 +25,10 @@
 
 | Phần mềm | Phiên bản tối thiểu | Mục đích |
 |-----------|---------------------|----------|
-| **Rust** | 1.75+ | Biên dịch backend (ku-core, onebrain-node, onebrain-api, ...) |
-| **Node.js** | 18+ | Chạy Web Dashboard (Vite dev server) |
-| **npm** | 9+ | Quản lý dependencies JavaScript |
+| **Rust** | 1.85+ (stable; CI khóa `1.100`) | Biên dịch backend (`ku-core`, `onebrain-node`, `onebrain-api`, `onebrain-cli`, ...) |
+| **Node.js** | `20.19+` hoặc `22.12+` | Build & chạy Web Dashboard (Vite 8) |
+| **npm** | 10+ | Quản lý dependencies JavaScript |
+| **Python** | 3.10+ | Chạy kiểm tra contract và script bootstrap demo (`scripts/base/bootstrap_ku_dev_demo.py`) |
 
 ### Khuyến nghị
 
@@ -84,20 +85,30 @@ cargo check -p onebrain-api
 
 ```
 OneBrain/src/
-├── Cargo.toml            # Workspace root
-├── ku-core/              # Core: types, storage, PoMV, OBT, CRDT
-├── ku-net/               # P2P networking (TCP/QUIC, DHT, SWIM)
-├── ku-kql/               # KQL query engine
-├── ku-ai/                # AI backend (Ollama)
-├── ku-encoder/           # Text → KU encoding
-├── ku-mediator/          # Intent detection & response
-├── onebrain-protocol/    # Shared P2P message types
-├── onebrain-node/        # ★ Node runtime (shared by CLI, API, Desktop)
-├── onebrain-cli/         # CLI REPL interface
-├── onebrain-api/         # REST/WebSocket API server
-├── onebrain-seed/        # Seed node
-├── onebrain-web/         # React Web Dashboard
-└── ku-demo/              # 3-node demo
+├── Cargo.toml                  # Workspace root (21 crate Rust)
+├── ku-core/                    # Foundation canonical vNext, KU semantics, Vault + legacy Core DNA/PoMV/OBT
+├── ku-net/                     # Phiên QUIC/OBP reconciliation (feature-gated) + legacy DHT/SWIM
+├── ku-kql/                     # Chỉ mục vnext_semantic_index, KQL chỉ-đọc local + experimental discovery
+├── ku-ai/                      # AI backend policies & Ollama adapter
+├── ku-encoder/                 # Khung trích xuất KU dùng chung, semantic selection v1/v2, review lowering
+├── ku-mediator/                # Intent detection & response
+├── onebrain-protocol/          # Shared P2P message types & canonical codecs
+├── onebrain-relay/             # Outbound-first QUIC/TLS-443 relay service
+├── onebrain-node/              # ★ Node runtime độc lập host (dùng chung cho CLI, API, Desktop)
+├── onebrain-cli/               # CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`)
+├── onebrain-api/               # REST/WebSocket API server & example `ku_local_web`
+├── onebrain-desktop/           # Tauri 2.x Desktop App
+├── onebrain-mobile-core/       # Autonomous Rust mobile runtime profile
+├── onebrain-mobile-bridge/     # C ABI/JNI bridge cho Flutter NativeHost
+├── onebrain-archive/           # Encrypted Base `OBARV002` archive container dùng chung
+├── onebrain-blob-store/        # Persistent hybrid redb + filesystem Base blob store
+├── onebrain-legacy-ku-store/   # Kho tương thích legacy Core DNA `KuStorage` + `GraphStorage`
+├── onebrain-base-contract/     # Generated Base v1 semantic contract (Rust/TS/Dart)
+├── onebrain-base-abi/          # Stable Base v1 C ABI projection
+├── onebrain-seed/              # Daemon tương thích TCP/JSON legacy
+├── ku-demo/                    # Multi-node simulation demo
+├── onebrain-web/               # React + Vite + TypeScript Web UI (`/ku` workspace + dashboard)
+└── onebrain-mobile/            # Flutter Android/iOS autonomous mobile node
 ```
 
 ---
@@ -288,25 +299,39 @@ phải cài sẵn, host không tải model; model lỗi chỉ là cảnh báo, s
 ```
 
 Để host CLI cũng chia sẻ/duyệt/xem Public KU D-045, build với
-`--features vnext-network-runtime` và thêm cờ opt-in loopback (tắt mặc định; chỉ
-nhận địa chỉ loopback; không dùng chung với `--vnext-kql`/`--vnext-public-use`/
-`--vnext-pomv-view`):
+`--features vnext-network-runtime` và thêm cờ opt-in loopback (tắt mặc định; mặc
+định chỉ nhận địa chỉ loopback; muốn thử giữa hai máy thật trên cùng mạng LAN riêng
+thì thêm cờ opt-in thứ hai `--ku-network-allow-lan` cho địa chỉ IPv4 RFC 1918 hoặc
+IPv6 `fc00::/7` trong khi API/Web vẫn khóa ở `127.0.0.1` — `DEV-ONLY`, `D-063`; không
+dùng chung với `--vnext-kql`/`--vnext-public-use`/`--vnext-pomv-view`):
 
 ```bash
 cargo run -p onebrain-cli --features vnext-network-runtime -- start --api ... \
   --ku-vault-key-file <vault.key> --ku-network-bind 127.0.0.1:0
 ```
 
-Host in `Opt-in loopback OBP-RP: node_id=… listen_addr=…` — đó là NodeID/địa chỉ
-mà host bên kia điền vào bước chia sẻ; trang `/ku` cũng hiện NodeID này trong khung
-“Scope and limitations” và badge header (số KU private đã lưu, trạng thái mạng loopback).
-Trên host nhận (kể cả sau khi khởi động lại ở chế độ local-only offline không bật
-`--ku-network-bind`), client CLI cũng đọc và xuất Public KU đã nhận bằng
-`--api-token-file`:
+Host in `Opt-in loopback OBP-RP: node_id=… listen_addr=…` (hoặc cảnh báo
+`Opt-in private-LAN OBP-RP (DEV-ONLY, D-063)` khi bật `--ku-network-allow-lan`) —
+đó là NodeID/địa chỉ mà host bên kia điền vào bước chia sẻ; trang `/ku` cũng hiện
+NodeID này, hướng dẫn điền `Selector CID` / `Namespace commitment` thống nhất giữa
+hai bên (kèm nút điền mẫu DEV-ONLY khi thử nghiệm), và badge header (số KU private
+đã lưu, trạng thái mạng loopback hoặc `Private-LAN (DEV-ONLY)`). Bản chuẩn bị chia
+sẻ (`share_prepare`) chưa hết hạn được niêm phong vào journal `ku_public_share_prepared_v1`
+nên giữ nguyên qua lần khởi động lại host trước khi confirm (`D-062`).
+
+Ngoài giao diện `/ku` Web, client CLI hỗ trợ đầy đủ thao tác chia sẻ/duyệt/tra nhãn
+qua `--api-token-file` (`onebrain ku share prepare|preview|confirm|intent|inspect|list` —
+lệnh `confirm` tự đọc lại `share_preview` và bắt gõ đúng `prepared_id`, `D-059`;
+`onebrain ku describe --ccid <32-hex>` tra ngược nhãn Registry chỉ để hiển thị,
+`D-058`). Trên host nhận (kể cả sau khi khởi động lại ở chế độ local-only offline
+không bật `--ku-network-bind`), client CLI cũng đọc và xuất Public KU đã nhận:
 
 ```bash
 cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
   --api-token-file <api-token.txt> get --object-cid <64-hex-public-cid>
+
+cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
+  --api-token-file <api-token.txt> describe --ccid <32-hex-ccid>
 
 # export.json: {"mode":"canonical_public_exchange","object_cids":["<64-hex-public-cid>"]}
 cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
@@ -314,9 +339,11 @@ cargo run -p onebrain-cli -- ku --api-url http://127.0.0.1:4280 \
 ```
 
 Script kiểm tra lặp lại hai tiến trình `python scripts/base/check_ku_public_share_demo.py`
-hỗ trợ `--sender-kind web|cli` và `--receiver-kind peer|web|cli` (tự kiểm chứng luôn
-`onebrain ku get`/`export --api-token-file` và chế độ offline trên receiver Web/CLI).
-Đây là demo một máy, không phải NAT/production qualification; không có reward.
+hỗ trợ `--sender-kind web|cli`, `--receiver-kind peer|web|cli` và `--cli-share` (chạy
+luồng chia sẻ qua `onebrain ku share`, tự restart sender giữa `share_prepare` và
+`share_confirm` để kiểm chứng `D-062`, kiểm tra `onebrain ku get`/`export`/`describe
+--api-token-file` và chế độ offline trên receiver Web/CLI).
+Đây là demo cục bộ/LAN riêng DEV-ONLY, không phải NAT/production qualification; không có reward.
 
 #### Chạy `/ku` lần đầu từ fresh clone bằng một lệnh (D-056)
 
@@ -350,14 +377,17 @@ preview rồi bấm **Save exact preview privately**). Lệnh không in token/ke
 ghi đè file, không lưu/chia sẻ KU và không khởi động host. Bước in ra cũng có lệnh
 host CLI thay thế (`cargo run -p onebrain-cli ... -- start --api --api-token-file
 ... --ku-source ... --web-dir ...`, cùng dữ liệu/cổng/`/ku`). Thêm `--with-receiver`
-để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai (receiver cũng
-admit nguồn mẫu như nguồn riêng tư của chính nó, không lưu gì, để trên `/ku` của
-receiver nút **Start a new private draft from …** ở `Browse accepted Public KUs`
+để có `receiver.json` + khối `"network"` loopback opt-in cho cả hai (hoặc thêm
+`--lan-ip <ip-lan-riêng>` cùng `--with-receiver` để sinh cấu hình `"allow_private_lan": true`
+ / `--ku-network-allow-lan` khi thử chia sẻ DEV-ONLY qua mạng LAN riêng — `D-063`;
+receiver cũng admit nguồn mẫu như nguồn riêng tư của chính nó, không lưu gì, để trên
+`/ku` của receiver nút **Start a new private draft from …** ở `Browse accepted Public KUs`
 điền sẵn text vào draft manual riêng tư mới; vẫn tự chọn nguồn, concept, preview và
 Save — D-057), rồi chạy
 `check_ku_public_share_demo.py` với `--receiver-kind web` (host Web) hoặc
-`--sender-kind cli --receiver-kind cli --require-cli-client` (host CLI + `onebrain
-ku get/export`; build `-p onebrain-cli --features vnext-network-runtime`). Cờ
+`--sender-kind cli --receiver-kind cli --require-cli-client --cli-share` (host CLI +
+`onebrain ku share` + `onebrain ku get/export/describe`; build `-p onebrain-cli
+--features vnext-network-runtime`). Cờ
 tường minh `--seed-sample-ku` chỉ khi sender chưa có KU nào sẽ lưu riêng tư KU mẫu
 qua đúng API của nút `/ku` (reserve → draft → preview → save, `published=false`);
 không có cờ này thì phải tự lưu KU trước. CI
