@@ -811,9 +811,10 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
-        if v.issues
-            .contains(&format!("selection[{i}].alternatives: argument_binding"))
-            && !argument_binding_choices(source, selection, i, b)?.is_empty()
+        if ["argument_binding", "group_ambiguous"].iter().any(|code| {
+            v.issues
+                .contains(&format!("selection[{i}].alternatives: {code}"))
+        }) && !argument_binding_choices(source, selection, i, b)?.is_empty()
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
@@ -1184,8 +1185,13 @@ fn alternative_cue_choices(
 /// of the same claim that is a contiguous whitespace-bounded token extension
 /// of the emitted `group.quote`, is not already owned by another group of the
 /// claim, and preserves unique `cue`/branch/`borrowed` resolution with no new
-/// issue or coverage loss. Unrepairable groups get no choice so futile repairs
-/// never dispatch.
+/// issue or coverage loss.
+/// D-074 (slice 3): OR groups flagged `group_ambiguous` (`group.quote` fails
+/// unique resolution in the claim scope, with `exclusivity: unspecified` and
+/// no incompatible conjunction/contrast cue) may likewise rebind `group.quote`
+/// only to an exact bound `argument` of the same claim satisfying those same
+/// token-extension, unique-resolution, no-new-issue and coverage-preservation
+/// checks. Unrepairable groups get no choice so futile repairs never dispatch.
 fn argument_binding_choices(
     source: &str,
     selection: &Value,
@@ -1207,52 +1213,58 @@ fn argument_binding_choices(
     };
     for (g, group) in items(claim, "alternatives").enumerate() {
         let emitted = text(&group["quote"]);
-        if items(claim, "arguments").any(|q| text(q) == emitted) || incompatible_cue(group) {
+        if incompatible_cue(group) {
             continue;
         }
-        let Some(group_span) = span(source, &json!({ "quote": emitted }), scope, b)? else {
-            continue;
-        };
-        let Some(emitted_cue) = span(
-            source,
-            &json!({ "quote": group["cue"], "within": emitted }),
-            scope,
-            b,
-        )?
-        else {
-            continue;
-        };
-        let mut prior_emitted = group_span.0;
-        let mut emitted_branches = Vec::new();
-        let mut clean_emitted = true;
-        for branch in items(group, "branches") {
-            let Some(at) = span(source, &branch["surface"], emitted, b)?.filter(|at| {
-                contains(group_span, *at) && at.0 >= prior_emitted && !overlaps(*at, emitted_cue)
-            }) else {
-                clean_emitted = false;
-                break;
+        if let Some(group_span) = span(source, &json!({ "quote": emitted }), scope, b)? {
+            if items(claim, "arguments").any(|q| text(q) == emitted) {
+                continue;
+            }
+            let Some(emitted_cue) = span(
+                source,
+                &json!({ "quote": group["cue"], "within": emitted }),
+                scope,
+                b,
+            )?
+            else {
+                continue;
             };
-            prior_emitted = at.1;
-            emitted_branches.push(at);
-        }
-        if !clean_emitted {
-            continue;
-        }
-        for (j, branch) in items(group, "branches").enumerate() {
-            if let Some(borrowed) = branch.get("borrowed") {
-                let valid = span(source, borrowed, emitted, b)?.is_some_and(|at| {
-                    emitted_branches
-                        .iter()
-                        .enumerate()
-                        .any(|(k, s)| k != j && contains(*s, at))
-                });
-                if !valid {
+            let mut prior_emitted = group_span.0;
+            let mut emitted_branches = Vec::new();
+            let mut clean_emitted = true;
+            for branch in items(group, "branches") {
+                let Some(at) = span(source, &branch["surface"], emitted, b)?.filter(|at| {
+                    contains(group_span, *at)
+                        && at.0 >= prior_emitted
+                        && !overlaps(*at, emitted_cue)
+                }) else {
                     clean_emitted = false;
                     break;
+                };
+                prior_emitted = at.1;
+                emitted_branches.push(at);
+            }
+            if !clean_emitted {
+                continue;
+            }
+            for (j, branch) in items(group, "branches").enumerate() {
+                if let Some(borrowed) = branch.get("borrowed") {
+                    let valid = span(source, borrowed, emitted, b)?.is_some_and(|at| {
+                        emitted_branches
+                            .iter()
+                            .enumerate()
+                            .any(|(k, s)| k != j && contains(*s, at))
+                    });
+                    if !valid {
+                        clean_emitted = false;
+                        break;
+                    }
                 }
             }
-        }
-        if !clean_emitted {
+            if !clean_emitted {
+                continue;
+            }
+        } else if group["exclusivity"] != "unspecified" {
             continue;
         }
         let mut options = BTreeSet::new();
@@ -1683,9 +1695,13 @@ fn borrowed_choices(
     claim: &Value,
     b: &mut WorkBudget,
 ) -> Result<BTreeMap<(usize, usize), BTreeSet<String>>> {
+    let scope = claim["anchor"].as_str().unwrap_or(source);
     let mut out = BTreeMap::new();
     for (g, group) in items(claim, "alternatives").enumerate() {
         let quote = text(&group["quote"]);
+        if span(source, &json!({ "quote": quote }), scope, b)?.is_none() {
+            continue;
+        }
         let mut spans = Vec::new();
         for branch in items(group, "branches") {
             spans.push(span(source, &branch["surface"], quote, b)?);

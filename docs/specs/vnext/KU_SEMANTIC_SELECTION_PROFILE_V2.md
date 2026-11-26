@@ -154,7 +154,10 @@ stay unrouted in `needs_review`.
 An OR group flagged `argument_binding` (`group.quote` equals none of the claim's
 `arguments`) whose emitted `quote`, `cue`, ordered disjoint `branches` and any
 `borrowed` reconstructions resolve cleanly may dispatch an `alternatives`-only
-repair when finite local choices exist (D-073). A flagged group may only rebind
+repair when finite local choices exist (D-073), and an OR group flagged
+`group_ambiguous` (`group.quote` fails unique resolution in the claim scope, with
+`exclusivity: unspecified` and no incompatible conjunction/contrast cue) may
+likewise join that repair (D-074). In either case a flagged group may only rebind
 `quote` to an exact bound `argument` of the same claim that is a contiguous
 whitespace-bounded token extension of the emitted `quote`, is not already bound
 by another group of the claim, and preserves unique `cue`, branch and `borrowed`

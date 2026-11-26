@@ -26,6 +26,14 @@ trust, wire, DTO, mobile-authority or claim-boundary change).
   a single target of that `target_kind` in another claim (group/branch targets
   must belong to a bound, structurally valid OR group) without creating a
   reference `cycle`; unflagged `to`/`via`, `target_kind` and count stay fixed.
+- **Slice 3 (`alternatives: group_ambiguous`):** an OR group whose emitted
+  `group.quote` fails unique resolution in the claim scope (with
+  `exclusivity: unspecified` and no incompatible conjunction/contrast cue) joins
+  D-073's bounded `alternatives` quote-rebind repair when finite local choices
+  exist, rebinding `group.quote` only to an exact bound `argument` of the same
+  claim that is a contiguous whitespace-bounded token extension of the emitted
+  `group.quote`, unowned by sibling groups, resolving `cue`, ordered disjoint
+  `branches` and `borrowed` uniquely with no new issue or coverage loss.
 
 ## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
 
