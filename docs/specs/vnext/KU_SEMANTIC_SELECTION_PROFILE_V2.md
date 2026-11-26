@@ -140,6 +140,17 @@ sub-word slice is accepted, and full revalidation (no new issues, no coverage
 loss) applies. Cues with no unique local token run (such as an absent cue or a
 repeated single-token cue) stay unrouted in `needs_review`.
 
+An OR group flagged `cue_ambiguous` (`cue` does not resolve uniquely inside
+`group.quote`) may dispatch an `alternatives`-only repair when finite local
+choices exist (D-071). A flagged group may only narrow `cue` to one contiguous
+whitespace-bounded token run of the emitted `cue` itself that resolves uniquely
+inside `group.quote` and overlaps no located branch span. Unflagged group cues,
+group count, quotes, exclusivity, branches and borrowed text stay unchanged, no
+token outside the emitted `cue`, branch token or sub-word slice is accepted, and
+full revalidation (no new issues, no coverage loss) applies. Groups without a
+unique local token run (such as an absent cue or a repeated single-token cue)
+stay unrouted in `needs_review`.
+
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound

@@ -1609,3 +1609,138 @@ fn comparison_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn alternatives_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
+    // D-071: an unresolved OR-group `cue` may only narrow to a contiguous
+    // whitespace-bounded token run of the emitted `cue` that resolves uniquely
+    // inside `group.quote` outside located branch spans; unrepairable cues do
+    // not dispatch.
+    let source = "Máy dùng pin hoặc điện.";
+    let selection = json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện"],"alternatives":[{"quote":"pin hoặc điện","cue":"hoặc là pin","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"}}]}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].alternatives: cue_ambiguous"]
+    );
+    assert_eq!(validation.uncovered, vec!["hoặc"]);
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    // "pin" is a token of the emitted cue but overlaps a located branch.
+    assert_eq!(
+        choices["alternatives"],
+        json!({"groups":1,"repairable":[],"borrowed":[],"cue_narrowing":[{"group":0,"cue":["hoặc"]}],"cue":["hoặc"]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let props = &wire["properties"]["patch"]["properties"]["alternatives"]["items"]["properties"];
+    assert_eq!(props["cue"]["enum"], json!(["hoặc"]));
+    let apply = |sel: &Value, alternatives: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+    };
+    let base = selection["claims"][0]["alternatives"].clone();
+    let mut narrowed = base.clone();
+    narrowed[0]["cue"] = json!("hoặc");
+    let (changed, draft, after) = apply(&selection, narrowed).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0]["arguments"], json!(["pin hoặc điện"]));
+    assert_eq!(
+        changed["claims"][0]["alternatives"][0]["branches"],
+        base[0]["branches"]
+    );
+    assert!(draft["statements"][0]["alternatives"][0]["cue_span"].is_array());
+
+    // Rejected: no-op, branch token, token outside emitted cue, sub-word slice,
+    // altered exclusivity/quote/branches, or dropped group.
+    assert!(apply(&selection, base.clone()).is_err());
+    for bad_cue in ["pin", "là", "hoặ", "điện"] {
+        let mut bad = base.clone();
+        bad[0]["cue"] = json!(bad_cue);
+        assert!(apply(&selection, bad).is_err());
+    }
+    let mut excl = base.clone();
+    excl[0]["cue"] = json!("hoặc");
+    excl[0]["exclusivity"] = json!("exclusive");
+    assert!(apply(&selection, excl).is_err());
+    let mut quote = base.clone();
+    quote[0]["cue"] = json!("hoặc");
+    quote[0]["quote"] = json!("pin hoặc");
+    assert!(apply(&selection, quote).is_err());
+    let mut branch = base.clone();
+    branch[0]["cue"] = json!("hoặc");
+    branch[0]["branches"][1]["surface"]["quote"] = json!("điện.");
+    assert!(apply(&selection, branch).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+
+    // Unflagged sibling group keeps its exact cue; only the flagged one narrows.
+    let source2 = "Máy dùng pin hoặc điện, nước hay gió.";
+    let mixed = json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện","nước hay gió"],"alternatives":[
+        {"quote":"pin hoặc điện","cue":"hoặc là","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"}}]},
+        {"quote":"nước hay gió","cue":"hay","exclusivity":"unspecified","branches":[{"surface":{"quote":"nước"}},{"surface":{"quote":"gió"}}]}
+    ]}]});
+    let (_, v2) = assemble(source2, &mixed, &mut budget()).unwrap();
+    assert_eq!(v2.issues, vec!["selection[0].alternatives: cue_ambiguous"]);
+    let choices2 = repair_choices(source2, &mixed, 0, &fields, &v2, &mut budget()).unwrap();
+    assert_eq!(choices2["alternatives"]["cue"], json!(["hay", "hoặc"]));
+    let groups = mixed["claims"][0]["alternatives"].clone();
+    let mut ok = groups.clone();
+    ok[0]["cue"] = json!("hoặc");
+    let apply2 = |alternatives: Value| {
+        apply_repair(
+            source2,
+            &mixed,
+            0,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+    };
+    assert!(apply2(ok.clone()).is_ok());
+    // Relabelling the unflagged group's cue is rejected.
+    let mut swapped = ok;
+    swapped[1]["cue"] = json!("hoặc");
+    assert!(apply2(swapped).is_err());
+
+    // Unrouted: repeated single-token cue and absent cue have no unique run.
+    for (src, sel) in [
+        (
+            "Máy dùng pin hoặc điện hoặc gió.",
+            json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện hoặc gió"],"alternatives":[{"quote":"pin hoặc điện hoặc gió","cue":"hoặc","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"}},{"surface":{"quote":"gió"}}]}]}]}),
+        ),
+        (
+            "Máy dùng pin hoặc điện.",
+            json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện"],"alternatives":[{"quote":"pin hoặc điện","cue":"hay là","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"}}]}]}]}),
+        ),
+    ] {
+        let (_, v) = assemble(src, &sel, &mut budget()).unwrap();
+        assert_eq!(v.issues, vec!["selection[0].alternatives: cue_ambiguous"]);
+        assert!(
+            alternative_cue_choices(src, &sel["claims"][0], &mut budget())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(repair_target(src, &sel, &v, &mut budget())
+            .unwrap()
+            .is_none());
+    }
+}

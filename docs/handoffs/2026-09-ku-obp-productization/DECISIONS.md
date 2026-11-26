@@ -1,5 +1,21 @@
 # Decisions and claim boundary
 
+## D-071 — Bounded narrowing for an unresolved OR-group cue (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: alternatives issue
+`cue_ambiguous` (`group.cue` does not resolve uniquely inside `group.quote`)
+dispatches the bounded `alternatives` repair when finite local choices exist. A
+flagged group may only narrow `cue` to a contiguous whitespace-bounded token run
+of the emitted `cue` itself that resolves uniquely inside `group.quote` and
+overlaps no located branch span. Unflagged group cues, group count, quotes,
+exclusivity, branches and borrowed text stay fixed; tokens outside the emitted
+`cue`, branch tokens and sub-word slices are rejected; full host revalidation (no
+new issues, no coverage loss) applies. Groups whose quote does not resolve, or
+with no valid run (absent cue or repeated single-token cue), do not dispatch.
+Supersedes only the D-061/D-064 rule that kept `cue` fixed, for flagged
+repairable cues. Deterministic tests only; no model run, no fidelity claim, user
+host stays v1.
+
 ## D-070 — Bounded narrowing for an unresolved comparison cue (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue
