@@ -390,6 +390,26 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             }
         }
     }
+    for key in &ROLES[1..] {
+        if wire["properties"]["patch"]["properties"]
+            .get(*key)
+            .is_some()
+            && choices.get(*key).is_some_and(Value::is_object)
+        {
+            let c = &choices[*key];
+            let count = c["count"]
+                .as_u64()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            let options = c["items"]
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!options.is_empty(), "selection_repair_choice")?;
+            let target = &mut wire["properties"]["patch"]["properties"][*key];
+            target["minItems"] = json!(count);
+            target["maxItems"] = json!(count);
+            target["items"]["enum"] = json!(options);
+        }
+    }
     ordered_schema(REPAIR_SCHEMA, &wire)
 }
 
@@ -782,6 +802,14 @@ pub fn repair_target(
         }) && predicate_choices(claim).len() > 1
         {
             return Ok(Some((i, vec!["predicate".into()])));
+        }
+        for key in &ROLES[1..] {
+            if v.issues
+                .contains(&format!("selection[{i}].{key}: predicate_overlap"))
+                && !qualifier_trim_choices(source, selection, i, key, b)?.is_empty()
+            {
+                return Ok(Some((i, vec![(*key).into()])));
+            }
         }
         if ["borrowed_outside_other_branch", "borrowed_ambiguous"]
             .iter()
@@ -1876,6 +1904,87 @@ fn predicate_choices(claim: &Value) -> BTreeSet<String> {
     }
     choices
 }
+
+/// D-074 (slice 5): qualifiers in `ROLES[1..]` flagged `predicate_overlap`
+/// because the qualifier quote contains the claim `predicate` (when
+/// `predicate_choices` cannot trim `predicate` itself) may trim only the
+/// already-selected leading or trailing `predicate` at a whitespace boundary
+/// when the remaining substring resolves uniquely in the claim scope without
+/// new issues or coverage loss. Unrepairable qualifiers get no choice so futile
+/// repairs never dispatch, and legacy uncovered-cue repairs stay untouched.
+fn qualifier_trim_choices(
+    source: &str,
+    selection: &Value,
+    target: usize,
+    key: &str,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, BTreeSet<String>>> {
+    let mut out = BTreeMap::new();
+    let Some(claim) = selection["claims"].as_array().and_then(|c| c.get(target)) else {
+        return Ok(out);
+    };
+    if predicate_choices(claim).len() > 1 {
+        return Ok(out);
+    }
+    let predicate = text(&claim["predicate"]);
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    if predicate.is_empty() || span(source, &json!({ "quote": predicate }), scope, b)?.is_none() {
+        return Ok(out);
+    }
+    let mut baseline: Option<Validation> = None;
+    let positions = |v: &Validation| -> BTreeSet<usize> {
+        v.uncovered
+            .iter()
+            .flat_map(|q| quote_positions(source, q))
+            .flat_map(|(s, e)| s..e)
+            .collect()
+    };
+    for (j, q) in items(claim, key).enumerate() {
+        let qual = text(q);
+        if qual.is_empty() || !qual.contains(predicate) {
+            continue;
+        }
+        let mut opts = BTreeSet::new();
+        for (rest, leading) in [
+            (qual.strip_prefix(predicate), true),
+            (qual.strip_suffix(predicate), false),
+        ] {
+            let Some(rest) = rest else {
+                continue;
+            };
+            let edge = if leading {
+                rest.chars().next()
+            } else {
+                rest.chars().next_back()
+            };
+            let trimmed = rest.trim();
+            if !edge.is_some_and(char::is_whitespace)
+                || trimmed.is_empty()
+                || trimmed.contains(predicate)
+                || predicate.contains(trimmed)
+                || span(source, &json!({ "quote": trimmed }), scope, b)?.is_none()
+            {
+                continue;
+            }
+            let before = match &baseline {
+                Some(v) => v,
+                None => baseline.insert(assemble(source, selection, b)?.1),
+            };
+            let mut trial = selection.clone();
+            trial["claims"][target][key][j] = json!(trimmed);
+            let (_, after) = assemble(source, &trial, b)?;
+            if after.issues.iter().all(|s| before.issues.contains(s))
+                && positions(&after).is_subset(&positions(before))
+            {
+                opts.insert(trimmed.to_owned());
+            }
+        }
+        if !opts.is_empty() {
+            out.insert(j, opts);
+        }
+    }
+    Ok(out)
+}
 pub fn repair_choices(
     source: &str,
     selection: &Value,
@@ -1892,6 +2001,32 @@ pub fn repair_choices(
             .and_then(|c| c.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
         choices["predicate"] = json!(predicate_choices(claim));
+    }
+    for key in &ROLES[1..] {
+        if fields.iter().any(|f| f == key) {
+            let claim = selection["claims"]
+                .as_array()
+                .and_then(|c| c.get(target))
+                .ok_or(ExtractionError("selection_repair_target"))?;
+            let trims = qualifier_trim_choices(source, selection, target, key, b)?;
+            if !trims.is_empty() {
+                let mut allowed = BTreeSet::new();
+                let mut listed = Vec::new();
+                for (j, q) in items(claim, key).enumerate() {
+                    if let Some(opts) = trims.get(&j) {
+                        allowed.extend(opts.iter().cloned());
+                        listed.push(json!({ "index": j, "choices": opts }));
+                    } else {
+                        allowed.insert(text(q).to_owned());
+                    }
+                }
+                choices[*key] = json!({
+                    "count": items(claim, key).count(),
+                    "items": allowed,
+                    "repairable": listed,
+                });
+            }
+        }
     }
     if fields.iter().any(|f| f == "alternatives") {
         let claim = selection["claims"]
@@ -2496,6 +2631,35 @@ pub fn apply_repair(
                     .is_some_and(|p| predicate_choices(claim).contains(p)),
                 "selection_repair_choice",
             )?;
+        }
+        for key in &ROLES[1..] {
+            if let Some(next_val) = reply["patch"].get(*key) {
+                let claim = base["claims"]
+                    .as_array()
+                    .and_then(|c| c.get(target))
+                    .ok_or(ExtractionError("selection_repair_target"))?;
+                let trims = qualifier_trim_choices(source, base, target, key, b)?;
+                if !trims.is_empty() {
+                    let previous: Vec<&Value> = items(claim, key).collect();
+                    let next = next_val
+                        .as_array()
+                        .ok_or(ExtractionError("selection_repair_scope"))?;
+                    require(
+                        previous.len() == next.len(),
+                        "selection_repair_structure_loss",
+                    )?;
+                    for (j, (before_q, after_q)) in previous.iter().zip(next).enumerate() {
+                        if let Some(opts) = trims.get(&j) {
+                            require(
+                                after_q.as_str().is_some_and(|s| opts.contains(s)),
+                                "selection_repair_choice",
+                            )?;
+                        } else {
+                            require(*before_q == after_q, "selection_repair_structure_loss")?;
+                        }
+                    }
+                }
+            }
         }
         let (changed, _, _) =
             semantic_selection::apply_repair(source, &legacy(base), target, fields, reply, b)?;

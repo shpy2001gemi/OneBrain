@@ -66,9 +66,18 @@ independent review, not automatic whole-source regeneration.
 Predicate/qualifier overlap may dispatch a predicate-only repair. Decoder choices
 retain the original predicate or remove one already-selected leading/trailing
 qualifier at a whitespace boundary. Every candidate is a contiguous exact source
-substring; the qualifier stays in its original role. The model chooses; the host
-does not apply this trim automatically. The host independently enforces the same
-finite choices and full revalidation, including no-op and coverage-loss rejection.
+substring; the qualifier stays in its original role. Symmetrically, when a
+qualifier in `frequency`, `negation`, `condition`, `time`, `location`, `modality`
+or `approximation` contains the already-selected claim `predicate` at a leading
+or trailing whitespace boundary (so `predicate` itself has no trim choice), it
+may dispatch a bounded repair on that qualifier role alone when finite local
+choices exist (D-074): a flagged qualifier may only remove the leading or
+trailing `predicate` at a whitespace boundary when the remaining substring
+resolves uniquely in the claim scope with no new issue or coverage loss, keeping
+qualifier count, order, unflagged qualifiers and `predicate` unchanged. The
+model chooses; the host does not apply either trim automatically. The host
+independently enforces the same finite choices and full revalidation, including
+no-op and coverage-loss rejection; mid-span or sub-word overlaps stay unrouted.
 
 Borrowed text in an OR group that is not taken from another branch — it resolves
 in no other branch (`borrowed_outside_other_branch`) or not uniquely inside the

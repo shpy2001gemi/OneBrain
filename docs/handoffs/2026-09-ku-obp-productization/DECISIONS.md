@@ -45,6 +45,16 @@ trust, wire, DTO, mobile-authority or claim-boundary change).
   count, `quote`, `exclusivity`, `branches` and `borrowed` stay fixed (narrows
   only D-064's "quotes with an OR cue stay unrouted" clause for cleanly
   branch-split mixed quotes).
+- **Slice 5 (`<qualifier>: predicate_overlap` reverse trim):** when a qualifier
+  in `frequency`, `negation`, `condition`, `time`, `location`, `modality` or
+  `approximation` contains the already-selected claim `predicate` at a leading
+  or trailing whitespace boundary (and `predicate` itself has no trim choice),
+  it dispatches a bounded repair on that qualifier role alone when finite local
+  choices exist, trimming only the leading or trailing `predicate` at a
+  whitespace boundary when the remaining substring resolves uniquely in the
+  claim scope with no new issue or coverage loss; qualifier count, order,
+  unflagged qualifiers, `predicate` and legacy uncovered-cue repairs stay
+  unchanged; mid-span or sub-word overlaps do not dispatch.
 
 ## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
 

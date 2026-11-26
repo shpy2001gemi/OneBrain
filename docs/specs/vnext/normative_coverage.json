@@ -1141,6 +1141,10 @@
           "needle": "incompatible_or_cue_in_mixed_quote_dispatches_only_between_branch_or_recue"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "qualifier_predicate_overlap_dispatches_only_whitespace_bounded_predicate_trim"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

@@ -2854,3 +2854,144 @@ fn incompatible_or_cue_in_mixed_quote_dispatches_only_between_branch_or_recue() 
             .is_none());
     }
 }
+
+#[test]
+fn qualifier_predicate_overlap_dispatches_only_whitespace_bounded_predicate_trim() {
+    // D-074 (slice 5): when a qualifier in `ROLES[1..]` contains the already
+    // selected `predicate` at a leading/trailing whitespace boundary (so
+    // `predicate_choices` cannot trim `predicate` itself), only that qualifier
+    // role dispatches and trims the leading/trailing `predicate` when the
+    // remainder resolves uniquely with no new issue or coverage loss.
+    let mut selection = rocket();
+    selection["claims"][1]["time"] = json!(["sẽ an toàn"]);
+    let (_, validation) = assemble(ROCKET, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[1].comparisons: target_unspecified",
+            "selection[1].time: predicate_overlap"
+        ]
+    );
+    assert!(
+        validation.uncovered.is_empty(),
+        "{:?}",
+        validation.uncovered
+    );
+    let (target, fields) = repair_target(ROCKET, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["time".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["time"],
+        json!({
+            "count": 1,
+            "items": ["sẽ"],
+            "repairable": [{"index": 0, "choices": ["sẽ"]}]
+        })
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let time_prop = &wire["properties"]["patch"]["properties"]["time"];
+    assert_eq!(
+        (time_prop["minItems"].clone(), time_prop["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(time_prop["items"]["enum"], json!(["sẽ"]));
+    let apply = |sel: &Value, time: Value| {
+        apply_repair(
+            ROCKET,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"time":time}}),
+            &mut budget(),
+        )
+    };
+    let (changed, draft, after) = apply(&selection, json!(["sẽ"])).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][1]["predicate"], json!("an toàn"));
+    assert_eq!(changed["claims"][1]["time"], json!(["sẽ"]));
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-0-group-0"
+    );
+
+    // Rejected: no-op, dropping the qualifier, out-of-choice value, extra item.
+    assert!(apply(&selection, json!(["sẽ an toàn"])).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+    assert!(apply(&selection, json!(["an toàn"])).is_err());
+    assert!(apply(&selection, json!(["sẽ", "hơn"])).is_err());
+
+    // Leading predicate trim (`location: ["sôi ở 100°C"]` with `predicate: "sôi"`)
+    // plus unflagged sibling qualifier preserved in order.
+    let loc_source = "Ở áp suất chuẩn , nước sôi ở nhà bếp .";
+    let loc_sel = json!({"claims":[{
+        "subject": "nước",
+        "predicate": "sôi",
+        "location": ["Ở áp suất chuẩn", "sôi ở nhà bếp"]
+    }]});
+    let (_, lv) = assemble(loc_source, &loc_sel, &mut budget()).unwrap();
+    assert_eq!(lv.issues, vec!["selection[0].location: predicate_overlap"]);
+    let loc_fields = vec!["location".to_owned()];
+    let lc = repair_choices(loc_source, &loc_sel, 0, &loc_fields, &lv, &mut budget()).unwrap();
+    assert_eq!(
+        lc["location"]["items"],
+        json!(["Ở áp suất chuẩn", "ở nhà bếp"])
+    );
+    let (_, _, lafter) = apply_repair(
+        loc_source,
+        &loc_sel,
+        0,
+        &loc_fields,
+        &json!({"patch":{"location":["Ở áp suất chuẩn", "ở nhà bếp"]}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(lafter.issues.is_empty(), "{:?}", lafter.issues);
+    assert!(lafter.uncovered.is_empty(), "{:?}", lafter.uncovered);
+    // Swapping or overwriting the unflagged sibling qualifier is rejected.
+    assert!(apply_repair(
+        loc_source,
+        &loc_sel,
+        0,
+        &loc_fields,
+        &json!({"patch":{"location":["ở nhà bếp", "ở nhà bếp"]}}),
+        &mut budget(),
+    )
+    .is_err());
+
+    // Unrouted: internal/middle predicate (`"sẽ luôn an toàn hơn"`), sub-word
+    // overlap (`"an toàn"` inside `"an toành"`), or reference-locked qualifier.
+    let mid_source = "Nhiên liệu rắn sẽ an toàn hơn.";
+    let mid_sel = json!({"claims":[{
+        "subject": "Nhiên liệu rắn",
+        "predicate": "an toàn",
+        "time": ["sẽ an toàn hơn"]
+    }]});
+    let (_, mv) = assemble(mid_source, &mid_sel, &mut budget()).unwrap();
+    assert!(mv
+        .issues
+        .contains(&"selection[0].time: predicate_overlap".to_owned()));
+    assert!(
+        qualifier_trim_choices(mid_source, &mid_sel, 0, "time", &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(repair_target(mid_source, &mid_sel, &mv, &mut budget())
+        .unwrap()
+        .is_none());
+}
