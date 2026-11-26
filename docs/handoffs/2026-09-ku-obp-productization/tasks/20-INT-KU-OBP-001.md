@@ -6,7 +6,16 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — browser click-test of t21 and the private-LAN badge, share selector/namespace guidance (t22, 2026-11-26)
+## Latest follow-up — Desktop `/ku` lifecycle parity for D-057, D-058, D-059 and D-062 sender restart (t23, D-075 round 3, 2026-11-26)
+
+Selected after closing all 18 mechanical `SEM-F03` host repairs (D-075 round 3, switching to Desktop parity): locked Desktop host/API parity for `D-057`, `D-058`, `D-059` and `D-062` in [lifecycle.rs](../../../../src/onebrain-desktop/tests/lifecycle.rs) without changing DTOs, routes, consent or trust.
+
+- **Stock local-only Desktop (`ku_start::provision_local`):** `describe_ccids` (`D-058`) serves `tauri://localhost` CORS (`"water"` + `null`, `authorizes_reward: false`), rejects invalid CCID lists with `400`, survives Desktop restart, and fails closed with `503` when restarted without a Registry while `workspace_summary` and `saved_semantic` stay readable; `D-057` copies only the accepted Public KU's statement text into a new manual draft under Desktop's own admitted `source_ref` and saves a separate `LOCAL_ONLY` KU (`private_saved: 1 → 2`, `share_list` stays 1 Public KU).
+- **Opt-in networked Desktop (`OneBrainNode` `VNextProductRuntime`):** `share_preview` (`D-059`) reads back the exact `share_prepared` preview without enqueueing; full sender `Supervisor::shutdown()` + restart on a new `process_generation` and ephemeral port (`D-062`) restores the byte-identical preview without extending `expires_at` or creating a premature intent, preserves the restored `prepared_id` across `VNextRuntimeLane::Network` kill/reenable, confirms once (`share_preview` and replay `share_confirm` both return `404 prepared_share_missing` afterwards), and locks `describe_ccids` (`D-058`) + `D-057` private draft save on the receiver Desktop across local-only restart.
+
+Not covered: live native Tauri WebView click-through, two physical machines, real operator Registry.
+
+## Earlier follow-up — browser click-test of t21 and the private-LAN badge, share selector/namespace guidance (t22, 2026-11-26)
 
 Owner chose the recommended item: click the t21 changes and the D-063 LAN badge in a real browser
 and fix small problems found. Web-only fixes; no host, API, DTO, consent, trust or decision change.

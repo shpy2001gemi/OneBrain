@@ -33,6 +33,18 @@ VPS/NAT, `D-063` two physical machines, operator Registry release signing
   rejected, and claims whose omission would uncover `via` do not dispatch. With
   all 18 mechanical `SEM-F03` host repairs merged, remaining `KU-SEM-001` items
   require model evaluation or versioned contracts, so Rounds 3–5 switch tracks.
+- **Round 3 (Track switch to Task 08/09/20 Desktop `/ku` parity, `t23`):**
+  locked Desktop parity in `src/onebrain-desktop/tests/lifecycle.rs` across both
+  stock local-only Desktop (`ku_start::provision_local`, `tauri://localhost`
+  CORS, normal + degraded missing-Registry restart) and opt-in networked Desktop
+  (`OneBrainNode` `VNextProductRuntime`) for `D-057` (new manual `LOCAL_ONLY`
+  draft seeded from an accepted Public KU's statement text without adopting or
+  mutating the Public KU), `D-058` (`describe_ccids` display-only reverse
+  Registry lookup + `503` degraded refusal), `D-059` (`share_preview` read-back
+  before/after confirm), and `D-062` (unexpired prepared Public KU share
+  surviving full sender Desktop `Supervisor::shutdown()` + restart on a new
+  process generation and ephemeral port before `Network`-lane fence and single
+  confirmation). Native WebView click-through remains optional.
 
 ## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
 
