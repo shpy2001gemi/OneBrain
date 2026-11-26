@@ -191,6 +191,7 @@ enum HostOnboardingCursor: Int, CaseIterable {
   case security = 3
   case initHandoff = 4
   case limitedHome = 5
+  case readiness = 6
 }
 
 enum HostMediaClass: Int, CaseIterable {
@@ -870,6 +871,61 @@ struct HostRegistryImportProgress: Hashable, CustomStringConvertible {
 }
 
 /// Generated class from Pigeon that represents data sent in messages.
+struct HostRegistryActivationReceipt: Hashable, CustomStringConvertible {
+  var releaseId: String
+  var readinessState: String
+  var previousReleaseId: String? = nil
+  var compensatedRollback: Bool
+  var healthProbesChecked: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> HostRegistryActivationReceipt? {
+    let releaseId = pigeonVar_list[0] as! String
+    let readinessState = pigeonVar_list[1] as! String
+    let previousReleaseId: String? = nilOrValue(pigeonVar_list[2])
+    let compensatedRollback = pigeonVar_list[3] as! Bool
+    let healthProbesChecked = pigeonVar_list[4] as! Int64
+
+    return HostRegistryActivationReceipt(
+      releaseId: releaseId,
+      readinessState: readinessState,
+      previousReleaseId: previousReleaseId,
+      compensatedRollback: compensatedRollback,
+      healthProbesChecked: healthProbesChecked
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      releaseId,
+      readinessState,
+      previousReleaseId,
+      compensatedRollback,
+      healthProbesChecked,
+    ]
+  }
+  static func == (lhs: HostRegistryActivationReceipt, rhs: HostRegistryActivationReceipt) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MobileHostApiPigeonInternal.deepEquals(lhs.releaseId, rhs.releaseId) && MobileHostApiPigeonInternal.deepEquals(lhs.readinessState, rhs.readinessState) && MobileHostApiPigeonInternal.deepEquals(lhs.previousReleaseId, rhs.previousReleaseId) && MobileHostApiPigeonInternal.deepEquals(lhs.compensatedRollback, rhs.compensatedRollback) && MobileHostApiPigeonInternal.deepEquals(lhs.healthProbesChecked, rhs.healthProbesChecked)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("HostRegistryActivationReceipt")
+    MobileHostApiPigeonInternal.deepHash(value: releaseId, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: readinessState, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: previousReleaseId, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: compensatedRollback, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: healthProbesChecked, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "HostRegistryActivationReceipt(releaseId: \(String(describing: releaseId)), readinessState: \(String(describing: readinessState)), previousReleaseId: \(String(describing: previousReleaseId)), compensatedRollback: \(String(describing: compensatedRollback)), healthProbesChecked: \(String(describing: healthProbesChecked)))"
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
 struct HostOperationEvent: Hashable, CustomStringConvertible {
   var operationId: String
   var kind: HostOperationEventKind
@@ -970,6 +1026,8 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
     case 142:
       return HostRegistryImportProgress.fromList(self.readValue() as! [Any?])
     case 143:
+      return HostRegistryActivationReceipt.fromList(self.readValue() as! [Any?])
+    case 144:
       return HostOperationEvent.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -1021,8 +1079,11 @@ private class MobileHostApiPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? HostRegistryImportProgress {
       super.writeByte(142)
       super.writeValue(value.toList())
-    } else if let value = value as? HostOperationEvent {
+    } else if let value = value as? HostRegistryActivationReceipt {
       super.writeByte(143)
+      super.writeValue(value.toList())
+    } else if let value = value as? HostOperationEvent {
+      super.writeByte(144)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -1056,6 +1117,8 @@ protocol MobileHostApi {
   func deferRegistryInit(operationId: String, manifestDigest: String, completion: @escaping (Result<Bool, Error>) -> Void)
   func confirmRegistryInit(operationId: String, manifestDigest: String, networkPolicy: HostRegistryNetworkPolicy, oneTimeNetworkOverride: Bool, completion: @escaping (Result<HostRegistryInitPlan, Error>) -> Void)
   func pickAndImportRegistryArtifact(operationId: String, manifestDigest: String, artifactRole: HostRegistryArtifactRole, completion: @escaping (Result<HostRegistryImportProgress, Error>) -> Void)
+  func activateRegistryRelease(operationId: String, transferNonce: String, completion: @escaping (Result<HostRegistryActivationReceipt, Error>) -> Void)
+  func rollbackRegistryRelease(completion: @escaping (Result<Bool, Error>) -> Void)
   func saveRawTextDraft(contentLanguage: String, content: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
   func inspectPendingShareSpools(completion: @escaping (Result<[HostShareSpoolSummary], Error>) -> Void)
   func importSharedText(spoolRef: String, contentLanguage: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
@@ -1190,6 +1253,39 @@ class MobileHostApiSetup {
       }
     } else {
       pickAndImportRegistryArtifactChannel.setMessageHandler(nil)
+    }
+    let activateRegistryReleaseChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.activateRegistryRelease\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      activateRegistryReleaseChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let operationIdArg = args[0] as! String
+        let transferNonceArg = args[1] as! String
+        api.activateRegistryRelease(operationId: operationIdArg, transferNonce: transferNonceArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      activateRegistryReleaseChannel.setMessageHandler(nil)
+    }
+    let rollbackRegistryReleaseChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.rollbackRegistryRelease\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      rollbackRegistryReleaseChannel.setMessageHandler { _, reply in
+        api.rollbackRegistryRelease { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      rollbackRegistryReleaseChannel.setMessageHandler(nil)
     }
     let saveRawTextDraftChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

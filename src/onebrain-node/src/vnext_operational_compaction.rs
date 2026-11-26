@@ -9,7 +9,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ku_core::foundation::{dr_m5_failpoint, OperationalCompactionPermit};
+use ku_core::foundation::{
+    compute_tombstone_merkle_root, decode_canonical, dr_m5_failpoint, encode_canonical,
+    prove_tombstone_inclusion, CanonicalValue, OperationalCompactionPermit, ResourceProfile,
+    TombstoneEpochAccumulatorV1, TombstoneEpochError, TombstoneMerkleProof,
+};
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
 
@@ -25,8 +29,37 @@ const OVERFLOW: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_compaction_overflow_v1");
 const DERIVED: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_compaction_derived_snapshots_v1");
+const HOT_TOMBSTONES: TableDefinition<&[u8], u64> = TableDefinition::new("vnext_hot_tombstones_v1");
+const COLD_TOMBSTONE_EPOCHS: TableDefinition<u64, &[u8]> =
+    TableDefinition::new("vnext_cold_tombstone_epochs_v1");
+const TOMBSTONE_OVERFLOW_ROOT: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_tombstone_overflow_root_v1");
+const OVERFLOW_SUMMARY_ROOT_KEY: &[u8] = b"overflow_summary_root_v1";
 const DERIVED_MAGIC: &[u8; 8] = b"OBIDXV1\0";
 const OVERFLOW_BYTES: usize = 80;
+
+pub const HOT_TOMBSTONE_CAPACITY: usize = 65_536;
+pub const HOT_TOMBSTONE_ROLLOVER_THRESHOLD: usize = 49_152; // 75% of 65,536
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TombstoneRecordOutcome {
+    InsertedHot {
+        hot_count: usize,
+    },
+    AlreadyPresent,
+    RolledOverToColdEpoch {
+        epoch_seq: u64,
+        overflow_summary_root: [u8; 32],
+    },
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TombstoneBatchReport {
+    pub inserted: usize,
+    pub duplicates: usize,
+    pub rolled_over_epochs: Vec<u64>,
+    pub latest_overflow_summary_root: Option<[u8; 32]>,
+}
 
 pub const OPERATIONAL_COMPACTION_PROFILE_MAJOR: u64 = 1;
 pub const MAX_OPERATIONAL_EVIDENCE_RECORDS: u64 = 4_096;
@@ -496,6 +529,389 @@ impl OperationalCompactionStore {
         }
         Ok(reclaimed)
     }
+
+    // ─── Wave 6 `P8` Tombstone Epoch Accumulator Rollover (`49,152 / 65,536`) ─
+
+    fn cold_tombstones_dir(&self) -> PathBuf {
+        self.path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("cold-tombstones")
+    }
+
+    fn cold_epoch_file_path(&self, epoch_seq: u64) -> PathBuf {
+        self.cold_tombstones_dir().join(format!("{epoch_seq}.cbor"))
+    }
+
+    pub fn hot_tombstone_count(&self) -> Result<u64, OperationalCompactionError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let Ok(table) = read.open_table(HOT_TOMBSTONES) else {
+            return Ok(0);
+        };
+        table.len().map_err(backend)
+    }
+
+    pub fn tombstone_overflow_summary_root(
+        &self,
+    ) -> Result<Option<[u8; 32]>, OperationalCompactionError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let Ok(table) = read.open_table(TOMBSTONE_OVERFLOW_ROOT) else {
+            return Ok(None);
+        };
+        let Some(guard) = table.get(OVERFLOW_SUMMARY_ROOT_KEY).map_err(backend)? else {
+            return Ok(None);
+        };
+        let root: [u8; 32] = guard
+            .value()
+            .try_into()
+            .map_err(|_| OperationalCompactionError::CorruptEvidence)?;
+        Ok(Some(root))
+    }
+
+    pub fn cold_epoch_accumulators(
+        &self,
+    ) -> Result<Vec<TombstoneEpochAccumulatorV1>, OperationalCompactionError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let Ok(table) = read.open_table(COLD_TOMBSTONE_EPOCHS) else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for entry in table.iter().map_err(backend)? {
+            let (_, val) = entry.map_err(backend)?;
+            let acc = TombstoneEpochAccumulatorV1::decode_bytes(val.value())
+                .map_err(OperationalCompactionError::TombstoneEpoch)?;
+            out.push(acc);
+        }
+        Ok(out)
+    }
+
+    /// Lossless anti-replay check across both hot Redb tombstones and rolled-over
+    /// cold `TombstoneEpochAccumulatorV1` epochs (256 KiB Bloom pre-filter + exact
+    /// cold `.cbor` Merkle inclusion proof verification).
+    pub fn contains_anti_replay_tombstone(
+        &self,
+        tombstone: &[u8; 32],
+    ) -> Result<bool, OperationalCompactionError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        if let Ok(hot) = read.open_table(HOT_TOMBSTONES) {
+            if hot.get(tombstone.as_slice()).map_err(backend)?.is_some() {
+                return Ok(true);
+            }
+        }
+        if let Ok(cold) = read.open_table(COLD_TOMBSTONE_EPOCHS) {
+            for entry in cold.iter().map_err(backend)? {
+                let (epoch_key, val) = entry.map_err(backend)?;
+                let epoch_seq = epoch_key.value();
+                let acc = TombstoneEpochAccumulatorV1::decode_bytes(val.value())
+                    .map_err(OperationalCompactionError::TombstoneEpoch)?;
+                if !acc.might_contain(tombstone) {
+                    continue;
+                }
+                // Bloom hit: verify exact membership against `<owner_dir>/cold-tombstones/<epoch_seq>.cbor`
+                let cold_list = self.read_cold_epoch_tombstones(epoch_seq, &acc)?;
+                if let Ok(proof) = prove_tombstone_inclusion(&cold_list, tombstone) {
+                    if acc.verify_tombstone_inclusion(&proof) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    pub fn prove_cold_tombstone(
+        &self,
+        epoch_seq: u64,
+        tombstone: &[u8; 32],
+    ) -> Result<(TombstoneEpochAccumulatorV1, TombstoneMerkleProof), OperationalCompactionError>
+    {
+        let read = self.db.begin_read().map_err(backend)?;
+        let cold = read.open_table(COLD_TOMBSTONE_EPOCHS).map_err(backend)?;
+        let bytes = cold
+            .get(epoch_seq)
+            .map_err(backend)?
+            .map(|g| g.value().to_vec())
+            .ok_or(OperationalCompactionError::TombstoneEpoch(
+                TombstoneEpochError::TombstoneNotFound,
+            ))?;
+        let acc = TombstoneEpochAccumulatorV1::decode_bytes(&bytes)
+            .map_err(OperationalCompactionError::TombstoneEpoch)?;
+        let list = self.read_cold_epoch_tombstones(epoch_seq, &acc)?;
+        let proof = prove_tombstone_inclusion(&list, tombstone)
+            .map_err(OperationalCompactionError::TombstoneEpoch)?;
+        if !acc.verify_tombstone_inclusion(&proof) {
+            return Err(OperationalCompactionError::CorruptEvidence);
+        }
+        Ok((acc, proof))
+    }
+
+    /// Record a single anti-replay tombstone, automatically rolling over at
+    /// `HOT_TOMBSTONE_ROLLOVER_THRESHOLD` (`49,152 / 65,536`).
+    pub fn record_anti_replay_tombstone(
+        &self,
+        tombstone: [u8; 32],
+        sequence: u64,
+    ) -> Result<TombstoneRecordOutcome, OperationalCompactionError> {
+        if tombstone == [0; 32] {
+            return Err(OperationalCompactionError::EvidenceLimit);
+        }
+        if self.contains_anti_replay_tombstone(&tombstone)? {
+            return Ok(TombstoneRecordOutcome::AlreadyPresent);
+        }
+
+        let write = self.db.begin_write().map_err(backend)?;
+        let outcome = {
+            let mut hot = write.open_table(HOT_TOMBSTONES).map_err(backend)?;
+            hot.insert(tombstone.as_slice(), sequence)
+                .map_err(backend)?;
+            let hot_len = usize::try_from(hot.len().map_err(backend)?)
+                .map_err(|_| OperationalCompactionError::EvidenceLimit)?;
+            if hot_len >= HOT_TOMBSTONE_ROLLOVER_THRESHOLD {
+                drop(hot);
+                let (epoch_seq, summary_root) = self.rollover_hot_tombstones_in_tx(&write)?;
+                TombstoneRecordOutcome::RolledOverToColdEpoch {
+                    epoch_seq,
+                    overflow_summary_root: summary_root,
+                }
+            } else {
+                TombstoneRecordOutcome::InsertedHot { hot_count: hot_len }
+            }
+        };
+        write.commit().map_err(backend)?;
+        Ok(outcome)
+    }
+
+    /// High-throughput batched anti-replay tombstone insertion (ideal for bulk replay/compaction
+    /// windows exceeding `65,536` tombstones), rolling over deterministically at every `49,152`
+    /// hot entries.
+    pub fn record_anti_replay_tombstones_batch(
+        &self,
+        items: &[([u8; 32], u64)],
+    ) -> Result<TombstoneBatchReport, OperationalCompactionError> {
+        let mut report = TombstoneBatchReport::default();
+        let cold_accs = self.cold_epoch_accumulators()?;
+        let mut cold_lists: Vec<(TombstoneEpochAccumulatorV1, Vec<[u8; 32]>)> =
+            Vec::with_capacity(cold_accs.len());
+        for acc in cold_accs {
+            let list = self.read_cold_epoch_tombstones(acc.epoch_seq, &acc)?;
+            cold_lists.push((acc, list));
+        }
+
+        let write = self.db.begin_write().map_err(backend)?;
+        {
+            for &(tombstone, seq) in items {
+                if tombstone == [0; 32] {
+                    return Err(OperationalCompactionError::EvidenceLimit);
+                }
+                let in_cold = cold_lists.iter().any(|(acc, list)| {
+                    acc.might_contain(&tombstone) && list.binary_search(&tombstone).is_ok()
+                });
+                if in_cold {
+                    report.duplicates += 1;
+                    continue;
+                }
+                let mut need_rollover = false;
+                {
+                    let mut hot = write.open_table(HOT_TOMBSTONES).map_err(backend)?;
+                    if hot.get(tombstone.as_slice()).map_err(backend)?.is_some() {
+                        report.duplicates += 1;
+                        continue;
+                    }
+                    hot.insert(tombstone.as_slice(), seq).map_err(backend)?;
+                    report.inserted += 1;
+                    let hot_len = usize::try_from(hot.len().map_err(backend)?)
+                        .map_err(|_| OperationalCompactionError::EvidenceLimit)?;
+                    if hot_len >= HOT_TOMBSTONE_ROLLOVER_THRESHOLD {
+                        need_rollover = true;
+                    }
+                }
+                if need_rollover {
+                    let (epoch_seq, root, acc, sorted_list) =
+                        self.rollover_hot_tombstones_with_list(&write)?;
+                    report.rolled_over_epochs.push(epoch_seq);
+                    report.latest_overflow_summary_root = Some(root);
+                    cold_lists.push((acc, sorted_list));
+                }
+            }
+        }
+        write.commit().map_err(backend)?;
+        if report.latest_overflow_summary_root.is_none() {
+            report.latest_overflow_summary_root = self.tombstone_overflow_summary_root()?;
+        }
+        Ok(report)
+    }
+
+    fn rollover_hot_tombstones_in_tx(
+        &self,
+        write: &redb::WriteTransaction,
+    ) -> Result<(u64, [u8; 32]), OperationalCompactionError> {
+        let (epoch_seq, root, _, _) = self.rollover_hot_tombstones_with_list(write)?;
+        Ok((epoch_seq, root))
+    }
+
+    fn rollover_hot_tombstones_with_list(
+        &self,
+        write: &redb::WriteTransaction,
+    ) -> Result<
+        (u64, [u8; 32], TombstoneEpochAccumulatorV1, Vec<[u8; 32]>),
+        OperationalCompactionError,
+    > {
+        let mut hot = write.open_table(HOT_TOMBSTONES).map_err(backend)?;
+        let mut sorted_tombstones = Vec::new();
+        let mut cutoff_sequence_floor = 0u64;
+        for entry in hot.iter().map_err(backend)? {
+            let (k, v) = entry.map_err(backend)?;
+            let tb: [u8; 32] = k
+                .value()
+                .try_into()
+                .map_err(|_| OperationalCompactionError::CorruptEvidence)?;
+            cutoff_sequence_floor = cutoff_sequence_floor.max(v.value());
+            sorted_tombstones.push(tb);
+        }
+        sorted_tombstones.sort();
+        sorted_tombstones.dedup();
+
+        let mut cold_epochs = write.open_table(COLD_TOMBSTONE_EPOCHS).map_err(backend)?;
+        let next_epoch_seq = cold_epochs
+            .iter()
+            .map_err(backend)?
+            .next_back()
+            .transpose()
+            .map_err(backend)?
+            .map(|(k, _)| k.value().saturating_add(1))
+            .unwrap_or(0);
+
+        let acc = TombstoneEpochAccumulatorV1::build(
+            next_epoch_seq,
+            cutoff_sequence_floor,
+            &sorted_tombstones,
+        )
+        .map_err(OperationalCompactionError::TombstoneEpoch)?;
+        let acc_bytes = acc
+            .encode_bytes()
+            .map_err(OperationalCompactionError::TombstoneEpoch)?;
+
+        // Write `<owner_dir>/cold-tombstones/<epoch_seq>.cbor` atomically via temp file + rename.
+        let cold_dir = self.cold_tombstones_dir();
+        std::fs::create_dir_all(&cold_dir).map_err(backend)?;
+        let cold_file = self.cold_epoch_file_path(next_epoch_seq);
+        let cold_tmp = cold_dir.join(format!("{next_epoch_seq}.cbor.tmp"));
+        let cold_payload = encode_cold_tombstone_list(
+            next_epoch_seq,
+            acc.sorted_tombstone_merkle_root,
+            &sorted_tombstones,
+        )?;
+        std::fs::write(&cold_tmp, &cold_payload).map_err(backend)?;
+        std::fs::rename(&cold_tmp, &cold_file).map_err(backend)?;
+
+        cold_epochs
+            .insert(next_epoch_seq, acc_bytes.as_slice())
+            .map_err(backend)?;
+        drop(cold_epochs);
+
+        let mut root_tbl = write.open_table(TOMBSTONE_OVERFLOW_ROOT).map_err(backend)?;
+        let prev_root = root_tbl
+            .get(OVERFLOW_SUMMARY_ROOT_KEY)
+            .map_err(backend)?
+            .map(|g| {
+                let mut r = [0u8; 32];
+                r.copy_from_slice(g.value());
+                r
+            })
+            .unwrap_or([0; 32]);
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:tombstone-overflow-summary-root:1\0");
+        hasher.update(&prev_root);
+        hasher.update(&next_epoch_seq.to_be_bytes());
+        hasher.update(&acc.sorted_tombstone_merkle_root);
+        let summary_root = *hasher.finalize().as_bytes();
+        root_tbl
+            .insert(OVERFLOW_SUMMARY_ROOT_KEY, summary_root.as_slice())
+            .map_err(backend)?;
+        drop(root_tbl);
+
+        for tb in &sorted_tombstones {
+            hot.remove(tb.as_slice()).map_err(backend)?;
+        }
+
+        Ok((next_epoch_seq, summary_root, acc, sorted_tombstones))
+    }
+
+    fn read_cold_epoch_tombstones(
+        &self,
+        epoch_seq: u64,
+        expected_acc: &TombstoneEpochAccumulatorV1,
+    ) -> Result<Vec<[u8; 32]>, OperationalCompactionError> {
+        let bytes = std::fs::read(self.cold_epoch_file_path(epoch_seq)).map_err(backend)?;
+        let (decoded_seq, merkle_root, list) = decode_cold_tombstone_list(&bytes)?;
+        if decoded_seq != epoch_seq
+            || merkle_root != expected_acc.sorted_tombstone_merkle_root
+            || compute_tombstone_merkle_root(&list) != expected_acc.sorted_tombstone_merkle_root
+        {
+            return Err(OperationalCompactionError::CorruptEvidence);
+        }
+        Ok(list)
+    }
+}
+
+fn encode_cold_tombstone_list(
+    epoch_seq: u64,
+    merkle_root: [u8; 32],
+    sorted_tombstones: &[[u8; 32]],
+) -> Result<Vec<u8>, OperationalCompactionError> {
+    let entries = sorted_tombstones
+        .iter()
+        .map(|tb| CanonicalValue::Bytes(tb.to_vec()))
+        .collect();
+    let root = CanonicalValue::Map(vec![
+        (0, CanonicalValue::Unsigned(1)),
+        (1, CanonicalValue::Unsigned(epoch_seq)),
+        (2, CanonicalValue::Bytes(merkle_root.to_vec())),
+        (3, CanonicalValue::Array(entries)),
+    ]);
+    encode_canonical(&root, ResourceProfile::ManifestV1)
+        .map_err(|_| OperationalCompactionError::CorruptEvidence)
+}
+
+fn decode_cold_tombstone_list(
+    bytes: &[u8],
+) -> Result<(u64, [u8; 32], Vec<[u8; 32]>), OperationalCompactionError> {
+    let val = decode_canonical(bytes, ResourceProfile::ManifestV1)
+        .map_err(|_| OperationalCompactionError::CorruptEvidence)?;
+    let CanonicalValue::Map(fields) = val else {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    };
+    if fields.len() != 4 {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    }
+    let CanonicalValue::Unsigned(1) = fields[0].1 else {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    };
+    let CanonicalValue::Unsigned(epoch_seq) = fields[1].1 else {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    };
+    let CanonicalValue::Bytes(root_bytes) = &fields[2].1 else {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    };
+    let merkle_root: [u8; 32] = root_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OperationalCompactionError::CorruptEvidence)?;
+    let CanonicalValue::Array(items) = &fields[3].1 else {
+        return Err(OperationalCompactionError::CorruptEvidence);
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        let CanonicalValue::Bytes(b) = item else {
+            return Err(OperationalCompactionError::CorruptEvidence);
+        };
+        let tb: [u8; 32] = b
+            .as_slice()
+            .try_into()
+            .map_err(|_| OperationalCompactionError::CorruptEvidence)?;
+        out.push(tb);
+    }
+    Ok((epoch_seq, merkle_root, out))
 }
 
 impl PortableArchiveRows for OperationalCompactionStore {
@@ -538,6 +954,30 @@ impl PortableArchiveRows for OperationalCompactionStore {
                 rows.push(row);
             }
         }
+        if let Ok(cold) = read.open_table(COLD_TOMBSTONE_EPOCHS) {
+            for row in cold.iter().map_err(operational_archive_error)? {
+                let (key, value) = row.map_err(operational_archive_error)?;
+                let row = PortableArchiveRow {
+                    table: 4,
+                    key: key.value().to_be_bytes().to_vec(),
+                    value: value.value().to_vec(),
+                };
+                validate_operational_archive_row(&row)?;
+                rows.push(row);
+            }
+        }
+        if let Ok(root_tbl) = read.open_table(TOMBSTONE_OVERFLOW_ROOT) {
+            for row in root_tbl.iter().map_err(operational_archive_error)? {
+                let (key, value) = row.map_err(operational_archive_error)?;
+                let row = PortableArchiveRow {
+                    table: 5,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                };
+                validate_operational_archive_row(&row)?;
+                rows.push(row);
+            }
+        }
         rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
         Ok(rows)
     }
@@ -549,6 +989,33 @@ impl PortableArchiveRows for OperationalCompactionStore {
             1 => restore_operational_value(&write, QUARANTINE, row)?,
             2 => restore_operational_value(&write, PROVENANCE, row)?,
             3 => restore_operational_value(&write, OVERFLOW, row)?,
+            4 => {
+                let epoch_seq = u64::from_be_bytes(
+                    row.key
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| NodeError::ArchiveCapability("cold epoch key".into()))?,
+                );
+                let mut table = write
+                    .open_table(COLD_TOMBSTONE_EPOCHS)
+                    .map_err(operational_archive_error)?;
+                let existing = table
+                    .get(epoch_seq)
+                    .map_err(operational_archive_error)?
+                    .map(|g| g.value().to_vec());
+                if let Some(existing_bytes) = existing {
+                    if existing_bytes.as_slice() != row.value.as_slice() {
+                        return Err(NodeError::ArchiveCapability(
+                            "cold tombstone epoch restore conflict".into(),
+                        ));
+                    }
+                } else {
+                    table
+                        .insert(epoch_seq, row.value.as_slice())
+                        .map_err(operational_archive_error)?;
+                }
+            }
+            5 => restore_operational_value(&write, TOMBSTONE_OVERFLOW_ROOT, row)?,
             _ => {
                 return Err(NodeError::ArchiveCapability(
                     "operational archive table is unknown".into(),
@@ -595,6 +1062,28 @@ fn validate_operational_archive_row(row: &PortableArchiveRow) -> Result<(), Node
             if encode_overflow(evidence).as_slice() != row.value.as_slice() {
                 return Err(NodeError::ArchiveCapability(
                     "operational overflow row is non-canonical".into(),
+                ));
+            }
+        }
+        4 => {
+            let epoch_seq = u64::from_be_bytes(
+                row.key
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| NodeError::ArchiveCapability("cold epoch key".into()))?,
+            );
+            let acc = TombstoneEpochAccumulatorV1::decode_bytes(&row.value)
+                .map_err(|e| NodeError::ArchiveCapability(format!("{e:?}")))?;
+            if acc.epoch_seq != epoch_seq {
+                return Err(NodeError::ArchiveCapability(
+                    "cold tombstone epoch sequence mismatch".into(),
+                ));
+            }
+        }
+        5 => {
+            if row.key.as_slice() != OVERFLOW_SUMMARY_ROOT_KEY || row.value.len() != 32 {
+                return Err(NodeError::ArchiveCapability(
+                    "tombstone overflow summary root row invalid".into(),
                 ));
             }
         }
@@ -806,6 +1295,8 @@ pub enum OperationalCompactionError {
     SemanticDrift,
     #[error("operational database has live clones and cannot reclaim disk")]
     DatabaseBusy,
+    #[error("tombstone epoch accumulator failed: {0:?}")]
+    TombstoneEpoch(TombstoneEpochError),
 }
 
 #[cfg(test)]

@@ -12,6 +12,8 @@ use ku_core::foundation::{
 use zeroize::Zeroize;
 
 pub const DISCLOSURE_CAPSULE_MAJOR: u64 = 1;
+pub const DISCLOSURE_SESSION_SNAPSHOT_MAJOR: u64 = 1;
+pub const CAPSULE_CANCEL_MAJOR: u64 = 1;
 pub const DISCLOSURE_STAGE_PADDED_BYTES: &[usize] = &[512, 1024, 2048, 4096];
 
 pub struct DisclosureSessionKey([u8; 32]);
@@ -21,6 +23,16 @@ impl DisclosureSessionKey {
     /// equivalent CSPRNG-backed recipient key agreement.
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    /// Immediately zeroize ephemeral session key material in memory (e.g., on
+    /// `CapsuleCancelV1` or terminal disclosure stage transition).
+    pub fn zeroize_now(&mut self) {
+        self.0.zeroize();
+    }
+
+    pub fn is_zeroized(&self) -> bool {
+        self.0 == [0; 32]
     }
 }
 
@@ -167,6 +179,251 @@ impl AuthorizedDisclosureSession {
     pub const fn session_id(&self) -> &[u8; 32] {
         &self.request.session_id
     }
+
+    pub const fn request(&self) -> &DisclosureSessionRequest {
+        &self.request
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+pub enum CancelReason {
+    InitiatorAborted = 0,
+    ResponderDeclined = 1,
+    PermitRevoked = 2,
+    PolicyViolation = 3,
+    TimeoutOrSuperseded = 4,
+}
+
+impl CancelReason {
+    const fn from_code(code: u64) -> Option<Self> {
+        match code {
+            0 => Some(Self::InitiatorAborted),
+            1 => Some(Self::ResponderDeclined),
+            2 => Some(Self::PermitRevoked),
+            3 => Some(Self::PolicyViolation),
+            4 => Some(Self::TimeoutOrSuperseded),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CapsuleCancelProof {
+    /// Session-authenticated keyed BLAKE3 proof produced by either the permit
+    /// issuer or permit executor holding the negotiated `DisclosureSessionKey`.
+    SessionKeyMac {
+        signer: ActorId,
+        mac_blake3: [u8; 32],
+    },
+    /// Signed feed event proof verified through `ku_core::foundation` feed & key-state rules.
+    AuthorizedFeedEvent {
+        signer: ActorId,
+        feed_inception_bytes: Vec<u8>,
+        signed_event_bytes: Vec<u8>,
+    },
+}
+
+pub const CAPSULE_CANCEL_EVENT_TYPE: ku_core::foundation::EventType =
+    ku_core::foundation::EventType(9_401);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CapsuleCancelV1 {
+    pub session_id: [u8; 32],
+    pub permit_cid: PermitCid,
+    pub reason: CancelReason,
+    pub proof: CapsuleCancelProof,
+}
+
+impl CapsuleCancelV1 {
+    pub fn sign_with_session_key(
+        session_id: [u8; 32],
+        permit_cid: PermitCid,
+        reason: CancelReason,
+        signer: ActorId,
+        key: &DisclosureSessionKey,
+    ) -> Result<Self, DisclosureCapsuleError> {
+        if key.is_zeroized() {
+            return Err(DisclosureCapsuleError::KeyZeroized);
+        }
+        if session_id == [0; 32]
+            || permit_cid.as_bytes() == &[0; 32]
+            || signer.as_bytes() == &[0; 32]
+        {
+            return Err(DisclosureCapsuleError::InvalidSession);
+        }
+        let mac_blake3 = cancel_session_mac(session_id, permit_cid, reason, signer, key)?;
+        Ok(Self {
+            session_id,
+            permit_cid,
+            reason,
+            proof: CapsuleCancelProof::SessionKeyMac { signer, mac_blake3 },
+        })
+    }
+
+    pub fn body_commitment(&self) -> Result<[u8; 32], DisclosureCapsuleError> {
+        cancel_body_commitment(self.session_id, self.permit_cid, self.reason)
+    }
+
+    pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, DisclosureCapsuleError> {
+        let proof_val = match &self.proof {
+            CapsuleCancelProof::SessionKeyMac { signer, mac_blake3 } => CanonicalValue::Map(vec![
+                (0, CanonicalValue::Unsigned(0)),
+                (1, CanonicalValue::Bytes(signer.as_bytes().to_vec())),
+                (2, CanonicalValue::Bytes(mac_blake3.to_vec())),
+            ]),
+            CapsuleCancelProof::AuthorizedFeedEvent {
+                signer,
+                feed_inception_bytes,
+                signed_event_bytes,
+            } => CanonicalValue::Map(vec![
+                (0, CanonicalValue::Unsigned(1)),
+                (1, CanonicalValue::Bytes(signer.as_bytes().to_vec())),
+                (2, CanonicalValue::Bytes(feed_inception_bytes.clone())),
+                (3, CanonicalValue::Bytes(signed_event_bytes.clone())),
+            ]),
+        };
+        let value = CanonicalValue::Map(vec![
+            (0, CanonicalValue::Unsigned(CAPSULE_CANCEL_MAJOR)),
+            (1, CanonicalValue::Bytes(self.session_id.to_vec())),
+            (
+                2,
+                CanonicalValue::Bytes(self.permit_cid.as_bytes().to_vec()),
+            ),
+            (3, CanonicalValue::Unsigned(self.reason as u64)),
+            (4, proof_val),
+        ]);
+        encode_canonical(&value, ResourceProfile::ControlV1).map_err(Into::into)
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, DisclosureCapsuleError> {
+        let value = decode_canonical(bytes, ResourceProfile::ControlV1)?;
+        let CanonicalValue::Map(fields) = value else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if fields.len() != 5 || fields.iter().enumerate().any(|(i, (k, _))| *k != i as u64) {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        if unsigned(&fields[0].1)? != CAPSULE_CANCEL_MAJOR {
+            return Err(DisclosureCapsuleError::Version);
+        }
+        let session_id = fixed_bytes::<32>(&fields[1].1)?;
+        let permit_cid = PermitCid::from_bytes(fixed_bytes::<32>(&fields[2].1)?);
+        let reason = CancelReason::from_code(unsigned(&fields[3].1)?)
+            .ok_or(DisclosureCapsuleError::Schema)?;
+        let CanonicalValue::Map(proof_fields) = &fields[4].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if proof_fields.is_empty() || proof_fields[0].0 != 0 {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        let proof = match unsigned(&proof_fields[0].1)? {
+            0 => {
+                if proof_fields.len() != 3 || proof_fields[1].0 != 1 || proof_fields[2].0 != 2 {
+                    return Err(DisclosureCapsuleError::Schema);
+                }
+                CapsuleCancelProof::SessionKeyMac {
+                    signer: ActorId::from_bytes(fixed_bytes::<32>(&proof_fields[1].1)?),
+                    mac_blake3: fixed_bytes::<32>(&proof_fields[2].1)?,
+                }
+            }
+            1 => {
+                if proof_fields.len() != 4
+                    || proof_fields[1].0 != 1
+                    || proof_fields[2].0 != 2
+                    || proof_fields[3].0 != 3
+                {
+                    return Err(DisclosureCapsuleError::Schema);
+                }
+                CapsuleCancelProof::AuthorizedFeedEvent {
+                    signer: ActorId::from_bytes(fixed_bytes::<32>(&proof_fields[1].1)?),
+                    feed_inception_bytes: bytes_vec(&proof_fields[2].1)?,
+                    signed_event_bytes: bytes_vec(&proof_fields[3].1)?,
+                }
+            }
+            _ => return Err(DisclosureCapsuleError::Schema),
+        };
+        let decoded = Self {
+            session_id,
+            permit_cid,
+            reason,
+            proof,
+        };
+        if decoded.to_canonical_bytes()? != bytes {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        Ok(decoded)
+    }
+
+    pub fn verify(
+        &self,
+        authorization: &AuthorizedDisclosureSession,
+        permits: &PermitValidator,
+        key: &DisclosureSessionKey,
+        key_state: Option<&ku_core::foundation::KeyStateReducer>,
+    ) -> Result<ActorId, DisclosureCapsuleError> {
+        if self.session_id == [0; 32]
+            || self.session_id != authorization.request.session_id
+            || self.permit_cid != authorization.request.permit_id
+        {
+            return Err(DisclosureCapsuleError::InvalidCancel);
+        }
+        let permit = permits
+            .get(self.permit_cid)
+            .ok_or(DisclosureCapsuleError::PermitUnknown)?;
+        match &self.proof {
+            CapsuleCancelProof::SessionKeyMac { signer, mac_blake3 } => {
+                if key.is_zeroized() {
+                    return Err(DisclosureCapsuleError::KeyZeroized);
+                }
+                if *signer != permit.body.issuer && *signer != permit.body.executor {
+                    return Err(DisclosureCapsuleError::InvalidCancel);
+                }
+                let expected = cancel_session_mac(
+                    self.session_id,
+                    self.permit_cid,
+                    self.reason,
+                    *signer,
+                    key,
+                )?;
+                if &expected != mac_blake3 {
+                    return Err(DisclosureCapsuleError::InvalidCancel);
+                }
+                Ok(*signer)
+            }
+            CapsuleCancelProof::AuthorizedFeedEvent {
+                signer,
+                feed_inception_bytes,
+                signed_event_bytes,
+            } => {
+                if *signer != permit.body.issuer && *signer != permit.body.executor {
+                    return Err(DisclosureCapsuleError::InvalidCancel);
+                }
+                let feed = ku_core::foundation::decode_feed_inception(feed_inception_bytes)
+                    .map_err(|_| DisclosureCapsuleError::InvalidCancel)?;
+                let event = ku_core::foundation::decode_knowledge_event(
+                    signed_event_bytes,
+                    &feed,
+                    &[CAPSULE_CANCEL_EVENT_TYPE],
+                )
+                .map_err(|_| DisclosureCapsuleError::InvalidCancel)?;
+                let expected_ref = ObjectReference::new(0, self.body_commitment()?);
+                if event.signed.event.payload_refs != [expected_ref] {
+                    return Err(DisclosureCapsuleError::InvalidCancel);
+                }
+                if let Some(reducer) = key_state {
+                    match reducer.evaluate(&feed) {
+                        ku_core::foundation::FeedAuthorityDecision::AuthorizedRelative {
+                            actor,
+                            ..
+                        } if actor == *signer => {}
+                        _ => return Err(DisclosureCapsuleError::InvalidCancel),
+                    }
+                }
+                Ok(*signer)
+            }
+        }
+    }
 }
 
 impl DisclosureSessionRequest {
@@ -276,6 +533,7 @@ impl ProgressiveDisclosurePayload {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProgressiveDisclosureSession {
     authorization: AuthorizedDisclosureSession,
     next_sequence: u32,
@@ -284,6 +542,7 @@ pub struct ProgressiveDisclosureSession {
     used_nonces: BTreeSet<[u8; 24]>,
     used_request_nonces: BTreeSet<[u8; 32]>,
     cancelled: bool,
+    cancel_reason: Option<CancelReason>,
 }
 
 impl ProgressiveDisclosureSession {
@@ -296,7 +555,32 @@ impl ProgressiveDisclosureSession {
             used_nonces: BTreeSet::new(),
             used_request_nonces: BTreeSet::new(),
             cancelled: false,
+            cancel_reason: None,
         }
+    }
+
+    pub const fn session_id(&self) -> &[u8; 32] {
+        self.authorization.session_id()
+    }
+
+    pub const fn authorization(&self) -> &AuthorizedDisclosureSession {
+        &self.authorization
+    }
+
+    pub const fn is_cancelled(&self) -> bool {
+        self.cancelled
+    }
+
+    pub const fn cancel_reason(&self) -> Option<CancelReason> {
+        self.cancel_reason
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.cancelled
+            || self.last_stage.is_some_and(|stage| {
+                stage == self.authorization.request.ceiling
+                    || stage == DisclosureStage::FullNegotiatedPayload
+            })
     }
 
     pub fn approve_next(
@@ -332,6 +616,9 @@ impl ProgressiveDisclosureSession {
         nonce: [u8; 24],
         key: &DisclosureSessionKey,
     ) -> Result<Vec<u8>, DisclosureCapsuleError> {
+        if key.is_zeroized() {
+            return Err(DisclosureCapsuleError::KeyZeroized);
+        }
         if self.cancelled {
             return Err(DisclosureCapsuleError::Cancelled);
         }
@@ -411,9 +698,249 @@ impl ProgressiveDisclosureSession {
         Ok(bytes)
     }
 
+    /// Seal the next disclosure capsule and immediately zeroize `key` if the
+    /// session reached a terminal stage (`ceiling` or `FullNegotiatedPayload`).
+    pub fn seal_ephemeral(
+        &mut self,
+        permits: &PermitValidator,
+        payload: ProgressiveDisclosurePayload,
+        local_tick: u64,
+        nonce: [u8; 24],
+        key: &mut DisclosureSessionKey,
+    ) -> Result<Vec<u8>, DisclosureCapsuleError> {
+        let bytes = self.seal(permits, payload, local_tick, nonce, key)?;
+        if self.is_terminal() {
+            key.zeroize_now();
+        }
+        Ok(bytes)
+    }
+
     pub fn cancel(&mut self) {
         self.cancelled = true;
+        if self.cancel_reason.is_none() {
+            self.cancel_reason = Some(CancelReason::InitiatorAborted);
+        }
         self.pending_approval = None;
+    }
+
+    /// Cancel locally and immediately zeroize the ephemeral `DisclosureSessionKey`.
+    pub fn cancel_and_zeroize(&mut self, reason: CancelReason, key: &mut DisclosureSessionKey) {
+        self.cancelled = true;
+        self.cancel_reason = Some(reason);
+        self.pending_approval = None;
+        key.zeroize_now();
+    }
+
+    /// Verify an authenticated `CapsuleCancelV1` frame and immediately transition
+    /// to terminal cancelled state while zeroizing `key` in memory.
+    pub fn apply_cancel(
+        &mut self,
+        cancel: &CapsuleCancelV1,
+        permits: &PermitValidator,
+        key: &mut DisclosureSessionKey,
+        key_state: Option<&ku_core::foundation::KeyStateReducer>,
+    ) -> Result<ActorId, DisclosureCapsuleError> {
+        let signer = cancel.verify(&self.authorization, permits, key, key_state)?;
+        self.cancelled = true;
+        self.cancel_reason = Some(cancel.reason);
+        self.pending_approval = None;
+        key.zeroize_now();
+        Ok(signer)
+    }
+
+    /// Encode this progressive disclosure session into canonical bytes suitable
+    /// for encrypted storage inside `RedbPrivateNeedVault`.
+    pub fn to_durable_bytes(&self) -> Result<Vec<u8>, DisclosureCapsuleError> {
+        let req = &self.authorization.request;
+        let auth_val = CanonicalValue::Map(vec![
+            (0, CanonicalValue::Bytes(req.session_id.to_vec())),
+            (1, CanonicalValue::Bytes(req.permit_id.as_bytes().to_vec())),
+            (2, CanonicalValue::Bytes(req.recipient.as_bytes().to_vec())),
+            (
+                3,
+                CanonicalValue::Bytes(req.capability_definition.as_bytes().to_vec()),
+            ),
+            (4, CanonicalValue::Bytes(req.input_commitment.to_vec())),
+            (5, CanonicalValue::Bytes(req.purpose.as_bytes().to_vec())),
+            (
+                6,
+                CanonicalValue::Array(vec![
+                    CanonicalValue::Bytes(req.effect_profile.affordance.as_bytes().to_vec()),
+                    CanonicalValue::Bytes(req.effect_profile.constraints.as_bytes().to_vec()),
+                    CanonicalValue::Bytes(
+                        req.effect_profile.evidence_references.as_bytes().to_vec(),
+                    ),
+                    CanonicalValue::Bytes(req.effect_profile.full_payload.as_bytes().to_vec()),
+                ]),
+            ),
+            (7, CanonicalValue::Unsigned(req.ceiling as u64)),
+            (8, CanonicalValue::Unsigned(req.max_plaintext_bytes)),
+            (9, CanonicalValue::Unsigned(req.retention as u64)),
+            (10, CanonicalValue::Unsigned(req.not_before)),
+            (11, CanonicalValue::Unsigned(req.expires_at)),
+            (
+                12,
+                CanonicalValue::Bytes(self.authorization.scope_commitment.to_vec()),
+            ),
+        ]);
+        let last_stage_val = match self.last_stage {
+            Some(stage) => CanonicalValue::Unsigned(stage as u64),
+            None => CanonicalValue::Null,
+        };
+        let pending_val = match self.pending_approval {
+            Some((stage, commitment)) => CanonicalValue::Array(vec![
+                CanonicalValue::Unsigned(stage as u64),
+                CanonicalValue::Bytes(commitment.to_vec()),
+            ]),
+            None => CanonicalValue::Null,
+        };
+        let nonces_val = CanonicalValue::Array(
+            self.used_nonces
+                .iter()
+                .map(|n| CanonicalValue::Bytes(n.to_vec()))
+                .collect(),
+        );
+        let req_nonces_val = CanonicalValue::Array(
+            self.used_request_nonces
+                .iter()
+                .map(|n| CanonicalValue::Bytes(n.to_vec()))
+                .collect(),
+        );
+        let cancel_reason_val = match self.cancel_reason {
+            Some(reason) => CanonicalValue::Unsigned(reason as u64),
+            None => CanonicalValue::Null,
+        };
+        let root = CanonicalValue::Map(vec![
+            (
+                0,
+                CanonicalValue::Unsigned(DISCLOSURE_SESSION_SNAPSHOT_MAJOR),
+            ),
+            (1, auth_val),
+            (2, CanonicalValue::Unsigned(u64::from(self.next_sequence))),
+            (3, last_stage_val),
+            (4, pending_val),
+            (5, nonces_val),
+            (6, req_nonces_val),
+            (7, CanonicalValue::Bool(self.cancelled)),
+            (8, cancel_reason_val),
+        ]);
+        encode_canonical(&root, ResourceProfile::ObjectV1).map_err(Into::into)
+    }
+
+    pub fn from_durable_bytes(bytes: &[u8]) -> Result<Self, DisclosureCapsuleError> {
+        let value = decode_canonical(bytes, ResourceProfile::ObjectV1)?;
+        let CanonicalValue::Map(fields) = value else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if fields.len() != 9 || fields.iter().enumerate().any(|(i, (k, _))| *k != i as u64) {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        if unsigned(&fields[0].1)? != DISCLOSURE_SESSION_SNAPSHOT_MAJOR {
+            return Err(DisclosureCapsuleError::Version);
+        }
+        let CanonicalValue::Map(auth_fields) = &fields[1].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if auth_fields.len() != 13
+            || auth_fields
+                .iter()
+                .enumerate()
+                .any(|(i, (k, _))| *k != i as u64)
+        {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        let CanonicalValue::Array(effects) = &auth_fields[6].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if effects.len() != 4 {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        let ceiling = stage_from_u64(unsigned(&auth_fields[7].1)?)?;
+        let retention = retention_from_u64(unsigned(&auth_fields[9].1)?)?;
+        let request = DisclosureSessionRequest {
+            session_id: fixed_bytes::<32>(&auth_fields[0].1)?,
+            permit_id: PermitCid::from_bytes(fixed_bytes::<32>(&auth_fields[1].1)?),
+            recipient: ActorId::from_bytes(fixed_bytes::<32>(&auth_fields[2].1)?),
+            capability_definition: ObjectCid::from_bytes(fixed_bytes::<32>(&auth_fields[3].1)?),
+            input_commitment: fixed_bytes::<32>(&auth_fields[4].1)?,
+            purpose: ConceptCcid::from_bytes(fixed_bytes::<16>(&auth_fields[5].1)?),
+            effect_profile: DisclosureEffectProfile {
+                affordance: ConceptCcid::from_bytes(fixed_bytes::<16>(&effects[0])?),
+                constraints: ConceptCcid::from_bytes(fixed_bytes::<16>(&effects[1])?),
+                evidence_references: ConceptCcid::from_bytes(fixed_bytes::<16>(&effects[2])?),
+                full_payload: ConceptCcid::from_bytes(fixed_bytes::<16>(&effects[3])?),
+            },
+            ceiling,
+            max_plaintext_bytes: unsigned(&auth_fields[8].1)?,
+            retention,
+            not_before: unsigned(&auth_fields[10].1)?,
+            expires_at: unsigned(&auth_fields[11].1)?,
+        };
+        let stored_scope_commitment = fixed_bytes::<32>(&auth_fields[12].1)?;
+        if session_scope_commitment(&request)? != stored_scope_commitment {
+            return Err(DisclosureCapsuleError::InvalidSession);
+        }
+        let next_sequence =
+            u32::try_from(unsigned(&fields[2].1)?).map_err(|_| DisclosureCapsuleError::Schema)?;
+        let last_stage = match &fields[3].1 {
+            CanonicalValue::Null => None,
+            other => Some(stage_from_u64(unsigned(other)?)?),
+        };
+        let pending_approval = match &fields[4].1 {
+            CanonicalValue::Null => None,
+            CanonicalValue::Array(pair) if pair.len() == 2 => Some((
+                stage_from_u64(unsigned(&pair[0])?)?,
+                fixed_bytes::<32>(&pair[1])?,
+            )),
+            _ => return Err(DisclosureCapsuleError::Schema),
+        };
+        let CanonicalValue::Array(nonces_arr) = &fields[5].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut used_nonces = BTreeSet::new();
+        for item in nonces_arr {
+            if !used_nonces.insert(fixed_bytes::<24>(item)?) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let CanonicalValue::Array(req_nonces_arr) = &fields[6].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut used_request_nonces = BTreeSet::new();
+        for item in req_nonces_arr {
+            if !used_request_nonces.insert(fixed_bytes::<32>(item)?) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let CanonicalValue::Bool(cancelled) = fields[7].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let cancel_reason = match &fields[8].1 {
+            CanonicalValue::Null => None,
+            other => Some(
+                CancelReason::from_code(unsigned(other)?).ok_or(DisclosureCapsuleError::Schema)?,
+            ),
+        };
+        if !cancelled && cancel_reason.is_some() {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        let session = Self {
+            authorization: AuthorizedDisclosureSession {
+                request,
+                scope_commitment: stored_scope_commitment,
+            },
+            next_sequence,
+            last_stage,
+            pending_approval,
+            used_nonces,
+            used_request_nonces,
+            cancelled,
+            cancel_reason,
+        };
+        if session.to_durable_bytes()? != bytes {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        Ok(session)
     }
 }
 
@@ -473,7 +1000,7 @@ struct InboundSessionState {
     pending_approval: Option<(DisclosureStage, [u8; 32])>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DisclosureCapsuleInbox {
     seen_capsules: BTreeSet<[u8; 32]>,
     sessions: BTreeMap<[u8; 32], InboundSessionState>,
@@ -484,6 +1011,200 @@ pub struct DisclosureCapsuleInbox {
 impl DisclosureCapsuleInbox {
     pub fn cancel_session(&mut self, session_id: [u8; 32]) {
         self.cancelled_sessions.insert(session_id);
+        if let Some(state) = self.sessions.get_mut(&session_id) {
+            state.pending_approval = None;
+        }
+    }
+
+    /// Verify `CapsuleCancelV1`, mark the inbound session cancelled, and
+    /// immediately zeroize the ephemeral `DisclosureSessionKey`.
+    pub fn apply_cancel(
+        &mut self,
+        cancel: &CapsuleCancelV1,
+        authorization: &AuthorizedDisclosureSession,
+        permits: &PermitValidator,
+        key: &mut DisclosureSessionKey,
+        key_state: Option<&ku_core::foundation::KeyStateReducer>,
+    ) -> Result<ActorId, DisclosureCapsuleError> {
+        let signer = cancel.verify(authorization, permits, key, key_state)?;
+        self.cancel_session(cancel.session_id);
+        key.zeroize_now();
+        Ok(signer)
+    }
+
+    pub fn open_ephemeral(
+        &mut self,
+        capsule_bytes: &[u8],
+        authorization: &AuthorizedDisclosureSession,
+        expected_recipient: ActorId,
+        permits: &PermitValidator,
+        local_tick: u64,
+        key: &mut DisclosureSessionKey,
+    ) -> Result<OpenedDisclosure, DisclosureCapsuleError> {
+        let opened = self.open(
+            capsule_bytes,
+            authorization,
+            expected_recipient,
+            permits,
+            local_tick,
+            key,
+        )?;
+        if opened.stage == authorization.request.ceiling
+            || opened.stage == DisclosureStage::FullNegotiatedPayload
+        {
+            key.zeroize_now();
+        }
+        Ok(opened)
+    }
+
+    pub fn to_durable_bytes(&self) -> Result<Vec<u8>, DisclosureCapsuleError> {
+        let seen = CanonicalValue::Array(
+            self.seen_capsules
+                .iter()
+                .map(|cid| CanonicalValue::Bytes(cid.to_vec()))
+                .collect(),
+        );
+        let sessions = CanonicalValue::Array(
+            self.sessions
+                .iter()
+                .map(|(session_id, state)| {
+                    CanonicalValue::Map(vec![
+                        (0, CanonicalValue::Bytes(session_id.to_vec())),
+                        (1, CanonicalValue::Unsigned(u64::from(state.next_sequence))),
+                        (
+                            2,
+                            match state.last_stage {
+                                Some(stage) => CanonicalValue::Unsigned(stage as u64),
+                                None => CanonicalValue::Null,
+                            },
+                        ),
+                        (
+                            3,
+                            match state.pending_approval {
+                                Some((stage, commitment)) => CanonicalValue::Array(vec![
+                                    CanonicalValue::Unsigned(stage as u64),
+                                    CanonicalValue::Bytes(commitment.to_vec()),
+                                ]),
+                                None => CanonicalValue::Null,
+                            },
+                        ),
+                    ])
+                })
+                .collect(),
+        );
+        let cancelled = CanonicalValue::Array(
+            self.cancelled_sessions
+                .iter()
+                .map(|id| CanonicalValue::Bytes(id.to_vec()))
+                .collect(),
+        );
+        let req_nonces = CanonicalValue::Array(
+            self.used_request_nonces
+                .iter()
+                .map(|nonce| CanonicalValue::Bytes(nonce.to_vec()))
+                .collect(),
+        );
+        let root = CanonicalValue::Map(vec![
+            (
+                0,
+                CanonicalValue::Unsigned(DISCLOSURE_SESSION_SNAPSHOT_MAJOR),
+            ),
+            (1, seen),
+            (2, sessions),
+            (3, cancelled),
+            (4, req_nonces),
+        ]);
+        encode_canonical(&root, ResourceProfile::ObjectV1).map_err(Into::into)
+    }
+
+    pub fn from_durable_bytes(bytes: &[u8]) -> Result<Self, DisclosureCapsuleError> {
+        let value = decode_canonical(bytes, ResourceProfile::ObjectV1)?;
+        let CanonicalValue::Map(fields) = value else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        if fields.len() != 5 || fields.iter().enumerate().any(|(i, (k, _))| *k != i as u64) {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        if unsigned(&fields[0].1)? != DISCLOSURE_SESSION_SNAPSHOT_MAJOR {
+            return Err(DisclosureCapsuleError::Version);
+        }
+        let CanonicalValue::Array(seen_arr) = &fields[1].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut seen_capsules = BTreeSet::new();
+        for item in seen_arr {
+            if !seen_capsules.insert(fixed_bytes::<32>(item)?) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let CanonicalValue::Array(sessions_arr) = &fields[2].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut sessions = BTreeMap::new();
+        for item in sessions_arr {
+            let CanonicalValue::Map(sfields) = item else {
+                return Err(DisclosureCapsuleError::Schema);
+            };
+            if sfields.len() != 4 || sfields.iter().enumerate().any(|(i, (k, _))| *k != i as u64) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+            let session_id = fixed_bytes::<32>(&sfields[0].1)?;
+            let next_sequence = u32::try_from(unsigned(&sfields[1].1)?)
+                .map_err(|_| DisclosureCapsuleError::Schema)?;
+            let last_stage = match &sfields[2].1 {
+                CanonicalValue::Null => None,
+                other => Some(stage_from_u64(unsigned(other)?)?),
+            };
+            let pending_approval = match &sfields[3].1 {
+                CanonicalValue::Null => None,
+                CanonicalValue::Array(pair) if pair.len() == 2 => Some((
+                    stage_from_u64(unsigned(&pair[0])?)?,
+                    fixed_bytes::<32>(&pair[1])?,
+                )),
+                _ => return Err(DisclosureCapsuleError::Schema),
+            };
+            if sessions
+                .insert(
+                    session_id,
+                    InboundSessionState {
+                        next_sequence,
+                        last_stage,
+                        pending_approval,
+                    },
+                )
+                .is_some()
+            {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let CanonicalValue::Array(cancelled_arr) = &fields[3].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut cancelled_sessions = BTreeSet::new();
+        for item in cancelled_arr {
+            if !cancelled_sessions.insert(fixed_bytes::<32>(item)?) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let CanonicalValue::Array(req_nonces_arr) = &fields[4].1 else {
+            return Err(DisclosureCapsuleError::Schema);
+        };
+        let mut used_request_nonces = BTreeSet::new();
+        for item in req_nonces_arr {
+            if !used_request_nonces.insert(fixed_bytes::<32>(item)?) {
+                return Err(DisclosureCapsuleError::Schema);
+            }
+        }
+        let inbox = Self {
+            seen_capsules,
+            sessions,
+            cancelled_sessions,
+            used_request_nonces,
+        };
+        if inbox.to_durable_bytes()? != bytes {
+            return Err(DisclosureCapsuleError::Schema);
+        }
+        Ok(inbox)
     }
 
     pub fn approve_next(
@@ -525,6 +1246,9 @@ impl DisclosureCapsuleInbox {
         local_tick: u64,
         key: &DisclosureSessionKey,
     ) -> Result<OpenedDisclosure, DisclosureCapsuleError> {
+        if key.is_zeroized() {
+            return Err(DisclosureCapsuleError::KeyZeroized);
+        }
         authorization.validate_at(permits, local_tick)?;
         let (header, ciphertext) = decode_capsule(capsule_bytes)?;
         if self.cancelled_sessions.contains(&header.session_id) {
@@ -847,6 +1571,58 @@ fn fixed_bytes<const N: usize>(value: &CanonicalValue) -> Result<[u8; N], Disclo
         .map_err(|_| DisclosureCapsuleError::Schema)
 }
 
+fn stage_from_u64(code: u64) -> Result<DisclosureStage, DisclosureCapsuleError> {
+    match code {
+        0 => Ok(DisclosureStage::AffordanceSketch),
+        1 => Ok(DisclosureStage::ConstraintSketch),
+        2 => Ok(DisclosureStage::EvidenceReferences),
+        3 => Ok(DisclosureStage::FullNegotiatedPayload),
+        _ => Err(DisclosureCapsuleError::Schema),
+    }
+}
+
+fn retention_from_u64(code: u64) -> Result<RetentionRule, DisclosureCapsuleError> {
+    match code {
+        0 => Ok(RetentionRule::DeleteAfterTask),
+        1 => Ok(RetentionRule::RetainUntilExpiry),
+        2 => Ok(RetentionRule::NoTraining),
+        _ => Err(DisclosureCapsuleError::Schema),
+    }
+}
+
+fn cancel_body_commitment(
+    session_id: [u8; 32],
+    permit_cid: PermitCid,
+    reason: CancelReason,
+) -> Result<[u8; 32], DisclosureCapsuleError> {
+    let body = CanonicalValue::Map(vec![
+        (0, CanonicalValue::Unsigned(CAPSULE_CANCEL_MAJOR)),
+        (1, CanonicalValue::Bytes(session_id.to_vec())),
+        (2, CanonicalValue::Bytes(permit_cid.as_bytes().to_vec())),
+        (3, CanonicalValue::Unsigned(reason as u64)),
+    ]);
+    let bytes = encode_canonical(&body, ResourceProfile::ControlV1)?;
+    Ok(commitment(
+        b"onebrain:vnext:capsule-cancel-body:1\0",
+        &bytes,
+    ))
+}
+
+fn cancel_session_mac(
+    session_id: [u8; 32],
+    permit_cid: PermitCid,
+    reason: CancelReason,
+    signer: ActorId,
+    key: &DisclosureSessionKey,
+) -> Result<[u8; 32], DisclosureCapsuleError> {
+    let body_hash = cancel_body_commitment(session_id, permit_cid, reason)?;
+    let mut hasher = blake3::Hasher::new_keyed(&key.0);
+    hasher.update(b"onebrain:vnext:capsule-cancel-mac:1\0");
+    hasher.update(signer.as_bytes());
+    hasher.update(&body_hash);
+    Ok(*hasher.finalize().as_bytes())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DisclosureCapsuleError {
     Canonical(ku_core::foundation::CanonicalError),
@@ -855,6 +1631,8 @@ pub enum DisclosureCapsuleError {
     PermitScope,
     InvalidSession,
     InvalidPayload,
+    InvalidCancel,
+    KeyZeroized,
     Version,
     Schema,
     AffordanceFirst,
@@ -1236,5 +2014,132 @@ mod tests {
         let (_, full_ciphertext) = decode_capsule(&full).unwrap();
         assert_eq!(first_ciphertext.len(), 512 + 16);
         assert_eq!(full_ciphertext.len(), 4096 + 16);
+    }
+
+    #[test]
+    fn durable_snapshot_round_trip_and_cancel_v1_zeroize_session_key() {
+        let (permits, permit_id) = authorized_permits();
+        let authorization = AuthorizedDisclosureSession::authorize(
+            &permits,
+            request(permit_id, DisclosureStage::ConstraintSketch),
+            20,
+        )
+        .unwrap();
+        let mut session = ProgressiveDisclosureSession::new(authorization.clone());
+        let mut sender_key = DisclosureSessionKey::from_bytes([0x66; 32]);
+        let mut receiver_key = DisclosureSessionKey::from_bytes([0x66; 32]);
+
+        let first = session
+            .seal_ephemeral(&permits, affordance(), 20, [1; 24], &mut sender_key)
+            .unwrap();
+        assert!(!sender_key.is_zeroized());
+
+        let snapshot = session.to_durable_bytes().unwrap();
+        let mut restored = ProgressiveDisclosureSession::from_durable_bytes(&snapshot).unwrap();
+        assert_eq!(restored, session);
+
+        let mut inbox = DisclosureCapsuleInbox::default();
+        inbox
+            .open_ephemeral(
+                &first,
+                &authorization,
+                actor(2),
+                &permits,
+                21,
+                &mut receiver_key,
+            )
+            .unwrap();
+        let inbox_snapshot = inbox.to_durable_bytes().unwrap();
+        let mut restored_inbox =
+            DisclosureCapsuleInbox::from_durable_bytes(&inbox_snapshot).unwrap();
+        assert_eq!(restored_inbox, inbox);
+
+        // Unauthorized third-party actor cannot forge a CapsuleCancelV1.
+        let forged = CapsuleCancelV1::sign_with_session_key(
+            *authorization.session_id(),
+            permit_id,
+            CancelReason::PolicyViolation,
+            actor(99),
+            &sender_key,
+        )
+        .unwrap();
+        assert_eq!(
+            restored.apply_cancel(&forged, &permits, &mut sender_key, None),
+            Err(DisclosureCapsuleError::InvalidCancel)
+        );
+        assert!(!sender_key.is_zeroized());
+
+        // Authorized responder (executor actor(2)) signs CapsuleCancelV1; canonical round-trip + apply_cancel zeroizes keys immediately.
+        let valid_cancel = CapsuleCancelV1::sign_with_session_key(
+            *authorization.session_id(),
+            permit_id,
+            CancelReason::ResponderDeclined,
+            actor(2),
+            &receiver_key,
+        )
+        .unwrap();
+        let cancel_bytes = valid_cancel.to_canonical_bytes().unwrap();
+        let decoded_cancel = CapsuleCancelV1::from_canonical_bytes(&cancel_bytes).unwrap();
+        assert_eq!(decoded_cancel, valid_cancel);
+
+        assert_eq!(
+            restored
+                .apply_cancel(&decoded_cancel, &permits, &mut sender_key, None)
+                .unwrap(),
+            actor(2)
+        );
+        assert!(restored.is_cancelled());
+        assert_eq!(
+            restored.cancel_reason(),
+            Some(CancelReason::ResponderDeclined)
+        );
+        assert!(sender_key.is_zeroized());
+
+        assert_eq!(
+            restored_inbox
+                .apply_cancel(
+                    &decoded_cancel,
+                    &authorization,
+                    &permits,
+                    &mut receiver_key,
+                    None
+                )
+                .unwrap(),
+            actor(2)
+        );
+        assert!(receiver_key.is_zeroized());
+    }
+
+    #[test]
+    fn terminal_stage_seal_ephemeral_immediately_zeroizes_session_key() {
+        let (permits, permit_id) = authorized_permits();
+        let authorization = AuthorizedDisclosureSession::authorize(
+            &permits,
+            request(permit_id, DisclosureStage::AffordanceSketch),
+            20,
+        )
+        .unwrap();
+        let mut session = ProgressiveDisclosureSession::new(authorization.clone());
+        let mut sender_key = DisclosureSessionKey::from_bytes([0x77; 32]);
+        let mut receiver_key = DisclosureSessionKey::from_bytes([0x77; 32]);
+
+        let capsule = session
+            .seal_ephemeral(&permits, affordance(), 20, [9; 24], &mut sender_key)
+            .unwrap();
+        assert!(session.is_terminal());
+        assert!(sender_key.is_zeroized());
+
+        let mut inbox = DisclosureCapsuleInbox::default();
+        inbox
+            .open_ephemeral(
+                &capsule,
+                &authorization,
+                actor(2),
+                &permits,
+                21,
+                &mut receiver_key,
+            )
+            .unwrap();
+        assert!(receiver_key.is_zeroized());
     }
 }

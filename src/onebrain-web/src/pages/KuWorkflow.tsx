@@ -35,6 +35,14 @@ import {
   useKuHeaderSummary,
 } from "./kuHeaderSummary";
 import { DesktopLifecycle } from "../components/DesktopLifecycle";
+import {
+  PROVENANCE_PRIVATE_LOCAL_ONLY,
+  PROVENANCE_PUBLIC_UNASSESSED,
+  USABLE_OFFLINE_BADGE,
+  formatCoverageBadge,
+  formatNeedCompilerBadge,
+  formatProvenanceBadge,
+} from "../utils/epistemicBadges";
 
 const defaultClient = createKuClient(getPrivateApiConnection);
 // DEV-ONLY demo share identifiers, identical to SELECTOR / NAMESPACE in
@@ -608,6 +616,21 @@ export function KuWorkflowPage({
         aria-label="Scope and limitations"
       >
         <strong>Local / private · AI unqualified</strong>
+        <p className="ku-id">
+          {USABLE_OFFLINE_BADGE} · {PROVENANCE_PRIVATE_LOCAL_ONLY} ·{" "}
+          {PROVENANCE_PUBLIC_UNASSESSED} ·{" "}
+          {formatCoverageBadge({
+            coverage: metadata?.coverage ?? "local_only",
+            reachablePeers: headerSummary?.network.enabled
+              ? headerSummary.network.active_sessions
+              : 0,
+          })}{" "}
+          ·{" "}
+          {formatNeedCompilerBadge({
+            compiled: true,
+            compilerProfile: "kql-need-compiler/1",
+          })}
+        </p>
         <p>
           Save does not publish, create UseEvidence, adopt knowledge or issue
           OBT. Manual assertions have unassessed fidelity. Network and AI
@@ -1198,6 +1221,10 @@ export function KuWorkflowPage({
                     {item.disclosure_class === "PUBLIC"
                       ? "Published public artifact"
                       : `Private / ${item.disclosure_class}`}{" "}
+                    ·{" "}
+                    {formatProvenanceBadge({
+                      disclosureClass: item.disclosure_class,
+                    })}{" "}
                     · {item.artifact_validity} · {item.coverage} · Fidelity:{" "}
                     {item.fidelity_frontier
                       ? "assessment present"

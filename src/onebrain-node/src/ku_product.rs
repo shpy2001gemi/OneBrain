@@ -822,6 +822,7 @@ impl KuStore {
             | Req::ShareInspect(_)
             | Req::ShareIntent(_) => return Err(public_share_network_unavailable()),
             Req::ReviewLower(input) => return self.review_lower(principal, input, budget),
+            Req::ReviewLowerV2(input) => return self.review_lower_v2(principal, input, budget),
             Req::SavedSemantic(input) => return self.saved_semantic(principal, input, budget),
             Req::WorkspaceSummary {} => return self.workspace_summary(principal, budget),
             Req::DescribeCcids(input) => return self.describe_ccids(input, budget),
@@ -1718,7 +1719,9 @@ impl KuStore {
             return Err(invalid());
         }
         let lowered = request.input_mode == InputMode::ResolvedSemanticDraft
-            && review_lowering::is_lowering_commitment(request.implementation_commitment.0);
+            && review_lowering::is_any_lowering_commitment(request.implementation_commitment.0);
+        let lowered_v2 = request.input_mode == InputMode::ResolvedSemanticDraft
+            && review_lowering::is_lowering_v2_commitment(request.implementation_commitment.0);
         if !lowered
             && !self
                 .inputs
@@ -1797,7 +1800,10 @@ impl KuStore {
             let source = SourceArtifact::from_validated(&object).map_err(|_| invalid())?;
             source_sizes.insert(cid.0, source.raw_bytes.len());
         }
-        let selected = validate_bindings(&release, &input.bindings)?;
+        let mut selected = validate_bindings(&release, &input.bindings)?;
+        if lowered_v2 {
+            selected.extend(review_lowering::lowering_v2_reserved_ccids());
+        }
         charge_extraction(&mut extraction_budget, input.bindings.len() * 1024)?;
         let mut artifacts = Vec::new();
         let mut private_semantic_inputs = Vec::new();

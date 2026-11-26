@@ -8,11 +8,15 @@ use redb::{Database, ReadableTable, TableDefinition};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
+    registry_activation::{
+        ActivationReceiptStatus, RegistryActivationReceiptRecord, RegistryActiveStateRecord,
+    },
     registry_admission::{
         compare_bound_generation, compare_bound_release, registry_admission,
         verified_registry_artifacts, verify_registry_target, VerifiedRegistryTarget,
         FIXED_CHUNK_BYTES, REGISTRY_CHUNK_DOMAIN,
     },
+    registry_source_plan::RegistrySourceObservation,
     MobileCoreError, RegistryCapacityPlan, RegistryChannelHighWater, RegistryLimitedReceipt,
     RegistryNetworkPolicy, RegistryOperationState, RegistryReleaseCatalogRecord,
     RegistryReleaseHighWater, RegistryReleaseState, RegistryTrustProfile, RegistryWaitingReason,
@@ -45,6 +49,14 @@ const REGISTRY_CHANNEL_INTENTS: TableDefinition<&str, &[u8]> =
     TableDefinition::new("registry_channel_intents");
 const REGISTRY_LIMITED_RECEIPTS: TableDefinition<&str, &[u8]> =
     TableDefinition::new("registry_limited_receipts");
+const REGISTRY_ACTIVE_STATE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("registry_active_state");
+const REGISTRY_ACTIVATION_RECEIPTS: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("registry_activation_receipts");
+const REGISTRY_SOURCE_OBSERVATIONS: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("registry_source_observations");
+const CURRENT_ACTIVE_REGISTRY_KEY: &str = "active";
+const ROLLBACK_RETENTION_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const CURRENT_PROCESS_KEY: &str = "current";
 const CURRENT_INSTALLATION_KEY: &str = "current";
 const CURRENT_PRIVACY_POLICY_KEY: &str = "current";
@@ -67,6 +79,7 @@ pub enum OnboardingCursor {
     Security,
     InitHandoff,
     LimitedHome,
+    Readiness,
 }
 
 impl OnboardingCursor {
@@ -78,6 +91,7 @@ impl OnboardingCursor {
             Self::Security => 3,
             Self::InitHandoff => 4,
             Self::LimitedHome => 5,
+            Self::Readiness => 6,
         }
     }
 
@@ -89,6 +103,7 @@ impl OnboardingCursor {
             3 => Some(Self::Security),
             4 => Some(Self::InitHandoff),
             5 => Some(Self::LimitedHome),
+            6 => Some(Self::Readiness),
             _ => None,
         }
     }
@@ -317,6 +332,18 @@ pub enum RegistrySourceKind {
     LocalImport,
 }
 
+impl RegistrySourceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectPeer => "direct_peer",
+            Self::CommunitySeed => "community_seed",
+            Self::CarrierPeer => "carrier_peer",
+            Self::HttpsMirror => "https_mirror",
+            Self::LocalImport => "local_import",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistryTransferScheduleState {
@@ -437,6 +464,9 @@ impl BootstrapStore {
             let _ = write.open_table(REGISTRY_REVOCATIONS)?;
             let _ = write.open_table(REGISTRY_CHANNEL_INTENTS)?;
             let _ = write.open_table(REGISTRY_LIMITED_RECEIPTS)?;
+            let _ = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let _ = write.open_table(REGISTRY_ACTIVATION_RECEIPTS)?;
+            let _ = write.open_table(REGISTRY_SOURCE_OBSERVATIONS)?;
         }
         write.commit()?;
         Ok(Self {
@@ -838,7 +868,7 @@ impl BootstrapStore {
             channel_head_envelope_cbor,
             release_envelope_cbor,
         )?;
-        self.accept_verified_registry_target(operation_id, profile, &target)
+        self.accept_verified_registry_target(operation_id, profile, &target, release_envelope_cbor)
     }
 
     fn accept_verified_registry_target(
@@ -846,6 +876,7 @@ impl BootstrapStore {
         operation_id: &str,
         profile: &RegistryTrustProfile,
         target: &VerifiedRegistryTarget,
+        release_envelope_cbor: &[u8],
     ) -> Result<RegistryReleaseCatalogRecord, MobileCoreError> {
         if target.trust_profile_digest != profile.digest()
             || target.trust_profile_generation != profile.profile_generation()
@@ -972,6 +1003,7 @@ impl BootstrapStore {
                 release_sequence: target.release_sequence,
                 manifest_digest: manifest_digest.clone(),
                 manifest_body_cbor: target.manifest_body_cbor.clone(),
+                release_envelope_cbor: release_envelope_cbor.to_vec(),
                 release_signing_key_id: target.release_signing_key_id.clone(),
                 channel_signing_key_id: target.channel_signing_key_id.clone(),
                 trust_profile_digest: profile.digest_hex(),
@@ -995,7 +1027,11 @@ impl BootstrapStore {
                         "release catalog contains a conflicting immutable binding",
                     ));
                 }
-                catalog_record = existing;
+                let mut merged = existing;
+                if merged.release_envelope_cbor.is_empty() {
+                    merged.release_envelope_cbor = release_envelope_cbor.to_vec();
+                }
+                catalog_record = merged;
             }
 
             for revoked in &target.revoked_release_ids {
@@ -2476,6 +2512,7 @@ impl BootstrapStore {
                     RegistryOperationState::TransferQueued
                         | RegistryOperationState::Downloading
                         | RegistryOperationState::BytesComplete
+                        | RegistryOperationState::Waiting
                 )
             {
                 return Err(registry_admission(
@@ -2591,6 +2628,7 @@ impl BootstrapStore {
                     RegistryOperationState::TransferQueued
                         | RegistryOperationState::Downloading
                         | RegistryOperationState::BytesComplete
+                        | RegistryOperationState::Waiting
                 )
             {
                 return Err(registry_admission(
@@ -2700,6 +2738,810 @@ impl BootstrapStore {
             record.os_transfer_id = Some(os_transfer_id.to_owned());
             Ok(())
         })
+    }
+
+    pub fn registry_releases_root(&self) -> PathBuf {
+        self.path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("registry")
+            .join("releases")
+    }
+
+    pub fn registry_release_slot_dir(&self, release_id: &str) -> PathBuf {
+        self.registry_releases_root().join(release_id)
+    }
+
+    pub fn registry_staging_dir(&self, operation_id: &str) -> PathBuf {
+        let safe_op: String = operation_id
+            .chars()
+            .map(|ch| {
+                if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        self.path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("registry")
+            .join("staging")
+            .join(safe_op)
+    }
+
+    pub fn registry_active_state(&self) -> Result<RegistryActiveStateRecord, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_ACTIVE_STATE)?;
+        Ok(table
+            .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+            .map(|val| decode(val.value()))
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    pub fn registry_activation_receipt(
+        &self,
+        operation_id: &str,
+    ) -> Result<Option<RegistryActivationReceiptRecord>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_ACTIVATION_RECEIPTS)?;
+        table
+            .get(operation_id)?
+            .map(|val| decode(val.value()))
+            .transpose()
+    }
+
+    pub fn active_non_terminal_registry_operation_phase(
+        &self,
+    ) -> Result<Option<String>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_OPERATIONS)?;
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            let op: RegistryOperationRecord = decode(value.value())?;
+            if !matches!(
+                op.state,
+                RegistryOperationState::DeferredByUser
+                    | RegistryOperationState::Completed
+                    | RegistryOperationState::Failed
+                    | RegistryOperationState::Cancelled
+            ) {
+                return Ok(Some(format!("{:?}", op.state)));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn operation_id_for_release(
+        &self,
+        release_id: &str,
+    ) -> Result<Option<String>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_OPERATIONS)?;
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            let op: RegistryOperationRecord = decode(value.value())?;
+            if op.release_id == release_id {
+                return Ok(Some(op.operation_id));
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn verified_chunk_paths_for_role(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+    ) -> Result<Vec<PathBuf>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_CHUNKS)?;
+        let mut records = Vec::new();
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            let rec: RegistryChunkRecord = decode(value.value())?;
+            if rec.transfer_nonce == transfer_nonce && rec.artifact_role == artifact_role {
+                if rec.state != RegistryChunkState::Verified {
+                    return Err(registry_admission(
+                        "cannot reassemble role with unverified chunks",
+                    ));
+                }
+                records.push(rec);
+            }
+        }
+        if records.is_empty() {
+            return Err(registry_admission(
+                "no verified chunks found for artifact role",
+            ));
+        }
+        records.sort_by_key(|rec| rec.chunk_index);
+        let mut paths = Vec::with_capacity(records.len());
+        for rec in &records {
+            let chunk_paths = self.registry_chunk_paths(rec)?;
+            verify_registry_chunk_file(&chunk_paths.verified, rec)?;
+            paths.push(chunk_paths.verified);
+        }
+        Ok(paths)
+    }
+
+    pub fn advance_registry_operation_state(
+        &self,
+        operation_id: &str,
+        next: RegistryOperationState,
+    ) -> Result<RegistryOperationRecord, MobileCoreError> {
+        self.update_registry_operation(operation_id, |op| {
+            op.state = next;
+            Ok(())
+        })
+    }
+
+    pub fn revalidate_before_directory_commit(
+        &self,
+        operation_id: &str,
+        release_id: &str,
+    ) -> Result<(), MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let ops = read.open_table(REGISTRY_OPERATIONS)?;
+        let op: RegistryOperationRecord = ops
+            .get(operation_id)?
+            .map(|v| decode(v.value()))
+            .transpose()?
+            .ok_or_else(|| registry_admission("operation missing during revalidation"))?;
+        let revocations = read.open_table(REGISTRY_REVOCATIONS)?;
+        if revocations.get(release_id)?.is_some() {
+            return Err(MobileCoreError::RegistryTrust(
+                "release was revoked before directory commit".into(),
+            ));
+        }
+        let catalog = read.open_table(REGISTRY_RELEASE_CATALOG)?;
+        let cat: RegistryReleaseCatalogRecord = catalog
+            .get(release_id)?
+            .map(|v| decode(v.value()))
+            .transpose()?
+            .ok_or_else(|| registry_admission("release catalog missing during revalidation"))?;
+        if cat.state == RegistryReleaseState::Revoked
+            || op.confirmed_manifest_digest.as_deref() != Some(cat.manifest_digest.as_str())
+        {
+            return Err(registry_admission(
+                "confirmed manifest digest diverged before directory commit",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn mark_release_directory_committed(
+        &self,
+        operation_id: &str,
+        release_id: &str,
+    ) -> Result<(), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        {
+            let mut ops = write.open_table(REGISTRY_OPERATIONS)?;
+            let mut op: RegistryOperationRecord = ops
+                .get(operation_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("unknown operation"))?;
+            op.state = RegistryOperationState::DirectoryCommitted;
+            let op_bytes = encode(&op)?;
+            ops.insert(operation_id, op_bytes.as_slice())?;
+
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let mut cat: RegistryReleaseCatalogRecord = catalog
+                .get(release_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("unknown release"))?;
+            if cat.state == RegistryReleaseState::Revoked {
+                return Err(MobileCoreError::RegistryTrust(
+                    "revoked release cannot commit directory".into(),
+                ));
+            }
+            cat.state = RegistryReleaseState::DirectoryCommitted;
+            let cat_bytes = encode(&cat)?;
+            catalog.insert(release_id, cat_bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_registry_pointer_swap(
+        &self,
+        operation_id: &str,
+        release_id: &str,
+        obr_hash: &str,
+        labels_hash: &str,
+        ccids_hash: &str,
+        health_suite_id: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<RegistryActivationReceiptRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let receipt;
+        {
+            let mut active_table = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let mut current_active: RegistryActiveStateRecord = active_table
+                .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .unwrap_or_default();
+
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let mut candidate: RegistryReleaseCatalogRecord = catalog
+                .get(release_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("candidate release missing"))?;
+            if candidate.state == RegistryReleaseState::Revoked {
+                return Err(MobileCoreError::RegistryTrust(
+                    "revoked candidate cannot swap active pointer".into(),
+                ));
+            }
+
+            let fallback_release_id = match current_active.active_release_id.as_deref() {
+                Some(prev_id) if prev_id != release_id => {
+                    let prev_ok = catalog
+                        .get(prev_id)?
+                        .map(|v| decode::<RegistryReleaseCatalogRecord>(v.value()))
+                        .transpose()?
+                        .is_some_and(|prev| prev.state == RegistryReleaseState::Healthy);
+                    if prev_ok {
+                        Some(prev_id.to_owned())
+                    } else {
+                        current_active.previous_eligible_release_id.clone()
+                    }
+                }
+                _ => current_active.previous_eligible_release_id.clone(),
+            };
+
+            let next_epoch = current_active.pointer_epoch.saturating_add(1);
+            current_active.active_release_id = Some(release_id.to_owned());
+            current_active.active_manifest_digest = Some(candidate.manifest_digest.clone());
+            current_active.active_trust_profile_digest =
+                Some(candidate.trust_profile_digest.clone());
+            current_active.active_release_sequence = Some(candidate.release_sequence);
+            current_active.previous_eligible_release_id = fallback_release_id.clone();
+            current_active.pointer_epoch = next_epoch;
+            current_active.health_pending_suite = Some(health_suite_id.to_owned());
+            current_active.last_failure_code = None;
+            current_active.rollback_retain_until_ms =
+                now_monotonic_ms.saturating_add(ROLLBACK_RETENTION_WINDOW_MS);
+
+            candidate.state = RegistryReleaseState::HealthPending;
+            let cand_bytes = encode(&candidate)?;
+            catalog.insert(release_id, cand_bytes.as_slice())?;
+
+            let mut ops = write.open_table(REGISTRY_OPERATIONS)?;
+            let mut op: RegistryOperationRecord = ops
+                .get(operation_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("operation missing"))?;
+            op.state = RegistryOperationState::HealthPending;
+            let op_bytes = encode(&op)?;
+            ops.insert(operation_id, op_bytes.as_slice())?;
+
+            receipt = RegistryActivationReceiptRecord {
+                operation_id: operation_id.to_owned(),
+                release_id: release_id.to_owned(),
+                manifest_digest: candidate.manifest_digest,
+                pointer_epoch: next_epoch,
+                fallback_release_id,
+                whole_obr_blake3: obr_hash.to_owned(),
+                whole_labels_blake3: labels_hash.to_owned(),
+                whole_ccids_blake3: ccids_hash.to_owned(),
+                health_suite_id: health_suite_id.to_owned(),
+                sampled_ordinals_checked: 0,
+                status: ActivationReceiptStatus::HealthPending,
+                failure_reason: None,
+            };
+            let rec_bytes = encode(&receipt)?;
+            let mut receipts = write.open_table(REGISTRY_ACTIVATION_RECEIPTS)?;
+            receipts.insert(operation_id, rec_bytes.as_slice())?;
+
+            let active_bytes = encode(&current_active)?;
+            active_table.insert(CURRENT_ACTIVE_REGISTRY_KEY, active_bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(receipt)
+    }
+
+    pub fn complete_registry_health_pass(
+        &self,
+        operation_id: &str,
+        release_id: &str,
+        sampled_checked: u32,
+    ) -> Result<RegistryActivationReceiptRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated_receipt;
+        {
+            let mut active_table = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let mut active: RegistryActiveStateRecord = active_table
+                .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .unwrap_or_default();
+            active.health_pending_suite = None;
+            active.last_failure_code = None;
+            let active_bytes = encode(&active)?;
+            active_table.insert(CURRENT_ACTIVE_REGISTRY_KEY, active_bytes.as_slice())?;
+
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let mut cand: RegistryReleaseCatalogRecord = catalog
+                .get(release_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("active release missing"))?;
+            cand.state = RegistryReleaseState::Healthy;
+            let cand_bytes = encode(&cand)?;
+            catalog.insert(release_id, cand_bytes.as_slice())?;
+
+            if let Some(prev_id) = active.previous_eligible_release_id.as_deref() {
+                if prev_id != release_id {
+                    let prev_cat = catalog
+                        .get(prev_id)?
+                        .map(|prev_raw| decode::<RegistryReleaseCatalogRecord>(prev_raw.value()))
+                        .transpose()?;
+                    if let Some(mut prev_rec) = prev_cat {
+                        if prev_rec.state != RegistryReleaseState::Revoked {
+                            // Keep Healthy so N-1 remains rollback-eligible while retained on disk!
+                            prev_rec.state = RegistryReleaseState::Healthy;
+                            let prev_bytes = encode(&prev_rec)?;
+                            catalog.insert(prev_id, prev_bytes.as_slice())?;
+                        }
+                    }
+                }
+            }
+
+            let mut ops = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing_op = ops
+                .get(operation_id)?
+                .map(|op_raw| decode::<RegistryOperationRecord>(op_raw.value()))
+                .transpose()?;
+            if let Some(mut op) = existing_op {
+                op.state = RegistryOperationState::Completed;
+                let op_bytes = encode(&op)?;
+                ops.insert(operation_id, op_bytes.as_slice())?;
+            }
+
+            let mut receipts = write.open_table(REGISTRY_ACTIVATION_RECEIPTS)?;
+            let mut rec: RegistryActivationReceiptRecord = receipts
+                .get(operation_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("activation receipt missing"))?;
+            rec.sampled_ordinals_checked = sampled_checked;
+            rec.status = ActivationReceiptStatus::Passed;
+            rec.failure_reason = None;
+            let rec_bytes = encode(&rec)?;
+            receipts.insert(operation_id, rec_bytes.as_slice())?;
+            updated_receipt = rec;
+        }
+        write.commit()?;
+        Ok(updated_receipt)
+    }
+
+    pub fn compensate_failed_registry_health(
+        &self,
+        operation_id: &str,
+        failed_release_id: &str,
+        reason: &str,
+    ) -> Result<(RegistryActivationReceiptRecord, Option<String>), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated_receipt;
+        let restored_release_id;
+        {
+            let mut active_table = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let mut active: RegistryActiveStateRecord = active_table
+                .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .unwrap_or_default();
+
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let existing_failed = catalog
+                .get(failed_release_id)?
+                .map(|raw| decode::<RegistryReleaseCatalogRecord>(raw.value()))
+                .transpose()?;
+            if let Some(mut failed_cat) = existing_failed {
+                if failed_cat.state != RegistryReleaseState::Revoked {
+                    failed_cat.state = RegistryReleaseState::FailedAfterCompensation;
+                    let bytes = encode(&failed_cat)?;
+                    catalog.insert(failed_release_id, bytes.as_slice())?;
+                }
+            }
+
+            let mut fallback_target: Option<RegistryReleaseCatalogRecord> = None;
+            if let Some(prev_id) = active.previous_eligible_release_id.clone() {
+                if let Some(prev_raw) = catalog.get(prev_id.as_str())? {
+                    let prev_cat: RegistryReleaseCatalogRecord = decode(prev_raw.value())?;
+                    if prev_cat.state != RegistryReleaseState::Revoked {
+                        fallback_target = Some(prev_cat);
+                    }
+                }
+            }
+
+            active.pointer_epoch = active.pointer_epoch.saturating_add(1);
+            active.health_pending_suite = None;
+
+            if let Some(prev_cat) = fallback_target {
+                restored_release_id = Some(prev_cat.release_id.clone());
+                active.active_release_id = Some(prev_cat.release_id);
+                active.active_manifest_digest = Some(prev_cat.manifest_digest);
+                active.active_trust_profile_digest = Some(prev_cat.trust_profile_digest);
+                active.active_release_sequence = Some(prev_cat.release_sequence);
+                active.previous_eligible_release_id = None;
+                active.last_failure_code = Some("COMPENSATED_TO_PREVIOUS_HEALTHY_RELEASE".into());
+            } else if active.previous_eligible_release_id.is_some() {
+                restored_release_id = None;
+                active.active_release_id = None;
+                active.active_manifest_digest = None;
+                active.active_trust_profile_digest = None;
+                active.active_release_sequence = None;
+                active.previous_eligible_release_id = None;
+                active.last_failure_code = Some("ROLLBACK_TARGET_UNAVAILABLE".into());
+            } else {
+                // Clean install compensation -> returns cleanly to BootstrapOnly!
+                restored_release_id = None;
+                active.active_release_id = None;
+                active.active_manifest_digest = None;
+                active.active_trust_profile_digest = None;
+                active.active_release_sequence = None;
+                active.last_failure_code = Some("CLEAN_INSTALL_COMPENSATED_BOOTSTRAP_ONLY".into());
+            }
+
+            let active_bytes = encode(&active)?;
+            active_table.insert(CURRENT_ACTIVE_REGISTRY_KEY, active_bytes.as_slice())?;
+
+            let mut ops = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing_op = ops
+                .get(operation_id)?
+                .map(|op_raw| decode::<RegistryOperationRecord>(op_raw.value()))
+                .transpose()?;
+            if let Some(mut op) = existing_op {
+                op.state = RegistryOperationState::Failed;
+                let op_bytes = encode(&op)?;
+                ops.insert(operation_id, op_bytes.as_slice())?;
+            }
+
+            let mut receipts = write.open_table(REGISTRY_ACTIVATION_RECEIPTS)?;
+            let mut rec: RegistryActivationReceiptRecord = receipts
+                .get(operation_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("activation receipt missing"))?;
+            rec.status = ActivationReceiptStatus::CompensatedFailed;
+            rec.failure_reason = Some(reason.to_owned());
+            let rec_bytes = encode(&rec)?;
+            receipts.insert(operation_id, rec_bytes.as_slice())?;
+            updated_receipt = rec;
+        }
+        write.commit()?;
+        Ok((updated_receipt, restored_release_id))
+    }
+
+    pub fn mark_registry_degraded_no_rollback(
+        &self,
+        reason_code: &str,
+    ) -> Result<(), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        {
+            let mut active_table = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let mut active: RegistryActiveStateRecord = active_table
+                .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .unwrap_or_default();
+            active.active_release_id = None;
+            active.health_pending_suite = None;
+            active.last_failure_code = Some(reason_code.to_owned());
+            let bytes = encode(&active)?;
+            active_table.insert(CURRENT_ACTIVE_REGISTRY_KEY, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn commit_manual_registry_rollback(
+        &self,
+        prev_release_id: &str,
+    ) -> Result<(), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        {
+            let mut active_table = write.open_table(REGISTRY_ACTIVE_STATE)?;
+            let mut active: RegistryActiveStateRecord = active_table
+                .get(CURRENT_ACTIVE_REGISTRY_KEY)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .unwrap_or_default();
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let mut prev_cat: RegistryReleaseCatalogRecord = catalog
+                .get(prev_release_id)?
+                .map(|v| decode(v.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("rollback target missing"))?;
+            if prev_cat.state == RegistryReleaseState::Revoked {
+                return Err(MobileCoreError::RegistryTrust(
+                    "cannot roll back to revoked release".into(),
+                ));
+            }
+            if let Some(current_id) = active.active_release_id.take() {
+                let current_retired = catalog
+                    .get(current_id.as_str())?
+                    .map(|cur_raw| decode::<RegistryReleaseCatalogRecord>(cur_raw.value()))
+                    .transpose()?;
+                if let Some(mut cur_cat) = current_retired {
+                    if cur_cat.state != RegistryReleaseState::Revoked {
+                        cur_cat.state = RegistryReleaseState::RolledBackOrRetired;
+                        let bytes = encode(&cur_cat)?;
+                        catalog.insert(current_id.as_str(), bytes.as_slice())?;
+                    }
+                }
+            }
+            prev_cat.state = RegistryReleaseState::Healthy;
+            let prev_bytes = encode(&prev_cat)?;
+            catalog.insert(prev_release_id, prev_bytes.as_slice())?;
+
+            active.pointer_epoch = active.pointer_epoch.saturating_add(1);
+            active.active_release_id = Some(prev_cat.release_id);
+            active.active_manifest_digest = Some(prev_cat.manifest_digest);
+            active.active_trust_profile_digest = Some(prev_cat.trust_profile_digest);
+            active.active_release_sequence = Some(prev_cat.release_sequence);
+            active.previous_eligible_release_id = None;
+            active.health_pending_suite = None;
+            active.last_failure_code = None;
+            let active_bytes = encode(&active)?;
+            active_table.insert(CURRENT_ACTIVE_REGISTRY_KEY, active_bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn mark_release_retired_reclaimed(&self, release_id: &str) -> Result<(), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        {
+            let mut catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let existing = catalog
+                .get(release_id)?
+                .map(|raw| decode::<RegistryReleaseCatalogRecord>(raw.value()))
+                .transpose()?;
+            if let Some(mut cat) = existing {
+                if cat.state != RegistryReleaseState::Revoked {
+                    cat.state = RegistryReleaseState::RetiredReclaimed;
+                    let bytes = encode(&cat)?;
+                    catalog.insert(release_id, bytes.as_slice())?;
+                }
+            }
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn cleanup_verified_landing_chunks(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<(), MobileCoreError> {
+        let landing_dir = self
+            .path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("registry")
+            .join("landing")
+            .join(transfer_nonce);
+        if landing_dir.exists() {
+            let _ = fs::remove_dir_all(landing_dir);
+        }
+        Ok(())
+    }
+
+    pub fn cleanup_orphan_staging_directories(&self) -> Result<(), MobileCoreError> {
+        let staging_root = self
+            .path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("registry")
+            .join("staging");
+        if staging_root.is_dir() {
+            let _ = fs::remove_dir_all(&staging_root);
+        }
+        Ok(())
+    }
+
+    pub fn mark_registry_operation_waiting_storage(
+        &self,
+        operation_id: &str,
+    ) -> Result<RegistryOperationRecord, MobileCoreError> {
+        self.update_registry_operation(operation_id, |op| {
+            op.resume_state = Some(op.state);
+            op.state = RegistryOperationState::Waiting;
+            op.waiting_reason = Some(RegistryWaitingReason::Storage);
+            Ok(())
+        })
+    }
+
+    pub fn mark_registry_operation_waiting_network(
+        &self,
+        operation_id: &str,
+    ) -> Result<RegistryOperationRecord, MobileCoreError> {
+        self.update_registry_operation(operation_id, |op| {
+            op.resume_state = Some(op.state);
+            op.state = RegistryOperationState::Waiting;
+            op.waiting_reason = Some(RegistryWaitingReason::Network);
+            Ok(())
+        })
+    }
+
+    pub fn return_registry_operation_to_awaiting_confirm(
+        &self,
+        operation_id: &str,
+    ) -> Result<RegistryOperationRecord, MobileCoreError> {
+        self.update_registry_operation(operation_id, |op| {
+            op.state = RegistryOperationState::AwaitingExactConfirm;
+            op.confirmed_manifest_digest = None;
+            op.confirmed_trust_profile_digest = None;
+            op.waiting_reason = None;
+            Ok(())
+        })
+    }
+
+    pub fn registry_source_observation(
+        &self,
+        operation_id: &str,
+        descriptor_id: &str,
+    ) -> Result<Option<RegistrySourceObservation>, MobileCoreError> {
+        let key = format!("{operation_id}/{descriptor_id}");
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_SOURCE_OBSERVATIONS)?;
+        table
+            .get(key.as_str())?
+            .map(|val| decode(val.value()))
+            .transpose()
+    }
+
+    pub fn save_registry_source_observation(
+        &self,
+        operation_id: &str,
+        observation: &RegistrySourceObservation,
+    ) -> Result<(), MobileCoreError> {
+        let key = format!("{operation_id}/{}", observation.descriptor_id);
+        let bytes = encode(observation)?;
+        let write = self.database.begin_write()?;
+        {
+            let mut table = write.open_table(REGISTRY_SOURCE_OBSERVATIONS)?;
+            table.insert(key.as_str(), bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn quarantined_source_descriptors(
+        &self,
+        operation_id: &str,
+    ) -> Result<Vec<String>, MobileCoreError> {
+        let prefix = format!("{operation_id}/");
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_SOURCE_OBSERVATIONS)?;
+        let mut out = Vec::new();
+        for entry in table.iter()? {
+            let (key, val) = entry?;
+            if key.value().starts_with(&prefix) {
+                let obs: RegistrySourceObservation = decode(val.value())?;
+                if obs.quarantined {
+                    out.push(obs.descriptor_id);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn reset_registry_chunk_partial(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+    ) -> Result<(), MobileCoreError> {
+        if let Some(rec) = self.registry_chunk(transfer_nonce, artifact_role, chunk_index)? {
+            let paths = self.registry_chunk_paths(&rec)?;
+            reset_registry_partial(&paths.partial)?;
+        }
+        Ok(())
+    }
+
+    pub fn accepted_trust_profile_generation(&self) -> Result<Option<u64>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_SECURITY_HIGHWATER)?;
+        Ok(table
+            .get(TRUST_PROFILE_HIGHWATER_KEY)?
+            .map(|val| decode::<RegistryTrustProfileRecord>(val.value()))
+            .transpose()?
+            .map(|rec| rec.profile_generation))
+    }
+
+    pub fn all_channel_high_waters(
+        &self,
+    ) -> Result<Vec<(String, RegistryChannelHighWater)>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_SECURITY_HIGHWATER)?;
+        let mut list = Vec::new();
+        for entry in table.iter()? {
+            let (key, val) = entry?;
+            if let Some(ch) = key.value().strip_prefix("channel/") {
+                let hw: RegistryChannelHighWater = decode(val.value())?;
+                list.push((ch.to_owned(), hw));
+            }
+        }
+        Ok(list)
+    }
+
+    pub fn publisher_release_high_water(
+        &self,
+    ) -> Result<Option<RegistryReleaseHighWater>, MobileCoreError> {
+        self.registry_release_highwater()
+    }
+
+    pub fn merge_restored_registry_high_waters(
+        &self,
+        channels: &[(String, RegistryChannelHighWater)],
+        publisher_release: Option<&RegistryReleaseHighWater>,
+    ) -> Result<(), MobileCoreError> {
+        let write = self.database.begin_write()?;
+        {
+            let mut table = write.open_table(REGISTRY_SECURITY_HIGHWATER)?;
+            for (ch, incoming) in channels {
+                let key = channel_highwater_key(ch);
+                let current = table
+                    .get(key.as_str())?
+                    .map(|val| decode::<RegistryChannelHighWater>(val.value()))
+                    .transpose()?;
+                match current {
+                    Some(cur) if cur.head_generation == incoming.head_generation => {
+                        if cur.head_digest != incoming.head_digest {
+                            return Err(MobileCoreError::EquivocationDetected {
+                                domain: format!("channel/{ch}"),
+                                detail: format!(
+                                    "generation {} has conflicting head digests",
+                                    cur.head_generation
+                                ),
+                            });
+                        }
+                    }
+                    Some(cur) if cur.head_generation > incoming.head_generation => {}
+                    _ => {
+                        let bytes = encode(incoming)?;
+                        table.insert(key.as_str(), bytes.as_slice())?;
+                    }
+                }
+            }
+            if let Some(inc_rel) = publisher_release {
+                let current_rel = table
+                    .get(RELEASE_HIGHWATER_KEY)?
+                    .map(|val| decode::<RegistryReleaseHighWater>(val.value()))
+                    .transpose()?;
+                match current_rel {
+                    Some(cur) if cur.release_sequence == inc_rel.release_sequence => {
+                        if cur.release_id != inc_rel.release_id
+                            || cur.manifest_digest != inc_rel.manifest_digest
+                        {
+                            return Err(MobileCoreError::EquivocationDetected {
+                                domain: "publisher_release".into(),
+                                detail: format!(
+                                    "release_sequence {} has conflicting release_id or manifest_digest",
+                                    cur.release_sequence
+                                ),
+                            });
+                        }
+                    }
+                    Some(cur) if cur.release_sequence > inc_rel.release_sequence => {}
+                    _ => {
+                        let bytes = encode(inc_rel)?;
+                        table.insert(RELEASE_HIGHWATER_KEY, bytes.as_slice())?;
+                    }
+                }
+            }
+        }
+        write.commit()?;
+        Ok(())
     }
 
     pub fn claim_transfer_callback(
@@ -2903,7 +3745,12 @@ const fn valid_onboarding_transition(current: OnboardingCursor, next: Onboarding
             | (OnboardingCursor::InitHandoff, OnboardingCursor::Security)
             | (OnboardingCursor::InitHandoff, OnboardingCursor::InitHandoff)
             | (OnboardingCursor::InitHandoff, OnboardingCursor::LimitedHome)
+            | (OnboardingCursor::InitHandoff, OnboardingCursor::Readiness)
+            | (OnboardingCursor::Readiness, OnboardingCursor::InitHandoff)
+            | (OnboardingCursor::Readiness, OnboardingCursor::Readiness)
+            | (OnboardingCursor::Readiness, OnboardingCursor::LimitedHome)
             | (OnboardingCursor::LimitedHome, OnboardingCursor::LimitedHome)
+            | (OnboardingCursor::LimitedHome, OnboardingCursor::Readiness)
     )
 }
 

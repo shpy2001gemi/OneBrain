@@ -6,11 +6,18 @@ import { FilePreview } from '../components/FilePreview';
 import { ConsensusRing } from '../components/ConsensusRing';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import { p10Api, type ObkgSnapshotView } from '../api/p10Client';
 import type { KuListItem, KuDetail, BlobMeta } from '../api/types';
 import { ALL_GENE_TYPES } from '../api/types';
 import { KqlEditor } from '../components/KqlEditor';
 import { KQL_EXAMPLE } from '../components/kqlVocabulary';
 import { formatDate, formatSize } from '../utils/format';
+import {
+  PROVENANCE_PRIVATE_LOCAL_ONLY,
+  PROVENANCE_PUBLIC_UNASSESSED,
+  USABLE_OFFLINE_BADGE,
+  formatCoverageBadge,
+} from '../utils/epistemicBadges';
 
 const GENE_TYPES = ['All', ...ALL_GENE_TYPES];
 
@@ -44,6 +51,7 @@ export function ExplorerPage() {
   const [attachments, setAttachments] = useState<BlobMeta[]>([]);
   const [suggestions, setSuggestions] = useState<{ tags: string[]; gene_types: string[]; kus: KuListItem[] } | null>(null);
   const [showSuggest, setShowSuggest] = useState(false);
+  const [obkgSnapshot, setObkgSnapshot] = useState<ObkgSnapshotView | null>(null);
   const limit = 15;
 
   const loadKus = useCallback(() => {
@@ -66,11 +74,12 @@ export function ExplorerPage() {
 
   useEffect(() => { loadKus(); }, [loadKus]);
 
-  // Load pinned KUs on mount
+  // Load pinned KUs and OBKG-002 5-plane projection metadata on mount
   useEffect(() => {
     api.listPinnedKus().then(pinned => {
       setPinnedCids(new Set(pinned.map(k => k.cid_hex)));
     }).catch(() => {});
+    void p10Api.getObkgSnapshot().then(res => setObkgSnapshot(res.data));
   }, []);
 
   const togglePin = useCallback(async (cid: string, e?: React.MouseEvent) => {
@@ -275,6 +284,59 @@ export function ExplorerPage() {
         >
           Open Local KU Workspace (/api/vnext/ku)
         </Link>
+      </div>
+
+      {/* OBKG-002 5-Plane Disposable Projection & Reachability Strip */}
+      <div
+        aria-label="OBKG-002 5-plane projection status"
+        className="glass-card"
+        style={{
+          padding: '12px 16px',
+          marginBottom: 'var(--ob-gap-md)',
+          borderColor: 'rgba(6, 182, 212, 0.3)',
+          fontSize: '0.8rem',
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <strong>OBKG-002 · 5-Plane Frontier-Anchored Projection</strong>
+          <span className="badge badge-green" style={{ textTransform: 'none' }}>
+            {USABLE_OFFLINE_BADGE}
+          </span>
+          <span className="badge badge-violet" style={{ textTransform: 'none' }}>
+            {formatCoverageBadge({
+              coverage: obkgSnapshot?.coverage ?? 'local_only',
+              reachablePeers: obkgSnapshot?.reachable_peers ?? 0,
+            })}
+          </span>
+          <span className="badge badge-cyan" style={{ textTransform: 'none' }}>
+            {PROVENANCE_PRIVATE_LOCAL_ONLY}
+          </span>
+          <span className="badge badge-amber" style={{ textTransform: 'none' }}>
+            {PROVENANCE_PUBLIC_UNASSESSED}
+          </span>
+        </div>
+        {obkgSnapshot && (
+          <details style={{ marginTop: 8, color: 'var(--ob-text-secondary)' }}>
+            <summary style={{ cursor: 'pointer' }}>
+              Disposable projection (FW-09, holds_independent_truth={String(obkgSnapshot.holds_independent_truth)}) · Frontier:{' '}
+              <span className="mono">{obkgSnapshot.source_frontier_cid.slice(0, 18)}…</span> · Snapshot:{' '}
+              <span className="mono">{obkgSnapshot.snapshot_commitment_cid.slice(0, 18)}…</span>
+            </summary>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8, marginTop: 8 }}>
+              {obkgSnapshot.planes.map(plane => (
+                <div key={plane.plane_id} style={{ padding: '8px 10px', borderRadius: 6, background: 'var(--ob-bg-secondary)' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--ob-accent-light)' }}>
+                    {plane.plane_id}. {plane.name}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', marginTop: 2 }}>{plane.projected_entities}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--ob-text-tertiary)', marginTop: 2 }}>
+                    {plane.invariant}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
 
       {/* Search + Filters */}

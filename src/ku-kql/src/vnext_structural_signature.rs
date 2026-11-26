@@ -7,9 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ku_core::foundation::{
-    AffordanceSemantics, ComparisonOperator, ConstraintExpression, DimensionVector, ExactRatio,
-    KnowledgeAffordance, LiteralValue, Modality, ObjectCid, QuantityLiteral, ReceptorDefinition,
-    SemanticError, SemanticFrameSet, StatementFrame, TermRef, TypedConstraint, UnitRef,
+    project_virtual_sfs_affordance, AffordanceSemantics, ComparisonOperator, ConstraintExpression,
+    DimensionVector, ExactRatio, KnowledgeAffordance, LiteralValue, Modality, ObjectCid,
+    ObjectReference, QuantityLiteral, ReceptorDefinition, SemanticError, SemanticFrameSet,
+    StatementFrame, TermRef, TypedConstraint, UnitRef, SEMANTIC_KERNEL_OBJECT_KIND,
 };
 
 pub const STRUCTURAL_SIGNATURE_VERSION: u64 = 1;
@@ -104,12 +105,18 @@ pub enum StructuralSignatureSource<'a> {
         cid: ObjectCid,
         affordance: &'a KnowledgeAffordance,
     },
+    KnowledgeUnit {
+        cid: ObjectCid,
+        semantic: &'a SemanticFrameSet,
+    },
 }
 
 impl StructuralSignatureSource<'_> {
     fn cid(self) -> ObjectCid {
         match self {
-            Self::Receptor { cid, .. } | Self::Affordance { cid, .. } => cid,
+            Self::Receptor { cid, .. }
+            | Self::Affordance { cid, .. }
+            | Self::KnowledgeUnit { cid, .. } => cid,
         }
     }
 
@@ -117,6 +124,7 @@ impl StructuralSignatureSource<'_> {
         match self {
             Self::Receptor { .. } => 0,
             Self::Affordance { .. } => 1,
+            Self::KnowledgeUnit { .. } => 2,
         }
     }
 }
@@ -284,6 +292,34 @@ fn extract_signatures(
                     SemanticBucket::Abstraction,
                     pattern,
                 )?;
+            }
+        }
+        StructuralSignatureSource::KnowledgeUnit { cid, semantic } => {
+            if !semantic.statements.is_empty() {
+                let effective_cid = if cid.as_bytes() == &[0; 32] {
+                    [0xff; 32]
+                } else {
+                    cid.into_bytes()
+                };
+                let ku_ref = ObjectReference::new(SEMANTIC_KERNEL_OBJECT_KIND.0, effective_cid);
+                if let Ok(virtual_aff) = project_virtual_sfs_affordance(ku_ref, semantic) {
+                    for (index, role) in virtual_aff.offered_roles.iter().enumerate() {
+                        add_ccid_role(
+                            &mut output,
+                            2,
+                            role.as_bytes(),
+                            StructuralRegion::OfferedRole(index_u32(index)?),
+                        );
+                    }
+                    collect_affordance(&mut output, &virtual_aff.semantics)?;
+                } else {
+                    collect_frames(
+                        &mut output,
+                        FbsLayer::Function,
+                        SemanticBucket::Outputs,
+                        semantic,
+                    )?;
+                }
             }
         }
     }
@@ -1003,5 +1039,42 @@ mod tests {
         index = StructuralSignatureIndex::rebuild(&[source]).unwrap();
         assert_eq!(index.snapshot(), expected);
         assert_eq!(affordance.canonical_payload().unwrap(), source_payload);
+    }
+
+    #[test]
+    fn knowledge_unit_source_emits_vocabulary_independent_cross_domain_signatures() {
+        let bio_ku = SemanticFrameSet {
+            statements: vec![statement(10, false)],
+        };
+        let materials_ku = SemanticFrameSet {
+            statements: vec![statement(90, false)],
+        };
+        let bio_cid = ObjectCid::from_bytes([21; 32]);
+        let mat_cid = ObjectCid::from_bytes([22; 32]);
+        let index = StructuralSignatureIndex::rebuild(&[
+            StructuralSignatureSource::KnowledgeUnit {
+                cid: bio_cid,
+                semantic: &bio_ku,
+            },
+            StructuralSignatureSource::KnowledgeUnit {
+                cid: mat_cid,
+                semantic: &materials_ku,
+            },
+        ])
+        .unwrap();
+        let fbs_bio: BTreeSet<_> = index
+            .signatures_for(bio_cid)
+            .into_iter()
+            .filter(|s| s.kind == StructuralSignatureKind::FunctionBehaviorStructure)
+            .map(|s| s.digest)
+            .collect();
+        let fbs_mat: BTreeSet<_> = index
+            .signatures_for(mat_cid)
+            .into_iter()
+            .filter(|s| s.kind == StructuralSignatureKind::FunctionBehaviorStructure)
+            .map(|s| s.digest)
+            .collect();
+        assert!(!fbs_bio.is_empty());
+        assert_eq!(fbs_bio, fbs_mat);
     }
 }

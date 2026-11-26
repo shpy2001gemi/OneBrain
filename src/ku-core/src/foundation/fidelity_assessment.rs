@@ -5,14 +5,277 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::canonical::{encode_canonical, CanonicalError, CanonicalValue, ResourceProfile};
 use super::content_id::EventCid;
 use super::fidelity::{
-    EncodingAttempt, EncodingAttemptRole, EncodingFidelityAttestation, FidelityCheckStatus,
-    FidelityError, FidelityPolicy, ValidatedEncodingFidelityAttestationEvent,
+    CorrelationDimension, CorrelationEvidence, EncodingAttempt, EncodingAttemptRole,
+    EncodingFidelityAttestation, EvidenceStrength, FidelityCheckStatus, FidelityError,
+    FidelityPolicy, ValidatedEncodingFidelityAttestationEvent,
 };
 use super::object::ObjectReference;
 use super::semantic::ConceptCcid;
 
 pub const FIDELITY_ASSESSMENT_MAJOR: u64 = 1;
 pub const FIDELITY_ASSESSMENT_MINOR: u64 = 0;
+
+/// Canonical 4-dimensional correlation basis required for P5/P3 corroboration
+/// group counting: administrative principal, pipeline/model lineage, execution
+/// environment, and causal stakeholder relation.
+pub const CORROBORATION_DIMENSIONS_4D: [CorrelationDimension; 4] = [
+    CorrelationDimension::AdministrativePrincipal,
+    CorrelationDimension::PipelineModelLineage,
+    CorrelationDimension::ExecutionEnvironment,
+    CorrelationDimension::CausalStakeholderRelation,
+];
+
+/// Categorical stakeholder relation for `CorrelationDimension::CausalStakeholderRelation`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum CausalStakeholderRole {
+    SelfAuthor = 0,
+    DirectBeneficiary = 1,
+    UnrelatedWitness = 2,
+    Unknown = 3,
+}
+
+impl CausalStakeholderRole {
+    /// Derives a non-zero 32-byte stakeholder commitment scoped to a principal
+    /// commitment, or `None` when the stakeholder relation is `Unknown`.
+    pub fn commitment_for_principal(self, principal_commitment: &[u8; 32]) -> Option<[u8; 32]> {
+        if self == Self::Unknown || principal_commitment == &[0; 32] {
+            return None;
+        }
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:causal-stakeholder-commitment:1\0");
+        hasher.update(&[self as u8]);
+        hasher.update(principal_commitment);
+        Some(*hasher.finalize().as_bytes())
+    }
+}
+
+/// Extracted 4D commitment tuple for an attestation evidenced solely by
+/// `CryptoBound` or `ExternallyAttested` strengths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CorroborationTuple4d {
+    pub administrative_principal: [u8; 32],
+    pub pipeline_model_lineage: [u8; 32],
+    pub execution_environment: [u8; 32],
+    pub causal_stakeholder_relation: [u8; 32],
+}
+
+impl CorroborationTuple4d {
+    pub fn group_id(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:corroboration-4d-group:1\0");
+        hasher.update(&self.administrative_principal);
+        hasher.update(&self.pipeline_model_lineage);
+        hasher.update(&self.execution_environment);
+        hasher.update(&self.causal_stakeholder_relation);
+        *hasher.finalize().as_bytes()
+    }
+
+    /// Returns `true` iff two 4D tuples share zero commitments across all 4 axes.
+    pub fn is_non_overlapping(&self, other: &Self) -> bool {
+        self.administrative_principal != other.administrative_principal
+            && self.pipeline_model_lineage != other.pipeline_model_lineage
+            && self.execution_environment != other.execution_environment
+            && self.causal_stakeholder_relation != other.causal_stakeholder_relation
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CorroborationGroupEntry {
+    pub group_id: [u8; 32],
+    pub tuple: CorroborationTuple4d,
+    pub attestation_events: Vec<EventCid>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CorroborationGroupSummary {
+    pub total_attestations: usize,
+    pub eligible_4d_attestations: usize,
+    pub ungrouped_weak_or_incomplete: Vec<EventCid>,
+    pub groups: Vec<CorroborationGroupEntry>,
+    pub distinct_non_overlapping_group_count: usize,
+    pub max_independent_group_ids: Vec<[u8; 32]>,
+}
+
+impl CorroborationGroupSummary {
+    pub const fn establishes_proposition_truth(&self) -> bool {
+        false
+    }
+
+    pub const fn uses_self_claimed_strength(&self) -> bool {
+        false
+    }
+}
+
+pub trait Has4dCorrelation {
+    fn attestation_event_cid(&self) -> EventCid;
+    fn correlation_evidence(&self) -> &CorrelationEvidence;
+}
+
+impl Has4dCorrelation for ValidatedEncodingFidelityAttestationEvent {
+    fn attestation_event_cid(&self) -> EventCid {
+        self.event_cid()
+    }
+
+    fn correlation_evidence(&self) -> &CorrelationEvidence {
+        &self.attestation().correlation_evidence
+    }
+}
+
+impl Has4dCorrelation for (EventCid, CorrelationEvidence) {
+    fn attestation_event_cid(&self) -> EventCid {
+        self.0
+    }
+
+    fn correlation_evidence(&self) -> &CorrelationEvidence {
+        &self.1
+    }
+}
+
+impl Has4dCorrelation for (EventCid, &CorrelationEvidence) {
+    fn attestation_event_cid(&self) -> EventCid {
+        self.0
+    }
+
+    fn correlation_evidence(&self) -> &CorrelationEvidence {
+        self.1
+    }
+}
+
+/// Groups attestations across `(AdministrativePrincipal, PipelineModelLineage,
+/// ExecutionEnvironment, CausalStakeholderRelation)` and counts distinct
+/// corroboration groups ONLY when evidenced by `EvidenceStrength::{CryptoBound,
+/// ExternallyAttested}` non-overlapping commitments across all 4 dimensions.
+pub fn group_attestations_by_4d_correlation<T: Has4dCorrelation>(
+    attestations: &[T],
+) -> Result<CorroborationGroupSummary, FidelityAssessmentError> {
+    let mut ungrouped = BTreeSet::new();
+    let mut by_group: BTreeMap<[u8; 32], (CorroborationTuple4d, BTreeSet<[u8; 32]>)> =
+        BTreeMap::new();
+    let mut eligible_events = BTreeSet::new();
+
+    for item in attestations {
+        let cid = item.attestation_event_cid().into_bytes();
+        let evidence = item.correlation_evidence();
+        evidence.canonical_value()?;
+        if let Some(tuple) = extract_evidenced_4d_tuple(evidence) {
+            let gid = tuple.group_id();
+            eligible_events.insert(cid);
+            let entry = by_group
+                .entry(gid)
+                .or_insert_with(|| (tuple, BTreeSet::new()));
+            entry.1.insert(cid);
+        } else {
+            ungrouped.insert(cid);
+        }
+    }
+
+    let groups: Vec<CorroborationGroupEntry> = by_group
+        .into_iter()
+        .map(|(group_id, (tuple, events))| CorroborationGroupEntry {
+            group_id,
+            tuple,
+            attestation_events: events.into_iter().map(EventCid::from_bytes).collect(),
+        })
+        .collect();
+
+    let max_independent_group_ids = max_non_overlapping_4d_subset(&groups);
+    let distinct_non_overlapping_group_count = max_independent_group_ids.len();
+
+    Ok(CorroborationGroupSummary {
+        total_attestations: attestations.len(),
+        eligible_4d_attestations: eligible_events.len(),
+        ungrouped_weak_or_incomplete: ungrouped.into_iter().map(EventCid::from_bytes).collect(),
+        groups,
+        distinct_non_overlapping_group_count,
+        max_independent_group_ids,
+    })
+}
+
+fn extract_evidenced_4d_tuple(evidence: &CorrelationEvidence) -> Option<CorroborationTuple4d> {
+    let mut commitments = [[0u8; 32]; 4];
+    for (idx, required_dim) in CORROBORATION_DIMENSIONS_4D.iter().enumerate() {
+        let dim = evidence.dimension(*required_dim)?;
+        if !matches!(
+            dim.strength,
+            EvidenceStrength::CryptoBound | EvidenceStrength::ExternallyAttested
+        ) {
+            return None;
+        }
+        let commitment = dim.value_commitment?;
+        if commitment == [0; 32] {
+            return None;
+        }
+        commitments[idx] = commitment;
+    }
+    Some(CorroborationTuple4d {
+        administrative_principal: commitments[0],
+        pipeline_model_lineage: commitments[1],
+        execution_environment: commitments[2],
+        causal_stakeholder_relation: commitments[3],
+    })
+}
+
+fn max_non_overlapping_4d_subset(groups: &[CorroborationGroupEntry]) -> Vec<[u8; 32]> {
+    let n = groups.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    // For larger sets, fall back to deterministic greedy packing in canonical group_id order;
+    // for <= 48 groups, solve exact maximum independent set with deterministic tie-breaking.
+    if n > 48 {
+        let mut chosen: Vec<&CorroborationGroupEntry> = Vec::new();
+        for candidate in groups {
+            if chosen
+                .iter()
+                .all(|existing| existing.tuple.is_non_overlapping(&candidate.tuple))
+            {
+                chosen.push(candidate);
+            }
+        }
+        return chosen.into_iter().map(|entry| entry.group_id).collect();
+    }
+
+    let mut adj = vec![0u64; n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if !groups[i].tuple.is_non_overlapping(&groups[j].tuple) {
+                adj[i] |= 1u64 << j;
+                adj[j] |= 1u64 << i;
+            }
+        }
+    }
+
+    fn search(
+        idx: usize,
+        n: usize,
+        adj: &[u64],
+        blocked: u64,
+        current: &mut Vec<usize>,
+        best: &mut Vec<usize>,
+    ) {
+        if current.len() + (n - idx) < best.len() {
+            return;
+        }
+        if idx == n {
+            if current.len() > best.len() {
+                *best = current.clone();
+            }
+            return;
+        }
+        if (blocked & (1u64 << idx)) == 0 {
+            current.push(idx);
+            search(idx + 1, n, adj, blocked | adj[idx], current, best);
+            current.pop();
+        }
+        search(idx + 1, n, adj, blocked, current, best);
+    }
+
+    let mut current = Vec::new();
+    let mut best = Vec::new();
+    search(0, n, &adj, 0, &mut current, &mut best);
+    best.into_iter().map(|idx| groups[idx].group_id).collect()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u64)]
@@ -720,5 +983,96 @@ mod tests {
             after.accepted_attestation_set_root
         );
         assert_eq!(after.coverage.normalized_legacy_claims, 1);
+    }
+
+    fn full_4d_correlation(
+        admin: u8,
+        pipeline: u8,
+        env: u8,
+        stakeholder: u8,
+        stakeholder_strength: EvidenceStrength,
+    ) -> CorrelationEvidence {
+        CorrelationEvidence {
+            dimensions: vec![
+                CorrelationDimensionEvidence {
+                    dimension: CorrelationDimension::AdministrativePrincipal,
+                    value_commitment: Some([admin; 32]),
+                    strength: EvidenceStrength::CryptoBound,
+                    evidence_refs: vec![],
+                },
+                CorrelationDimensionEvidence {
+                    dimension: CorrelationDimension::PipelineModelLineage,
+                    value_commitment: Some([pipeline; 32]),
+                    strength: EvidenceStrength::ExternallyAttested,
+                    evidence_refs: vec![],
+                },
+                CorrelationDimensionEvidence {
+                    dimension: CorrelationDimension::ExecutionEnvironment,
+                    value_commitment: Some([env; 32]),
+                    strength: EvidenceStrength::ExternallyAttested,
+                    evidence_refs: vec![],
+                },
+                CorrelationDimensionEvidence {
+                    dimension: CorrelationDimension::CausalStakeholderRelation,
+                    value_commitment: Some([stakeholder; 32]),
+                    strength: stakeholder_strength,
+                    evidence_refs: vec![],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn group_attestations_by_4d_correlation_enforces_non_overlapping_crypto_or_attested_axes() {
+        let g1 = (
+            EventCid::from_bytes([1; 32]),
+            full_4d_correlation(10, 20, 30, 40, EvidenceStrength::CryptoBound),
+        );
+        let g2 = (
+            EventCid::from_bytes([2; 32]),
+            full_4d_correlation(11, 21, 31, 41, EvidenceStrength::ExternallyAttested),
+        );
+        // Shares ExecutionEnvironment (30) with g1 -> cannot increase distinct count!
+        let shares_env = (
+            EventCid::from_bytes([3; 32]),
+            full_4d_correlation(12, 22, 30, 42, EvidenceStrength::CryptoBound),
+        );
+        // SelfClaimed stakeholder strength -> rejected from eligible 4D groups!
+        let weak_self_claimed = (
+            EventCid::from_bytes([4; 32]),
+            full_4d_correlation(13, 23, 33, 43, EvidenceStrength::SelfClaimed),
+        );
+        // Bridge attestation overlapping g1 on admin (10) and g2 on pipeline (21) -> must not grief g1+g2!
+        let bridge_grief = (
+            EventCid::from_bytes([5; 32]),
+            full_4d_correlation(10, 21, 35, 45, EvidenceStrength::CryptoBound),
+        );
+
+        let summary = group_attestations_by_4d_correlation(&[
+            g1,
+            g2,
+            shares_env,
+            weak_self_claimed,
+            bridge_grief,
+        ])
+        .unwrap();
+
+        assert_eq!(summary.total_attestations, 5);
+        assert_eq!(summary.eligible_4d_attestations, 4);
+        assert_eq!(
+            summary.ungrouped_weak_or_incomplete,
+            vec![EventCid::from_bytes([4; 32])]
+        );
+        assert_eq!(summary.distinct_non_overlapping_group_count, 2);
+        assert!(!summary.establishes_proposition_truth());
+        assert!(!summary.uses_self_claimed_strength());
+
+        let role_commit = CausalStakeholderRole::UnrelatedWitness
+            .commitment_for_principal(&[77; 32])
+            .unwrap();
+        assert_ne!(role_commit, [0; 32]);
+        assert!(CausalStakeholderRole::Unknown
+            .commitment_for_principal(&[77; 32])
+            .is_none());
     }
 }

@@ -28,7 +28,20 @@ pub mod wire_id {
     pub const RECONCILE_PROGRESS: u64 = 26;
     pub const RECONCILE_ABORT: u64 = 27;
     pub const RECONCILE_RESUME: u64 = 28;
+    pub const RECONCILE_FRONTIER_SUMMARY_REQUEST: u64 = 29;
+    pub const RECONCILE_FRONTIER_SUMMARY_PAGE: u64 = 30;
+    pub const RECONCILE_RIBLT_SKETCH: u64 = 31;
 }
+
+pub const CAPABILITY_RECONCILE_V1: &str = "obp/reconcile/1";
+pub const CAPABILITY_RECONCILE_RIBLT_V1: &str = "obp/reconcile-riblt/1";
+pub const CAPABILITY_RECONCILE_FRONTIER_V1: &str = "obp/reconcile-frontier/1";
+pub const CAPABILITY_MAILBOX_V1: &str = "obp/mailbox/1";
+pub const CAPABILITY_BLOB_CHUNKS_V1: &str = "obp/blob-chunks/1";
+pub const CAPABILITY_REGISTRY_CHUNKS_V1: &str = "obp/registry-chunks/1";
+pub const MAX_FRONTIER_ENTRIES_PER_PAGE: usize = 512;
+pub const MAX_RIBLT_CODED_SYMBOLS_PER_RANGE: usize = 16_384;
+pub const MAX_RIBLT_RANGE_ITEMS: u32 = 65_536;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SessionProfile {
@@ -110,12 +123,43 @@ impl SessionHandshakeMessage {
     }
 }
 
-/// The only correctness-required inventory summary in OBP-RP v1. Optional
-/// accelerators must never change the result represented by this radix forest.
+/// `RadixForest256V1` is the correctness-required inventory summary in OBP-RP v1.
+/// Optional negotiated `RibltV1` (`obp/reconcile-riblt/1`) is a fast-path sketch
+/// hypothesis only and must verify exact Merkle roots or fall back to `RadixForest256V1`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u64)]
 pub enum ReconciliationSummaryMethod {
     RadixForest256V1 = 1,
+    RibltV1 = 2,
+}
+
+/// Canonical 60-byte logical RIBLT-1 coded symbol (`RIB-001`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RibltCodedSymbolV1 {
+    pub symbol_index: u32,
+    pub count_delta: i64,
+    pub key_xor: [u8; 40],
+    pub checksum_xor: u64,
+}
+
+/// Canonical feed-prefix & checkpoint frontier summary entry (`P2` §3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrontierSummaryEntryV1 {
+    pub feed_id: [u8; 32],
+    pub covered_sequence: u64,
+    pub head_event_cid: [u8; 32],
+    pub checkpoint_cid: Option<[u8; 32]>,
+    pub equivocation_proof_cid: Option<[u8; 32]>,
+}
+
+/// MAC-bound continuation cursor for paginated `FrontierSummaryPage` exchange.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FrontierContinuationCursorV1 {
+    pub binding_digest: [u8; 32],
+    pub last_feed_id: [u8; 32],
+    pub last_covered_sequence: u64,
+    pub last_head_event_cid: [u8; 32],
+    pub mac: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,6 +336,23 @@ pub enum ReconciliationBody {
     Resume {
         token: ReconciliationResumeToken,
     },
+    FrontierSummaryRequest {
+        after_feed_id: Option<[u8; 32]>,
+        cursor: Option<FrontierContinuationCursorV1>,
+        max_entries: u16,
+    },
+    FrontierSummaryPage {
+        inventory_root: [u8; 32],
+        entries: Vec<FrontierSummaryEntryV1>,
+        next_cursor: Option<FrontierContinuationCursorV1>,
+    },
+    RibltSketch {
+        range_start: [u8; 32],
+        range_end: Option<[u8; 32]>,
+        target_subtree_root: [u8; 32],
+        local_range_items: u32,
+        coded_symbols: Vec<RibltCodedSymbolV1>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -314,6 +375,13 @@ impl ReconciliationMessage {
             ReconciliationBody::Progress { .. } => wire_id::RECONCILE_PROGRESS,
             ReconciliationBody::Abort { .. } => wire_id::RECONCILE_ABORT,
             ReconciliationBody::Resume { .. } => wire_id::RECONCILE_RESUME,
+            ReconciliationBody::FrontierSummaryRequest { .. } => {
+                wire_id::RECONCILE_FRONTIER_SUMMARY_REQUEST
+            }
+            ReconciliationBody::FrontierSummaryPage { .. } => {
+                wire_id::RECONCILE_FRONTIER_SUMMARY_PAGE
+            }
+            ReconciliationBody::RibltSketch { .. } => wire_id::RECONCILE_RIBLT_SKETCH,
         }
     }
 

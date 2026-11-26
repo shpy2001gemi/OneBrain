@@ -5,12 +5,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::authority::FeedAuthorityDecision;
 use super::canonical::{
     canonicalize_set_by_key, encode_canonical, CanonicalValue, ResourceProfile,
 };
 use super::content_id::{EventCid, ObjectCid};
 use super::event::{EventType, ValidatedKnowledgeEvent};
+use super::feed::ValidatedFeedInception;
 use super::identity::{ActorId, FeedId};
+use super::key_state::KeyStateReducer;
 use super::object::{
     DisclosureClass, KnowledgeObjectEnvelope, ObjectError, ObjectKind, ObjectReference,
     ObjectSemantics, SchemaVersion, ValidatedKnowledgeObject,
@@ -20,6 +23,7 @@ use super::schema_registry::{
     OBJECT_KIND_OUTCOME_OBSERVATION,
 };
 use super::semantic::ConceptCcid;
+use super::use_evidence::ExerciseEvidence;
 
 pub const OUTCOME_EVIDENCE_MAJOR: u64 = 1;
 pub const OUTCOME_EVIDENCE_MINOR: u64 = 0;
@@ -539,6 +543,8 @@ impl ValidatedOutcomeObservationEvent {
 pub struct ValidatedBenefitEvidenceEvent {
     event_cid: EventCid,
     payload_object: ObjectCid,
+    author_feed: FeedId,
+    author_sequence: u64,
     payload: BenefitEvidencePayload,
 }
 
@@ -551,6 +557,8 @@ impl ValidatedBenefitEvidenceEvent {
         Ok(Self {
             event_cid: event.cid(),
             payload_object: payload_object.cid(),
+            author_feed: event.signed.event.author_feed,
+            author_sequence: event.signed.event.author_sequence,
             payload: BenefitEvidencePayload::from_object(payload_object)?,
         })
     }
@@ -561,6 +569,14 @@ impl ValidatedBenefitEvidenceEvent {
 
     pub const fn payload_object_cid(&self) -> ObjectCid {
         self.payload_object
+    }
+
+    pub const fn author_feed(&self) -> FeedId {
+        self.author_feed
+    }
+
+    pub const fn author_sequence(&self) -> u64 {
+        self.author_sequence
     }
 
     pub const fn payload(&self) -> &BenefitEvidencePayload {
@@ -701,6 +717,408 @@ impl OutcomeEvidenceReducer {
             records,
         }
     }
+}
+
+/// Valence-neutral closure state over an `OutcomeCaseId`'s multi-principal
+/// causal and attribution chain (`P4` §2–§3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u64)]
+pub enum BenefitClosureState {
+    SupportedUncontested = 0,
+    ContestedOrMixed = 1,
+    DeferredIncomplete = 2,
+    ObservedNonBeneficial = 3,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssessedOutcomeBranch {
+    pub event_cid: EventCid,
+    pub payload_object_cid: ObjectCid,
+    pub author_feed: FeedId,
+    pub author_decision: FeedAuthorityDecision,
+    pub valence: OutcomeValence,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssessedBenefitBranch {
+    pub event_cid: EventCid,
+    pub payload_object_cid: ObjectCid,
+    pub author_feed: FeedId,
+    pub author_decision: FeedAuthorityDecision,
+    pub assessed_valence: OutcomeValence,
+    pub attribution: AttributionStatus,
+    pub outcome_authors_authorized: bool,
+    pub exercise_authors_authorized: bool,
+    pub ku_authors_authorized: bool,
+    pub causal_chain_complete: bool,
+}
+
+/// Multi-principal, valence-neutral `BenefitClosureView` over one `OutcomeCaseId`.
+///
+/// Explicitly carries non-reward and non-truth guard invariants: never collapses
+/// concurrent observations or attributions into a single winner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BenefitClosureView {
+    pub case_id: OutcomeCaseId,
+    pub state: BenefitClosureState,
+    pub outcome_branches: Vec<AssessedOutcomeBranch>,
+    pub benefit_branches: Vec<AssessedBenefitBranch>,
+}
+
+impl BenefitClosureView {
+    pub const fn is_reward_instruction(&self) -> bool {
+        false
+    }
+
+    pub const fn establishes_truth(&self) -> bool {
+        false
+    }
+
+    pub const fn collapses_to_single_winner(&self) -> bool {
+        false
+    }
+}
+
+/// Deterministic multi-principal reducer evaluating `FeedAuthorityDecision`
+/// independently across KU authors, Use/Derivation authors, Outcome authors,
+/// and Benefit authors (`P4` §3).
+#[derive(Default)]
+pub struct BenefitClosureReducer {
+    feeds: BTreeMap<FeedId, ValidatedFeedInception>,
+    ku_authors: BTreeMap<(u64, [u8; 32]), FeedId>,
+    exercises: BTreeMap<[u8; 32], ExerciseEvidence>,
+    outcomes_by_case: BTreeMap<OutcomeCaseId, BTreeMap<[u8; 32], ValidatedOutcomeObservationEvent>>,
+    outcomes_by_object: BTreeMap<(u64, [u8; 32]), (OutcomeCaseId, [u8; 32])>,
+    benefits: BTreeMap<[u8; 32], ValidatedBenefitEvidenceEvent>,
+}
+
+impl BenefitClosureReducer {
+    pub fn register_feed(&mut self, inception: ValidatedFeedInception) {
+        self.feeds.insert(inception.feed_id, inception);
+    }
+
+    pub fn register_ku_author(&mut self, ku_ref: ObjectReference, author_feed: FeedId) {
+        self.ku_authors
+            .insert((ku_ref.reference_kind, ku_ref.cid), author_feed);
+    }
+
+    pub fn record_exercise(&mut self, exercise: ExerciseEvidence) -> OutcomeRecordResult {
+        let key = exercise.event_cid().into_bytes();
+        match self.exercises.get(&key) {
+            Some(existing) if existing == &exercise => OutcomeRecordResult::ExactReplay,
+            Some(_) => {
+                self.exercises.insert(key, exercise);
+                OutcomeRecordResult::Reassessed
+            }
+            None => {
+                self.exercises.insert(key, exercise);
+                OutcomeRecordResult::Added
+            }
+        }
+    }
+
+    pub fn record_outcome(
+        &mut self,
+        outcome: ValidatedOutcomeObservationEvent,
+    ) -> OutcomeRecordResult {
+        let case_id = outcome.case_id();
+        let event_key = outcome.event_cid().into_bytes();
+        let obj_key = (0u64, outcome.payload_object_cid().into_bytes());
+        self.outcomes_by_object
+            .insert(obj_key, (case_id, event_key));
+        let branch = self.outcomes_by_case.entry(case_id).or_default();
+        match branch.get(&event_key) {
+            Some(existing) if existing == &outcome => OutcomeRecordResult::ExactReplay,
+            Some(_) => {
+                branch.insert(event_key, outcome);
+                OutcomeRecordResult::Reassessed
+            }
+            None => {
+                branch.insert(event_key, outcome);
+                OutcomeRecordResult::Added
+            }
+        }
+    }
+
+    pub fn record_benefit(
+        &mut self,
+        benefit: ValidatedBenefitEvidenceEvent,
+    ) -> OutcomeRecordResult {
+        let key = benefit.event_cid().into_bytes();
+        match self.benefits.get(&key) {
+            Some(existing) if existing == &benefit => OutcomeRecordResult::ExactReplay,
+            Some(_) => {
+                self.benefits.insert(key, benefit);
+                OutcomeRecordResult::Reassessed
+            }
+            None => {
+                self.benefits.insert(key, benefit);
+                OutcomeRecordResult::Added
+            }
+        }
+    }
+
+    fn evaluate_feed_authority(
+        &self,
+        feed_id: FeedId,
+        key_state: &KeyStateReducer,
+    ) -> FeedAuthorityDecision {
+        match self.feeds.get(&feed_id) {
+            Some(feed) => key_state.evaluate(feed),
+            None => FeedAuthorityDecision::StaleOrUnresolved {
+                reason: super::authority::UnresolvedAuthorityReason::MissingAcceptedGrant,
+                frontier: key_state.frontier(),
+            },
+        }
+    }
+
+    /// Evaluates independent per-author authority across KU, Use/Derivation,
+    /// Outcome, and Benefit principals for `case_id`, retaining all concurrent
+    /// branches sorted by `EventCid` without single-winner collapse.
+    pub fn evaluate_case(
+        &self,
+        case_id: OutcomeCaseId,
+        key_state: &KeyStateReducer,
+    ) -> BenefitClosureView {
+        let mut outcome_branches = Vec::new();
+        let mut case_outcome_objects: BTreeMap<(u64, [u8; 32]), (FeedAuthorityDecision, [u8; 32])> =
+            BTreeMap::new();
+
+        if let Some(case_outcomes) = self.outcomes_by_case.get(&case_id) {
+            for outcome in case_outcomes.values() {
+                let decision = self.evaluate_feed_authority(outcome.author_feed(), key_state);
+                case_outcome_objects.insert(
+                    (0u64, outcome.payload_object_cid().into_bytes()),
+                    (decision, outcome.payload().task_context_commitment),
+                );
+                outcome_branches.push(AssessedOutcomeBranch {
+                    event_cid: outcome.event_cid(),
+                    payload_object_cid: outcome.payload_object_cid(),
+                    author_feed: outcome.author_feed(),
+                    author_decision: decision,
+                    valence: outcome.payload().valence,
+                });
+            }
+        }
+
+        let mut benefit_branches = Vec::new();
+        for benefit in self.benefits.values() {
+            let payload = benefit.payload();
+            let touches_case = payload.outcome_observations.iter().any(|oref| {
+                self.outcomes_by_object
+                    .get(&(oref.reference_kind, oref.cid))
+                    .is_some_and(|(cid_case, _)| *cid_case == case_id)
+            });
+            if !touches_case {
+                continue;
+            }
+
+            let author_decision = self.evaluate_feed_authority(benefit.author_feed(), key_state);
+
+            let mut all_outcomes_present_and_matching_task =
+                !payload.outcome_observations.is_empty();
+            let mut outcome_authors_authorized = true;
+            for oref in &payload.outcome_observations {
+                match self
+                    .outcomes_by_object
+                    .get(&(oref.reference_kind, oref.cid))
+                {
+                    Some((o_case, o_event_key)) => {
+                        let Some(obs) = self
+                            .outcomes_by_case
+                            .get(o_case)
+                            .and_then(|m| m.get(o_event_key))
+                        else {
+                            all_outcomes_present_and_matching_task = false;
+                            outcome_authors_authorized = false;
+                            continue;
+                        };
+                        if obs.payload().task_context_commitment != payload.task_context_commitment
+                        {
+                            all_outcomes_present_and_matching_task = false;
+                        }
+                        if !matches!(
+                            self.evaluate_feed_authority(obs.author_feed(), key_state),
+                            FeedAuthorityDecision::AuthorizedRelative { .. }
+                        ) {
+                            outcome_authors_authorized = false;
+                        }
+                    }
+                    None => {
+                        all_outcomes_present_and_matching_task = false;
+                        outcome_authors_authorized = false;
+                    }
+                }
+            }
+
+            let mut all_exercises_present_and_matching_task = !payload.use_events.is_empty();
+            let mut exercise_authors_authorized = !payload.use_events.is_empty();
+            for ucid in &payload.use_events {
+                match self.exercises.get(ucid.as_bytes()) {
+                    Some(ex) => {
+                        let ex_task = match ex {
+                            ExerciseEvidence::Use(u) => u.payload().task_context_commitment,
+                            ExerciseEvidence::Derivation(d) => d.payload().task_context_commitment,
+                        };
+                        if ex_task != payload.task_context_commitment {
+                            all_exercises_present_and_matching_task = false;
+                        }
+                        if !matches!(
+                            self.evaluate_feed_authority(ex.author_feed(), key_state),
+                            FeedAuthorityDecision::AuthorizedRelative { .. }
+                        ) {
+                            exercise_authors_authorized = false;
+                        }
+                    }
+                    None => {
+                        all_exercises_present_and_matching_task = false;
+                        exercise_authors_authorized = false;
+                    }
+                }
+            }
+
+            let mut all_kus_present = !payload.knowledge_subjects.is_empty();
+            let mut ku_authors_authorized = !payload.knowledge_subjects.is_empty();
+            for kref in &payload.knowledge_subjects {
+                match self.ku_authors.get(&(kref.reference_kind, kref.cid)) {
+                    Some(ku_feed) => {
+                        if !matches!(
+                            self.evaluate_feed_authority(*ku_feed, key_state),
+                            FeedAuthorityDecision::AuthorizedRelative { .. }
+                        ) {
+                            ku_authors_authorized = false;
+                        }
+                    }
+                    None => {
+                        all_kus_present = false;
+                        ku_authors_authorized = false;
+                    }
+                }
+            }
+
+            let causal_chain_complete = matches!(
+                author_decision,
+                FeedAuthorityDecision::AuthorizedRelative { .. }
+            ) && all_outcomes_present_and_matching_task
+                && outcome_authors_authorized
+                && all_exercises_present_and_matching_task
+                && exercise_authors_authorized
+                && all_kus_present
+                && ku_authors_authorized;
+
+            benefit_branches.push(AssessedBenefitBranch {
+                event_cid: benefit.event_cid(),
+                payload_object_cid: benefit.payload_object_cid(),
+                author_feed: benefit.author_feed(),
+                author_decision,
+                assessed_valence: payload.assessed_valence,
+                attribution: payload.attribution,
+                outcome_authors_authorized,
+                exercise_authors_authorized,
+                ku_authors_authorized,
+                causal_chain_complete,
+            });
+        }
+
+        let state = compute_benefit_closure_state(&outcome_branches, &benefit_branches);
+        BenefitClosureView {
+            case_id,
+            state,
+            outcome_branches,
+            benefit_branches,
+        }
+    }
+}
+
+fn compute_benefit_closure_state(
+    outcomes: &[AssessedOutcomeBranch],
+    benefits: &[AssessedBenefitBranch],
+) -> BenefitClosureState {
+    let auth_outcomes: Vec<&AssessedOutcomeBranch> = outcomes
+        .iter()
+        .filter(|o| {
+            matches!(
+                o.author_decision,
+                FeedAuthorityDecision::AuthorizedRelative { .. }
+            )
+        })
+        .collect();
+    if auth_outcomes.is_empty() {
+        return BenefitClosureState::DeferredIncomplete;
+    }
+
+    let outcome_valences: BTreeSet<u64> = auth_outcomes.iter().map(|o| o.valence as u64).collect();
+    if outcome_valences.len() > 1
+        || auth_outcomes
+            .iter()
+            .any(|o| o.valence == OutcomeValence::Mixed)
+    {
+        return BenefitClosureState::ContestedOrMixed;
+    }
+
+    let valid_benefits: Vec<&AssessedBenefitBranch> = benefits
+        .iter()
+        .filter(|b| b.causal_chain_complete)
+        .collect();
+
+    // Check for any contested/mixed/conflicting valid benefit branches.
+    let benefit_valences: BTreeSet<u64> = valid_benefits
+        .iter()
+        .map(|b| b.assessed_valence as u64)
+        .collect();
+    let has_supported = valid_benefits
+        .iter()
+        .any(|b| b.attribution == AttributionStatus::Supported);
+    let has_opposed_or_contested = valid_benefits.iter().any(|b| {
+        matches!(
+            b.attribution,
+            AttributionStatus::Opposed | AttributionStatus::Contested
+        ) || b.assessed_valence == OutcomeValence::Mixed
+    });
+
+    if benefit_valences.len() > 1 || (has_supported && has_opposed_or_contested) {
+        return BenefitClosureState::ContestedOrMixed;
+    }
+    if valid_benefits.iter().any(|b| {
+        b.attribution == AttributionStatus::Contested || b.assessed_valence == OutcomeValence::Mixed
+    }) {
+        return BenefitClosureState::ContestedOrMixed;
+    }
+
+    let sole_outcome_valence = auth_outcomes[0].valence;
+    if valid_benefits.is_empty() {
+        // If there are unresolved/incomplete benefit claims or beneficial outcome awaiting attribution:
+        if matches!(
+            sole_outcome_valence,
+            OutcomeValence::Harmful | OutcomeValence::NoObservedChange
+        ) && benefits.is_empty()
+        {
+            return BenefitClosureState::ObservedNonBeneficial;
+        }
+        return BenefitClosureState::DeferredIncomplete;
+    }
+
+    if valid_benefits.iter().all(|b| {
+        b.attribution == AttributionStatus::Supported
+            && b.assessed_valence == OutcomeValence::Beneficial
+    }) && sole_outcome_valence == OutcomeValence::Beneficial
+    {
+        return BenefitClosureState::SupportedUncontested;
+    }
+
+    if valid_benefits.iter().all(|b| {
+        matches!(
+            b.assessed_valence,
+            OutcomeValence::Harmful | OutcomeValence::NoObservedChange
+        ) || b.attribution == AttributionStatus::Opposed
+    }) && matches!(
+        sole_outcome_valence,
+        OutcomeValence::Harmful | OutcomeValence::NoObservedChange
+    ) {
+        return BenefitClosureState::ObservedNonBeneficial;
+    }
+
+    BenefitClosureState::DeferredIncomplete
 }
 
 fn known_envelope(
@@ -1160,5 +1578,256 @@ mod tests {
         assert_eq!(left.records.len(), 2);
         assert!(left.authorized_conflict);
         assert!(!left.is_globally_complete());
+    }
+
+    #[test]
+    fn benefit_closure_reducer_evaluates_each_principal_independently_and_preserves_branches() {
+        use crate::foundation::{
+            actor_id_from_root_key, ActorDelegation, ActorRevocation, ActorRootDelegation,
+            KeyStateReducer, UseEvidencePayload, ValidatedUseEvidenceEvent,
+            USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
+        };
+
+        let make_principal = |seed: u8| {
+            let sk = SigningKey::from_bytes(&[seed; 32]);
+            let actor = actor_id_from_root_key(*sk.verifying_key().as_bytes()).unwrap();
+            let dev = DeviceId::from_bytes([seed.wrapping_add(2); 32]);
+            let ns =
+                NamespaceCommitment::derive(b"p4-closure", [seed.wrapping_add(1); 32]).unwrap();
+            let mut inc = FeedInception::new(*sk.verifying_key().as_bytes(), ns, 0, dev);
+            let provisional_feed_id = inc.feed_id().unwrap();
+            let root_del = crate::foundation::decode_actor_root_delegation(
+                &ActorRootDelegation::new(
+                    *sk.verifying_key().as_bytes(),
+                    provisional_feed_id,
+                    dev,
+                    None,
+                    0,
+                    10,
+                )
+                .unwrap()
+                .sign(&sk)
+                .unwrap()
+                .encode()
+                .unwrap(),
+            )
+            .unwrap();
+            inc.actor_delegation_ref = Some(root_del.cid.into_bytes());
+            let feed = decode_feed_inception(&inc.sign(&sk).unwrap().encode().unwrap()).unwrap();
+            (sk, actor, feed, root_del)
+        };
+
+        let (_ku_sk, _ku_actor, ku_feed, ku_root) = make_principal(10);
+        let (use_sk, _use_actor, use_feed, use_root) = make_principal(20);
+        let (out_sk, _out_actor, out_feed, out_root) = make_principal(30);
+        let (ben_root_sk, ben_actor, ben_root_feed, ben_root) = make_principal(40);
+
+        // Create a child device feed for the benefit author so we can test revocation isolation.
+        let ben_child_sk = SigningKey::from_bytes(&[45; 32]);
+        let ben_child_dev = DeviceId::from_bytes([46; 32]);
+        let ben_child_ns = NamespaceCommitment::derive(b"p4-ben-child", [47; 32]).unwrap();
+        let mut ben_child_inc = FeedInception::new(
+            *ben_child_sk.verifying_key().as_bytes(),
+            ben_child_ns,
+            0,
+            ben_child_dev,
+        );
+        let ben_child_feed_id = ben_child_inc.feed_id().unwrap();
+        let ben_child_del = crate::foundation::decode_actor_delegation(
+            &ActorDelegation::new(
+                ben_actor,
+                ben_root.cid,
+                ben_root_feed.feed_id,
+                ben_child_feed_id,
+                ben_child_dev,
+                Some(ben_child_ns),
+                0,
+                5,
+            )
+            .unwrap()
+            .sign(&ben_root_feed, &ben_root_sk)
+            .unwrap()
+            .encode()
+            .unwrap(),
+            &ben_root_feed,
+        )
+        .unwrap();
+        ben_child_inc.actor_delegation_ref = Some(ben_child_del.cid.into_bytes());
+        let ben_child_feed =
+            decode_feed_inception(&ben_child_inc.sign(&ben_child_sk).unwrap().encode().unwrap())
+                .unwrap();
+
+        let mut key_state = KeyStateReducer::new(EventCid::from_bytes([90; 32]));
+        key_state.accept_root(ku_root.scoped_delegation());
+        key_state.accept_root(use_root.scoped_delegation());
+        key_state.accept_root(out_root.scoped_delegation());
+        key_state.accept_root(ben_root.scoped_delegation());
+        key_state.submit_child(ben_child_del.scoped_delegation());
+
+        let ku_ref = reference(62);
+        let sign_on = |obj: KnowledgeObjectEnvelope,
+                       kind: ObjectKind,
+                       ev_type: EventType,
+                       feed: &ValidatedFeedInception,
+                       sk: &SigningKey,
+                       seq: u64,
+                       nonce: u8| {
+            let (obj_bytes, obj_cid) = obj.encode(ResourceProfile::ObjectV1).unwrap();
+            let v_obj = decode_knowledge_object(
+                &obj_bytes,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(kind, 1)],
+                &[],
+            )
+            .unwrap();
+            let mut ev = KnowledgeEventEnvelope::new(
+                ev_type,
+                feed.feed_id,
+                seq,
+                DisclosureClass::LocalOnly,
+                [nonce; 32],
+            );
+            ev.payload_refs = vec![ObjectReference::new(0, obj_cid.into_bytes())];
+            let (ev_bytes, _) = ev.sign(feed, sk).unwrap().encode().unwrap();
+            let v_ev = decode_knowledge_event(&ev_bytes, feed, &[ev_type]).unwrap();
+            (v_ev, v_obj)
+        };
+
+        // Use event signed by use_feed
+        let use_payload = UseEvidencePayload {
+            subjects: vec![ku_ref.clone()],
+            mode: UseMode::Application,
+            actor_class: ConceptCcid::from_bytes([80; 16]),
+            task_context_commitment: [50; 32],
+            causal_role: ConceptCcid::from_bytes([81; 16]),
+            assembly: None,
+            mapping: None,
+            outcome_observation: None,
+            use_policy: reference(82),
+            observed_frontier: [56; 32],
+        };
+        let (u_ev, u_obj) = sign_on(
+            use_payload
+                .to_knowledge_object(DisclosureClass::LocalOnly)
+                .unwrap(),
+            USE_EVIDENCE_KIND,
+            USE_EVIDENCE_EVENT_TYPE,
+            &use_feed,
+            &use_sk,
+            1,
+            83,
+        );
+        let v_use = ValidatedUseEvidenceEvent::bind(&u_ev, &u_obj).unwrap();
+
+        // Outcome observation signed by out_feed
+        let (o_ev, o_obj) = sign_on(
+            outcome(OutcomeValence::Beneficial, 84)
+                .to_knowledge_object(DisclosureClass::LocalOnly)
+                .unwrap(),
+            OUTCOME_OBSERVATION_KIND,
+            OUTCOME_OBSERVATION_EVENT_TYPE,
+            &out_feed,
+            &out_sk,
+            1,
+            85,
+        );
+        let v_out = ValidatedOutcomeObservationEvent::bind(&o_ev, &o_obj).unwrap();
+
+        // Benefit evidence signed by ben_child_feed
+        let ben_payload = BenefitEvidencePayload {
+            task_context_commitment: [50; 32],
+            outcome_observations: vec![ObjectReference::new(
+                0,
+                v_out.payload_object_cid().into_bytes(),
+            )],
+            use_events: vec![v_use.event_cid()],
+            knowledge_subjects: vec![ku_ref.clone()],
+            assessed_valence: OutcomeValence::Beneficial,
+            attribution: AttributionStatus::Supported,
+            causal_evidence: vec![reference(86)],
+            counterfactual_evidence: vec![reference(87)],
+            limitations: vec![],
+            benefit_policy: reference(63),
+            assessed_frontier: [64; 32],
+        };
+        let (b_ev, b_obj) = sign_on(
+            ben_payload
+                .to_knowledge_object(DisclosureClass::LocalOnly)
+                .unwrap(),
+            BENEFIT_EVIDENCE_KIND,
+            BENEFIT_EVIDENCE_EVENT_TYPE,
+            &ben_child_feed,
+            &ben_child_sk,
+            1,
+            88,
+        );
+        let v_ben = ValidatedBenefitEvidenceEvent::bind(&b_ev, &b_obj).unwrap();
+
+        let mut closure = BenefitClosureReducer::default();
+        closure.register_feed(ku_feed);
+        closure.register_feed(use_feed);
+        closure.register_feed(out_feed.clone());
+        closure.register_feed(ben_child_feed);
+        closure.register_ku_author(ku_ref, ku_root.signed.delegation.subject_feed);
+        closure.record_exercise(ExerciseEvidence::Use(v_use));
+        closure.record_outcome(v_out.clone());
+        closure.record_benefit(v_ben);
+
+        let view = closure.evaluate_case(v_out.case_id(), &key_state);
+        assert_eq!(view.state, BenefitClosureState::SupportedUncontested);
+        assert!(!view.is_reward_instruction());
+        assert!(!view.establishes_truth());
+        assert!(!view.collapses_to_single_winner());
+
+        // Revoking ONLY the benefit child feed degrades closure to DeferredIncomplete
+        // while keeping the outcome author AuthorizedRelative!
+        let rev = crate::foundation::decode_actor_revocation(
+            &ActorRevocation::new(
+                ben_actor,
+                ben_child_del.cid,
+                ben_child_dev,
+                0,
+                ben_root.cid,
+                ben_root_feed.feed_id,
+            )
+            .unwrap()
+            .sign(&ben_root_feed, &ben_root_sk)
+            .unwrap()
+            .encode()
+            .unwrap(),
+            &ben_root_feed,
+        )
+        .unwrap();
+        key_state.submit_revocation(rev.scoped_revocation());
+
+        let after_rev = closure.evaluate_case(v_out.case_id(), &key_state);
+        assert_eq!(after_rev.state, BenefitClosureState::DeferredIncomplete);
+        assert!(matches!(
+            after_rev.outcome_branches[0].author_decision,
+            FeedAuthorityDecision::AuthorizedRelative { .. }
+        ));
+        assert!(matches!(
+            after_rev.benefit_branches[0].author_decision,
+            FeedAuthorityDecision::QuarantinedRevokedRelative { .. }
+        ));
+
+        // Concurrent opposing outcome from authorized out_feed produces ContestedOrMixed
+        // and retains BOTH outcome branches without single-winner collapse.
+        let (o2_ev, o2_obj) = sign_on(
+            outcome(OutcomeValence::Harmful, 89)
+                .to_knowledge_object(DisclosureClass::LocalOnly)
+                .unwrap(),
+            OUTCOME_OBSERVATION_KIND,
+            OUTCOME_OBSERVATION_EVENT_TYPE,
+            &out_feed,
+            &out_sk,
+            2,
+            90,
+        );
+        let v_out2 = ValidatedOutcomeObservationEvent::bind(&o2_ev, &o2_obj).unwrap();
+        closure.record_outcome(v_out2);
+        let contested = closure.evaluate_case(v_out.case_id(), &key_state);
+        assert_eq!(contested.state, BenefitClosureState::ContestedOrMixed);
+        assert_eq!(contested.outcome_branches.len(), 2);
     }
 }

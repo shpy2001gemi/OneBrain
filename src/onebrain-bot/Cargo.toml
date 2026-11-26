@@ -1,0 +1,18 @@
+[package]
+name = "onebrain-bot"
+version = "0.1.0"
+edition = "2021"
+description = "Restricted BotPrincipal DMZ chat surface adapter for OneBrain vNext (P10)"
+license = "MIT"
+
+[dependencies]
+base64 = "0.22"
+blake3 = "1"
+hex = "0.4"
+onebrain-base-contract = { path = "../onebrain-base-contract" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"

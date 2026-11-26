@@ -16,15 +16,17 @@ The project encodes knowledge into compact **Knowledge Units (KUs)** with conten
 
 > [!IMPORTANT]
 > OneBrain is an active research and engineering project. The vNext foundation,
-> P0–P3 product integration, DR-M5 hardening, the runnable KU–OBP concept MVP
-> (22/24 tasks merged, 2 deferred), and the D-051 architecture remediation
-> (13/15 items complete) are merged on `main` with green CI. Base v1 has an
-> owner-approved release (`base-v1.0.0-owner-waiver.1`) with disclosed
-> exceptions, while strict `base-v1.0.0` is not claimed. Mobile is a
-> `BootstrapOnly/Limited` implementation (reusing the shared `OBARV002` archive
-> in `MOB-03`), with `ReadyOffline` and production gates still open. OneBrain is
-> not yet a mainnet or a complete financial system. See the dated
-> [project status](docs/PROJECT_STATUS.md).
+> 10/10 pillar specifications (`ARCH-10P-001`), P0–P3 product integration, DR-M5
+> hardening, the runnable KU–OBP concept MVP (22/24 tasks merged, 2 deferred), the
+> D-051 architecture remediation (**14/15 items complete**, including `ARCH-10`
+> `onebrain-core`), and full **9-pillar (`P1`–`P8`, `P10`) software implementation**
+> (`25` Rust crates, `461k` `src/` LOC, `4,140+` tests) are merged on `main`. Base v1
+> has an owner-approved release (`base-v1.0.0-owner-waiver.1`) with disclosed
+> exceptions, while strict `base-v1.0.0` is not claimed. Mobile is software-complete
+> across `MOB-01..09` (`BootstrapOnly/Limited`, consuming `onebrain-core` and
+> `OBARV002`), with physical-device and `ReadyOffline` gates still open; `P5` OBT
+> runs in `M7.1` Shadow Mode by default. OneBrain is not yet a mainnet or a complete
+> financial system. See the dated [project status](docs/PROJECT_STATUS.md).
 
 Today, a major problem may require thousands of people across many fields, yet their knowledge remains separated by organizations, languages, data formats, and time. Imagine if no one had to start from zero; if a small discovery in one place could meet the right question somewhere else; if millions of independent brains could think about a problem together without surrendering control to a centralized “superbrain.”
 
@@ -70,16 +72,16 @@ private-LAN testing), or run with an operator-provisioned Concept Registry—see
 [two-node D-045 guide](docs/handoffs/2026-09-ku-obp-productization/tasks/20-INT-KU-OBP-001.md#run-the-local-to-peer-manual-concept-d-045):
 private save → restart-durable Public preview → explicit confirmation → receiver browse & inspection.
 
-Snapshot: **2026-11-26**, synchronized with `main` (`bc1934d`).
+Snapshot: **2026-11-27**, synchronized with `main`.
 
 | Workstream | Current status | Main open boundary |
 |---|---|---|
-| Concept MVP (`KU–OBP`) | **22/24 tasks Merged**, 2 Deferred (`KU-ENC-003` model qualification, `KU-SEM-001` broader semantic fidelity; 8 narrow `SEM-F03` bounded repairs merged through D-069); two-node `CLI↔CLI` and `Web↔Web` CI green on Linux, macOS, and Windows | Real operator Registry distribution, two physical LAN machines (`D-063`), `model_qualified=false`, `consumer_nat_qualified=false` |
-| Architecture remediation (`D-051`) | **13/15 items Done** (`ARCH-01..09`, `ARCH-11..13`, `ARCH-15`): host-agnostic `onebrain-node` façade (0 layering bypasses), fenced legacy TCP listener, single user-facing `/ku` model, `vnext_semantic_index` KU search, journal/Base compaction, leaf blob/legacy stores, Rust profile tests | `ARCH-10` mobile-safe node core Deferred after `MOB-03` shared archive slice; `ARCH-14` consumer-NAT field hardening Blocked pending new VPS setup |
-| vNext foundation + 10-Pillar Specs + P0–P3 + DR-M5 | **10/10 pillar vNext specifications closed (`ARCH-10P-001`, 10 cross-pillar firewalls `FW-01..FW-10`, 985 normative lines, 708 verified links)**; foundation scope complete (99 tasks, 18 ADRs, 56 vectors across 22 domains); `vNext foundation contract` CI green | vNext network lanes remain opt-in/default-off; runtime execution for `M6A/M6B`, `M7` OBT, `RUN-003`/`D-013`, `P9` BCI, and `P10` Personal Mesh remain separate gates |
-| Base v1 | `base-v1.0.0-owner-waiver.1` released with disclosed exceptions; `Base v1 three-OS` candidate CI green on current `main` | Strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` is not claimed |
-| Mobile | `BootstrapOnly/Limited`; `MOB-01..04` foundation/capture, `MOB-03` shared `onebrain-archive` (`OBARV002`), `MOB-05A`, and Android `MOB-05B` Local Import implemented; contract validator green | `MOB-05B` iOS/peer providers, `MOB-05C` full Registry activation, `MOB-04` private KU completion, `MOB-06..09`, physical-device gates, and `ReadyOffline` |
-| M6 / M7 / BCI | Future gated milestones | Active distributed multipath KQL, Outcome/Benefit, production OBT, and BCI safety/implementation |
+| Concept MVP (`KU–OBP`) | **22/24 tasks Merged**, 2 Deferred (`KU-ENC-003` model qualification, `KU-SEM-001` broader semantic fidelity; all 18 mechanical `SEM-F03` repairs merged through D-075 + `D-011` v2 lowering); two-node `CLI↔CLI` and `Web↔Web` CI green on Linux, macOS, and Windows | Real operator Registry distribution, two physical LAN machines (`D-063`), `model_qualified=false`, `consumer_nat_qualified=false` |
+| Architecture remediation (`D-051`) | **14/15 items Done** (`ARCH-01..13`, `ARCH-15`): host-agnostic `onebrain-node` façade (0 layering bypasses), **`ARCH-10` mobile-safe `onebrain-core` (`0` `tokio` / `0` `std::net`)**, fenced legacy TCP listener, single `/ku` model, `vnext_semantic_index` KU search, journal/Base compaction, leaf blob/legacy stores, Rust profile tests | Only `ARCH-14` consumer-NAT physical field hardening remains Blocked pending new VPS setup |
+| 9-Pillar Software Closure (`P1`–`P8`, `P10`) + 10-Pillar Specs (`ARCH-10P-001`) | **10/10 pillar specs closed** (`FW-01..FW-10`, 985 normative lines) and **9/10 active pillars (`P1`–`P8`, `P10`) implemented & verified in software** across 7 waves (`P1` lifecycle/`.obr` pull, `P2` `RIBLT-1`/mailbox/blob chunks, `P3` `FIND → NeedIR` compiler/`M6A`, `P4` `M6B` Outcome/Benefit, `P5` `onebrain-obt` `u128` Shadow Mode, `P6` `RUN-003`/`D-013`/PAM Vault, `P7` 5-plane `OBKG-002`, `P8` `OBARV002` `0x0002..0x000F` + 4-phase recovery, `P10` Personal Mesh + `obc_surface1` Extension/Bot/Glasses) | Extended network/cognition/ledger lanes default-off; `P5` defaults to Shadow Mode (`0` spendable minting); physical multi-machine & external audits open |
+| Base v1 | `base-v1.0.0-owner-waiver.1` released with disclosed exceptions; `Base v1 three-OS` candidate CI green on `main` | Strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` is not claimed |
+| Mobile (`MOB-01..09`) | Software-complete across `MOB-01..09` (`BootstrapOnly/Limited`); consumes `onebrain-core` (`ARCH-10`) & `onebrain-archive` (`OBARV002`); `108` evidence rows, `190` IDs, contract & release-guard validators green | Physical Android/iOS device benchmarks, operator-signed 2.2 GB `.obr` on device, store signing, and `ReadyOffline` |
+| `P9` BCI Protocol | Normative safety specification closed (`P9-BCI-SAFETY-001`, `0` runtime LOC by design) | Standardized neural hardware and independent external biosafety certification |
 
 Detailed status, release caveats, CI validation evidence, and historical Git audit context are maintained in
 [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md); live task and retained-branch state lives only in
@@ -533,12 +535,12 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 
 | Interface | Status | Main capabilities |
 |---|---|---|
-| **CLI (`onebrain-cli`)** | Operational | `/ku` host (`start --api --ku-*`), `ku` (`get`, `export`, `describe`, `share prepare\|preview\|confirm\|intent\|inspect\|list`), `obp`, `need`, `pomv`, `vnext`, local KQL, Base archive backup/restore, blobs |
-| **REST/WebSocket API (`onebrain-api`)** | Operational locally | `/api/vnext/ku/*`, opt-in `/api/vnext/obp/*` & `/api/vnext/*` + private WS tickets, Base archive/dataset endpoints, and labeled legacy `/api/*` |
-| **Web Dashboard (`onebrain-web`)** | Operational | Primary `/ku` workspace (manual & AI drafts, structured search, Public KU share/browse/inspect), One-hop Discovery, vNext PoMV, Settings, plus labeled legacy pages |
-| **Desktop (`onebrain-desktop`)** | Operational from source | Tauri 2.x embedded node/API, `/ku` editor parity, graceful lane lifecycle, system tray, and setup wizard |
-| **Mobile (`onebrain-mobile`)** | `BootstrapOnly/Limited` | Flutter + native host + Rust core; private capture/media, shared `OBARV002` archive (`MOB-03`), and Android Registry Local Import implemented; production gates open |
-| **Extension / Bot / Glasses** | Scaffold | Design and future integration points |
+| **CLI (`onebrain-cli`)** | Operational | `/ku` host (`start --api --ku-*`), `ku` (`get`, `export`, `describe`, `summary`, `semantic`, `share`), `obp`, `need`, `pomv`, `vnext`, `mesh`, `surfaces`, `obt`, `obkg`, local KQL, Base archive, blobs |
+| **REST/WebSocket API (`onebrain-api`)** | Operational locally | `/api/vnext/ku/*`, `/api/vnext/mesh/*`, `/api/vnext/surfaces/*`, `/api/vnext/obt/*`, `/api/vnext/obkg/*`, `/api/vnext/kql/compile`, opt-in `/api/vnext/obp/*` + private WS tickets, Base archive |
+| **Web Dashboard (`onebrain-web`)** | Operational | Primary `/ku` workspace, Personal Mesh Devices, OBT Shadow Mode Wallet, 5-plane `OBKG-002` Explorer, One-hop Discovery (`FIND` compiler), vNext PoMV, Settings |
+| **Desktop (`onebrain-desktop`)** | Operational from source | Tauri 2.x embedded node/API, `/ku` editor parity, Personal Mesh/OBT/OBKG IPC commands, graceful lane lifecycle, system tray, and setup wizard |
+| **Mobile (`onebrain-mobile`)** | `BootstrapOnly/Limited` (`MOB-01..09` SW) | Flutter + native host + Rust (`onebrain-core` `ARCH-10` + `OBARV002`); private KU composition, Registry activation/rollback, AI/media lifecycle; physical-device gates open |
+| **Extension / Bot / Glasses** | Implemented (`obc_surface1`) | MV3 `onebrain-extension` sanitized capture, `onebrain-bot` DMZ `BotPrincipal` quarantine, `onebrain-glasses` ephemeral M0 HUD (`<= 40 ms` doff-lock) |
 
 ---
 
@@ -620,31 +622,36 @@ python scripts/ci/validate_mobile_build_contracts.py
 
 ```text
 OneBrain/
-├── src/                      # Cargo workspace (21 Rust crates + Web/Mobile/scaffolds)
-│   ├── ku-core/              # Canonical vNext foundation, KU semantics, Vault, + legacy Core DNA/PoMV/OBT
-│   ├── ku-kql/               # Structured vNext semantic index, local read-only KQL, + experimental discovery
-│   ├── ku-net/               # Authenticated QUIC/OBP reconciliation (feature-gated) + legacy DHT/SWIM
-│   ├── ku-ai/                # Local AI backends (Ollama) and model policies
-│   ├── ku-encoder/           # Shared KU extraction framework, semantic selection v1/v2, review lowering
-│   ├── ku-mediator/          # Intent → retrieve → synthesize pipeline
-│   ├── onebrain-protocol/    # Shared P2P wire types and canonical codecs
-│   ├── onebrain-relay/       # Permissionless outbound-first QUIC/TLS relay service
-│   ├── onebrain-node/        # Host-agnostic shared runtime (Base, KU workspace, OBP services)
-│   ├── onebrain-cli/         # Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`)
-│   ├── onebrain-api/         # Local REST/WebSocket API and `ku_local_web` host example
+├── src/                      # Cargo workspace (25 Rust crates + Web, Mobile & Extension)
+│   ├── ku-core/              # Canonical vNext foundation, KU semantics, lifecycle, Vault + legacy Core DNA
+│   ├── onebrain-core/        # ARCH-10 mobile-safe shared synchronous engine (tokio-free, std::net-free)
+│   ├── ku-kql/               # Deterministic FIND→NeedIR compiler, vnext_semantic_index, + OBKG-002/multipath
+│   ├── ku-net/               # Authenticated QUIC/OBP-RP, RIBLT-1, E2EE mailbox, chunk streams + legacy DHT
+│   ├── ku-ai/                # Local AI backends (Ollama), CCID-grounded KGE, FedR quarantine, Dream vNext
+│   ├── ku-encoder/           # Shared KU extraction framework, semantic selection v1/v2, review lowering v1/v2
+│   ├── ku-mediator/          # 4-tier PrivateVault Personal AI Mediator (M0–M3) & RAG exposure firewall
+│   ├── onebrain-obt/         # Isolated vNext P5 OBT economy (u128 math, FW-07 firewall, Shadow Mode default)
+│   ├── onebrain-protocol/    # Shared P2P wire types, RIBLT-1/mailbox/chunk codecs & pillar envelopes
+│   ├── onebrain-relay/       # Permissionless outbound-first QUIC/TLS relay & durable E2EE mailbox store
+│   ├── onebrain-node/        # Host-agnostic shared runtime (Base, /ku workspace, P1–P8 & P10 orchestration)
+│   ├── onebrain-cli/         # Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`, `mesh`, `obt`, `obkg`)
+│   ├── onebrain-api/         # Local REST/WebSocket API (`/api/vnext/*` + `obc_surface1` ceiling middleware)
 │   ├── onebrain-desktop/     # Tauri 2.x Desktop application
-│   ├── onebrain-web/         # React/Vite TypeScript Web UI (`/ku` workspace + dashboard)
-│   ├── onebrain-mobile/      # Flutter autonomous mobile node UI and Kotlin/Swift NativeHosts
-│   ├── onebrain-mobile-core/ # Autonomous Rust mobile runtime/bootstrap/storage profile
+│   ├── onebrain-web/         # React/Vite TypeScript Web UI (`/ku`, Personal Mesh, Shadow OBT, 5-plane OBKG)
+│   ├── onebrain-mobile/      # Flutter autonomous mobile node UI and Kotlin/Swift NativeHosts (`MOB-01..09`)
+│   ├── onebrain-mobile-core/ # Autonomous Rust mobile runtime consuming `onebrain-core` & `onebrain-archive`
 │   ├── onebrain-mobile-bridge/ # Stable mobile C ABI/JNI bridge
+│   ├── onebrain-extension/   # MV3 TypeScript WebExtension capture client (`obc_surface1_ext`)
+│   ├── onebrain-bot/         # DMZ `BotPrincipal` external channel adapter (`obc_surface1_bot`)
+│   ├── onebrain-glasses/     # Ephemeral M0 HUD companion adapter (`obp/companion-hud/1`, <=40ms doff-lock)
 │   ├── onebrain-base-contract/ # Generated product-neutral Base v1 semantic contract (Rust/TS/Dart)
 │   ├── onebrain-base-abi/    # Stable Base v1 C ABI projection
-│   ├── onebrain-archive/     # Shared encrypted Base `OBARV002` archive/restore container
+│   ├── onebrain-archive/     # Shared encrypted Base `OBARV002` archive container (`0x0001..0x000F`)
 │   ├── onebrain-blob-store/  # Persistent hybrid redb + filesystem Base blob storage (TX-BLOB-001)
 │   ├── onebrain-legacy-ku-store/ # Preserved legacy Core DNA `KuStorage` + OBKG `GraphStorage`
 │   ├── onebrain-seed/        # Explicit legacy TCP/JSON compatibility daemon (not a vNext relay)
 │   ├── ku-demo/              # Multi-node simulation demo
-│   └── test-vectors/         # Frozen canonical, Base v1, Registry, and foundation vectors
+│   └── test-vectors/         # Frozen canonical, Base v1, Registry, 10-pillar, and foundation vectors
 ├── docs/
 │   ├── handoffs/             # Active MVP MASTER_PLAN, PROGRESS ledger, DECISIONS, and task specs
 │   ├── specs/                # vNext contracts (with Reachability index) and legacy specifications

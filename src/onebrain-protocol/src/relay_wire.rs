@@ -5,6 +5,9 @@ const VERSION: u8 = 1;
 const HEADER_BYTES: usize = 26;
 
 pub const MAX_RELAY_WIRE_PAYLOAD_BYTES: usize = 65_536;
+pub const MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES: usize = 262_144;
+pub const RELAY_STREAM_PREFACE_OUTER_CONTROL_V1: u8 = 0;
+pub const RELAY_STREAM_PREFACE_MAILBOX_V1: u8 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -19,6 +22,35 @@ pub enum RelayWireKindV1 {
     Error = 8,
     Authenticated = 9,
     ReflexiveObservation = 10,
+    MailboxDeposit = 11,
+    MailboxStoredReceipt = 12,
+    MailboxPullRequest = 13,
+    MailboxPullPage = 14,
+    MailboxDeliveryReceipt = 15,
+}
+
+impl RelayWireKindV1 {
+    pub const fn max_payload_bytes(self) -> usize {
+        match self {
+            Self::MailboxDeposit
+            | Self::MailboxStoredReceipt
+            | Self::MailboxPullRequest
+            | Self::MailboxPullPage
+            | Self::MailboxDeliveryReceipt => MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES,
+            _ => MAX_RELAY_WIRE_PAYLOAD_BYTES,
+        }
+    }
+
+    pub const fn is_mailbox(self) -> bool {
+        matches!(
+            self,
+            Self::MailboxDeposit
+                | Self::MailboxStoredReceipt
+                | Self::MailboxPullRequest
+                | Self::MailboxPullPage
+                | Self::MailboxDeliveryReceipt
+        )
+    }
 }
 
 impl TryFrom<u8> for RelayWireKindV1 {
@@ -36,6 +68,11 @@ impl TryFrom<u8> for RelayWireKindV1 {
             8 => Ok(Self::Error),
             9 => Ok(Self::Authenticated),
             10 => Ok(Self::ReflexiveObservation),
+            11 => Ok(Self::MailboxDeposit),
+            12 => Ok(Self::MailboxStoredReceipt),
+            13 => Ok(Self::MailboxPullRequest),
+            14 => Ok(Self::MailboxPullPage),
+            15 => Ok(Self::MailboxDeliveryReceipt),
             _ => Err(RelayWireError::UnknownKind),
         }
     }
@@ -57,7 +94,7 @@ impl RelayWireFrameV1 {
         if request_id == [0; 16] {
             return Err(RelayWireError::InvalidRequestId);
         }
-        if payload.is_empty() || payload.len() > MAX_RELAY_WIRE_PAYLOAD_BYTES {
+        if payload.is_empty() || payload.len() > kind.max_payload_bytes() {
             return Err(RelayWireError::InvalidLength);
         }
         Ok(Self {
@@ -103,9 +140,7 @@ impl RelayWireFrameV1 {
                 .try_into()
                 .map_err(|_| RelayWireError::InvalidHeader)?,
         ) as usize;
-        if length == 0
-            || length > MAX_RELAY_WIRE_PAYLOAD_BYTES
-            || bytes.len() != HEADER_BYTES + length
+        if length == 0 || length > kind.max_payload_bytes() || bytes.len() != HEADER_BYTES + length
         {
             return Err(RelayWireError::InvalidLength);
         }

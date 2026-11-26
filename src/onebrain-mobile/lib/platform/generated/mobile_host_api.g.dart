@@ -104,6 +104,7 @@ enum HostOnboardingCursor {
   security,
   initHandoff,
   limitedHome,
+  readiness,
 }
 
 enum HostMediaClass {
@@ -862,6 +863,71 @@ class HostRegistryImportProgress {
   }
 }
 
+class HostRegistryActivationReceipt {
+  HostRegistryActivationReceipt({
+    required this.releaseId,
+    required this.readinessState,
+    this.previousReleaseId,
+    required this.compensatedRollback,
+    required this.healthProbesChecked,
+  });
+
+  String releaseId;
+
+  String readinessState;
+
+  String? previousReleaseId;
+
+  bool compensatedRollback;
+
+  int healthProbesChecked;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      releaseId,
+      readinessState,
+      previousReleaseId,
+      compensatedRollback,
+      healthProbesChecked,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static HostRegistryActivationReceipt decode(Object result) {
+    result as List<Object?>;
+    return HostRegistryActivationReceipt(
+      releaseId: result[0]! as String,
+      readinessState: result[1]! as String,
+      previousReleaseId: result[2] as String?,
+      compensatedRollback: result[3]! as bool,
+      healthProbesChecked: result[4]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! HostRegistryActivationReceipt || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(releaseId, other.releaseId) && _deepEquals(readinessState, other.readinessState) && _deepEquals(previousReleaseId, other.previousReleaseId) && _deepEquals(compensatedRollback, other.compensatedRollback) && _deepEquals(healthProbesChecked, other.healthProbesChecked);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'HostRegistryActivationReceipt(releaseId: $releaseId, readinessState: $readinessState, previousReleaseId: $previousReleaseId, compensatedRollback: $compensatedRollback, healthProbesChecked: $healthProbesChecked)';
+  }
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -967,8 +1033,11 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is HostRegistryImportProgress) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is HostOperationEvent) {
+    }    else if (value is HostRegistryActivationReceipt) {
       buffer.putUint8(143);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostOperationEvent) {
+      buffer.putUint8(144);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -1013,6 +1082,8 @@ class _PigeonCodec extends StandardMessageCodec {
       case 142:
         return HostRegistryImportProgress.decode(readValue(buffer)!);
       case 143:
+        return HostRegistryActivationReceipt.decode(readValue(buffer)!);
+      case 144:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -1166,6 +1237,44 @@ class MobileHostApi {
     )
     ;
     return pigeonVar_replyValue! as HostRegistryImportProgress;
+  }
+
+  Future<HostRegistryActivationReceipt> activateRegistryRelease(String operationId, String transferNonce) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.activateRegistryRelease$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[operationId, transferNonce]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as HostRegistryActivationReceipt;
+  }
+
+  Future<bool> rollbackRegistryRelease() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.rollbackRegistryRelease$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
   }
 
   Future<HostRawDraftReceipt> saveRawTextDraft(String contentLanguage, String content) async {

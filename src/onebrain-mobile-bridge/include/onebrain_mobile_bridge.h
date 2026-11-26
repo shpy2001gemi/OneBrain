@@ -608,6 +608,31 @@ uint32_t ob_mobile_runtime_abort_media_stage_utf8(const uint8_t *source_ref, siz
  */
 uint32_t ob_mobile_runtime_set_onboarding_cursor(uint32_t cursor_code);
 
+/**
+ * Return the derived Concept Registry readiness code (`MOB-05C`):
+ * `0 = BootstrapOnly`, `1 = Provisioning`, `2 = ReadyOffline`,
+ * `3 = ReadyOffline(UpdateHealthPending)`, `4 = RegistryDegraded`.
+ */
+uint32_t ob_mobile_runtime_registry_readiness_code(void);
+
+/**
+ * Complete whole-artifact verification, A/B slot swap, and `REGISTRY_HEALTH_V1`
+ * activation (`MOB-05C`).
+ *
+ * # Safety
+ * Both pointers must reference their declared readable UTF-8 byte lengths.
+ */
+uint32_t ob_mobile_runtime_activate_registry_release_utf8(const uint8_t *operation_id,
+                                                          size_t operation_id_len,
+                                                          const uint8_t *transfer_nonce,
+                                                          size_t transfer_nonce_len);
+
+/**
+ * Roll back the active Concept Registry slot to the retained non-revoked `N-1`
+ * generation (`MOB-05C` / `MOB-DAT-003`).
+ */
+uint32_t ob_mobile_runtime_rollback_registry_release(void);
+
 #endif  /* ONEBRAIN_MOBILE_BRIDGE_H */
 
 /* End generated OneBrain Mobile bridge declarations. */

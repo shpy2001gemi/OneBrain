@@ -19,6 +19,7 @@ pub mod blob_authority;
 pub mod canonical_exchange;
 pub mod concept_registry_runtime;
 pub mod config;
+pub mod cross_store_recovery;
 pub mod dataset_generation;
 pub mod dataset_path;
 mod dataset_root_lease;
@@ -39,15 +40,19 @@ pub mod network;
 pub mod node;
 pub mod peer_manager;
 pub mod peer_memory;
+pub mod personal_mesh_runtime;
 #[cfg(feature = "legacy")]
 pub mod seed_client;
 pub mod signer_ports;
 pub mod source_capture_transaction;
+pub mod surface_capability;
 pub mod text;
 pub mod types;
 pub mod upnp;
 #[cfg(feature = "legacy")]
 pub mod verifier_service;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_blob_transfer;
 #[cfg(feature = "vnext-bootstrap-https")]
 pub mod vnext_bootstrap_client;
 #[cfg(feature = "vnext-canary-harness")]
@@ -63,17 +68,21 @@ pub mod vnext_config;
 pub mod vnext_connection_planner;
 #[cfg(feature = "vnext-crash-harness")]
 pub mod vnext_crash_harness;
+pub mod vnext_delegated_jobs;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_distributed_kql;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_distributed_pomv;
+pub mod vnext_extended_config;
 #[cfg(feature = "vnext-chaos-harness")]
 pub mod vnext_fuzz_targets;
+pub mod vnext_ku_composition;
 pub mod vnext_legacy_migration;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_linux_candidate_gatherer;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_linux_network_epoch;
+pub mod vnext_local_gc;
 pub mod vnext_local_runtime;
 #[cfg(feature = "vnext-sim-harness")]
 pub mod vnext_m5_benchmark;
@@ -82,9 +91,12 @@ pub mod vnext_m6_model;
 pub mod vnext_mixed_conformance;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_network_runtime;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_obkg_runtime;
 pub mod vnext_observability;
 #[cfg(all(test, feature = "vnext-network-runtime"))]
 mod vnext_observability_profile_tests;
+pub mod vnext_obt_runtime;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_operational_compaction;
 #[cfg(feature = "vnext-outbound-first")]
@@ -109,6 +121,7 @@ mod vnext_p5_profile_tests;
 pub mod vnext_p5_recovery_ops_v2;
 #[cfg(feature = "vnext-production-canary-harness")]
 pub mod vnext_p5_signer_provider;
+pub mod vnext_pam_bridge;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_product_runtime;
@@ -118,6 +131,9 @@ pub mod vnext_reachability_manager;
 pub mod vnext_reachability_replay_store;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_record_provenance;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_registry_pull;
+pub mod vnext_remote_cognition;
 #[cfg(feature = "vnext-outbound-first")]
 pub mod vnext_rendezvous_publisher;
 #[cfg(all(test, feature = "vnext-network-runtime"))]
@@ -148,6 +164,12 @@ pub mod vnext_workflow_surface;
 /// reach `ku-kql` through the node instead of depending on it directly.
 pub mod kql {
     pub use ku_kql::read_only::{DOCUMENTED_EXAMPLES, READ_ONLY_FIELDS};
+    pub use ku_kql::vnext_compiler::{
+        CompiledPrivateNeed, KqlNeedCompiler, LifecycleRedirectApplied, NeedCompileContext,
+        NeedCompileError, NeedCompilerProvenance, NeedConstraintDraftV1, NeedQualifiersDraftV1,
+        NeedQuantityDraftV1, NeedStatementDraftV1, NeedTermDraftV1, SiUnitCatalog, SiUnitSpec,
+        StructuredNeedCompileRequestV1, COMPILER_PROFILE_ID, NON_SEMANTIC_FIELD_ERROR_CODE,
+    };
     pub use ku_kql::vnext_matcher::MatcherMetricConcepts;
     pub use ku_kql::vnext_private_need::{
         adapt_local_intent, LocalIntentSource, LocalIntentTemplate, LocalNeedVaultKey,
@@ -169,12 +191,13 @@ pub mod blob {
 /// need, re-exported from `ku-core`.
 pub mod foundation {
     pub use ku_core::foundation::{
-        decode_feed_inception, ConceptCcid, ConstraintEvaluation, DeviceId, DisclosureClass,
-        EventCid, ExerciseAuthority, FeedEventSigner, FeedInception, MetabolicViewLimitation,
-        MetabolicViewPolicy, NamespaceCommitment, NodeId, ObjectReference, ProvenFeedEventSigner,
-        ReceptorAcceptanceProfile, ReceptorCardinality, ReceptorDefinition, ReceptorOrigin,
-        ResourceProfile, SelectorCid, SemanticFrameSet, StatementLocator, UnknownConstraintPolicy,
-        UseEvidencePayload, UseMode, ValidatedFeedInception, VaultKey, RECEPTOR_DEFINITION_KIND,
+        decode_feed_inception, ActorId, ConceptCcid, ConstraintEvaluation, DeviceId,
+        DisclosureClass, EventCid, ExerciseAuthority, FeedEventSigner, FeedInception,
+        MetabolicViewLimitation, MetabolicViewPolicy, NamespaceCommitment, NodeId, ObjectReference,
+        ProvenFeedEventSigner, ReceptorAcceptanceProfile, ReceptorCardinality, ReceptorDefinition,
+        ReceptorOrigin, ResourceProfile, SelectorCid, SemanticFrameSet, StatementLocator,
+        UnknownConstraintPolicy, UseEvidencePayload, UseMode, ValidatedFeedInception, VaultKey,
+        RECEPTOR_DEFINITION_KIND,
     };
 }
 
@@ -393,4 +416,61 @@ pub use vnext_status::{NetworkRuntimeLifecycle, NetworkRuntimeStatusView};
 pub use vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 pub use vnext_workflow_surface::{
     workflow_stage_view, workflow_surface, WorkflowStage, WorkflowStageView,
+};
+
+// ── Batch C1 Unified 9-Pillar Runtime Facade Re-Exports ──
+pub use cross_store_recovery::{
+    CrossStoreRecoveryCoordinator, CrossStoreRecoveryError, CrossStoreRecoveryReport, RecoveryPhase,
+};
+pub use personal_mesh_runtime::{
+    PairingChallengeView, PersonalMeshRuntime, PersonalMeshRuntimeError, PERSONAL_MESH_DB_FILENAME,
+};
+pub use surface_capability::{
+    SurfaceCapabilityClaimsV1, SurfaceCapabilityError, SurfaceCapabilityRegistry,
+    SurfaceCapabilityTokenMetadata, SurfaceKind, SurfaceRouteDecision, SurfaceScope,
+    MANAGEMENT_TOKEN_PREFIX, MAX_SURFACE_TOKEN_TTL_SECS, SURFACE_TOKEN_PREFIX,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_blob_transfer::{
+    NodeBlobChunkOracleAdapter, NodeBlobTransferCoordinator, NodeBlobTransferError,
+};
+pub use vnext_delegated_jobs::{
+    ActiveDelegatedLease, BlindVerifyJobV1, BlindVerifyPhase, DelegatedEncodeJobV1,
+    DelegatedJobCoordinator, DelegatedJobError,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_distributed_kql::{ActiveSelectorWatch, ScheduledSelectorDeltaSync};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_distributed_pomv::{
+    CausalEvidenceClosureEngine, CausalEvidencePublication, CausalEvidencePublishPayload,
+    CausalIngestDisposition, ConfirmCausalEvidenceRequest, PrepareCausalEvidenceRequest,
+    PreparedCausalEvidenceIntent,
+};
+pub use vnext_extended_config::{
+    VNextExtendedFeature, VNextExtendedFeatureConfig, VNextExtendedFeatureFlags,
+    VNEXT_EXTENDED_CONFIG_SCHEMA_V1,
+};
+pub use vnext_ku_composition::{KuCompositionRuntime, DEFAULT_KU_COMPOSITION_DB_FILENAME};
+pub use vnext_local_gc::{
+    LocalEvictionDecision, LocalGcPinError, PinRetentionReason, PinSetEvaluator,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_obkg_runtime::{ObkgRuntimeError, ObkgRuntimeService};
+pub use vnext_obt_runtime::{
+    ObtRuntimeCoordinator, ObtRuntimeError, ObtStoreHealth, OBT_LEDGER_DB_FILENAME,
+    OBT_LEDGER_SUBDIR,
+};
+pub use vnext_pam_bridge::{LazyRedbPamMetadataStore, PamHostBridge, PAM_METADATA_DB_FILENAME};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_registry_pull::{
+    NodePeerPenaltyTracker, NodeRegistryPullCoordinator, NodeRegistryPullError,
+    RegistryActivationOutcome,
+};
+pub use vnext_remote_cognition::{
+    RemoteCognitionError, RemoteCognitionRuntime, COGNITION_DB_FILENAME,
+    REMOTE_COGNITION_QUARANTINE_REASON,
+};
+pub use vnext_reward_firewall::{
+    AcceptedWorkNotice, BenefitClosureNotice, DurableRewardNoticeOutboxV2,
+    RewardEvidenceConsumerV2, RewardEvidenceNoticeV2,
 };

@@ -259,6 +259,31 @@ pub struct OutboundDeliveryReport {
     pub claims_network_completion: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RibltReconciliationStep {
+    CandidateDifference {
+        remote_only: Vec<(InventoryRecordKind, [u8; 32])>,
+        local_only: Vec<(InventoryRecordKind, [u8; 32])>,
+        peel_operations: usize,
+    },
+    FallbackToRadix(ku_net::vnext_riblt::RibltFallbackMetric),
+}
+
+impl RibltReconciliationStep {
+    pub const fn grants_completion(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrontierRepairPlan {
+    pub selector: ku_core::foundation::SelectorCid,
+    pub unexplained_hybrid_root_difference: bool,
+    pub missing_feed_heads: Vec<(FeedId, u64, ku_core::foundation::EventCid)>,
+    pub conflicting_feed_heads: Vec<(FeedId, u64, Vec<[u8; 32]>)>,
+    pub missing_checkpoints: Vec<[u8; 32]>,
+}
+
 #[derive(Default)]
 struct RuntimeCounters {
     authenticated_sessions: AtomicU64,
@@ -1012,6 +1037,329 @@ impl VNextNetworkRuntime {
             .load(selector)
             .map(|forest| forest.root())
             .map_err(|error| VNextNetworkRuntimeError::Inventory(format!("{error:?}")))
+    }
+
+    pub fn load_inventory_forest(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+    ) -> Result<ku_net::vnext_inventory_forest::HybridInventoryForest, VNextNetworkRuntimeError>
+    {
+        self.inventory
+            .load(selector)
+            .map_err(|error| VNextNetworkRuntimeError::Inventory(format!("{error:?}")))
+    }
+
+    /// Return negotiated reconciliation capability descriptors (`P2`), advertising
+    /// `CAPABILITY_RECONCILE_FRONTIER_V1` always and `CAPABILITY_RECONCILE_RIBLT_V1`
+    /// only when `VNextFeature::Riblt` is active (`RibltRuntimeGate::is_permitted()`).
+    pub fn reconciliation_capabilities(
+        riblt_gate: ku_net::vnext_riblt::RibltRuntimeGate,
+    ) -> Vec<onebrain_protocol::SessionCapability> {
+        let mut caps = vec![
+            reconciliation_capability(),
+            onebrain_protocol::reconcile_frontier_capability(),
+        ];
+        if riblt_gate.is_permitted() {
+            caps.push(onebrain_protocol::reconcile_riblt_capability());
+        }
+        caps
+    }
+
+    /// Encode a bounded `RIBLT-1` coded-symbol sketch for `selector` (optionally scoped
+    /// to `(record_kind, range)`).
+    pub fn encode_riblt_range_sketch(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+        context_id: [u8; 32],
+        scoped_subtree: Option<(
+            InventoryRecordKind,
+            ku_net::vnext_inventory_forest::InventoryRange,
+        )>,
+        symbol_count: usize,
+    ) -> Result<(u32, [u8; 32], Vec<onebrain_protocol::RibltCodedSymbolV1>), VNextNetworkRuntimeError>
+    {
+        let forest = self.load_inventory_forest(selector)?;
+        let (items, subtree_root) = match scoped_subtree {
+            Some((kind, range)) => {
+                let summary = forest.range_summary(kind, range);
+                let items: Vec<(InventoryRecordKind, [u8; 32])> = forest
+                    .records_in_range(kind, range)
+                    .into_iter()
+                    .map(|leaf| (leaf.record_kind, leaf.cid))
+                    .collect();
+                (items, summary.root)
+            }
+            None => {
+                let items: Vec<(InventoryRecordKind, [u8; 32])> = forest
+                    .all_records()
+                    .into_iter()
+                    .map(|leaf| (leaf.record_kind, leaf.cid))
+                    .collect();
+                (items, forest.root())
+            }
+        };
+        let symbols =
+            ku_net::vnext_riblt::encode_riblt_coded_symbols(context_id, &items, symbol_count)
+                .map_err(|reason| {
+                    VNextNetworkRuntimeError::Inventory(format!(
+                        "RIBLT encode rejected: {reason:?}"
+                    ))
+                })?;
+        Ok((items.len() as u32, subtree_root, symbols))
+    }
+
+    /// Execute negotiated `RIBLT-1` fast-path peeling for `selector` (`RIB-001` / `RIB-002`).
+    ///
+    /// If `VNextFeature::Riblt` is off, unnegotiated, or peeling stalls / exceeds cost bounds,
+    /// records `RibltFallbackToRadix` (`RibltFallbackMetric`) and returns `FallbackToRadix`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn reconcile_range_with_riblt(
+        &self,
+        gate: ku_net::vnext_riblt::RibltRuntimeGate,
+        session: &AuthenticatedSession,
+        context: &ReconciliationContext,
+        context_id: [u8; 32],
+        range_start: [u8; 32],
+        range_end: Option<[u8; 32]>,
+        scoped_subtree: Option<(
+            InventoryRecordKind,
+            ku_net::vnext_inventory_forest::InventoryRange,
+        )>,
+        remote_subtree_root: [u8; 32],
+        remote_declared_items: u32,
+        remote_symbols: &[onebrain_protocol::RibltCodedSymbolV1],
+        memory_budget: &mut ku_net::vnext_riblt::RibltSessionMemoryBudget,
+    ) -> Result<RibltReconciliationStep, VNextNetworkRuntimeError> {
+        let forest = self.load_inventory_forest(context.selector)?;
+        let (local_items, local_subtree_root) = match scoped_subtree {
+            Some((kind, range)) => {
+                let summary = forest.range_summary(kind, range);
+                let items: Vec<(InventoryRecordKind, [u8; 32])> = forest
+                    .records_in_range(kind, range)
+                    .into_iter()
+                    .map(|leaf| (leaf.record_kind, leaf.cid))
+                    .collect();
+                (items, summary.root)
+            }
+            None => {
+                let items: Vec<(InventoryRecordKind, [u8; 32])> = forest
+                    .all_records()
+                    .into_iter()
+                    .map(|leaf| (leaf.record_kind, leaf.cid))
+                    .collect();
+                (items, forest.root())
+            }
+        };
+
+        if let Err(reason) = ku_net::vnext_riblt::check_riblt_eligibility(
+            gate,
+            session,
+            context,
+            &range_start,
+            range_end.as_ref(),
+            local_subtree_root,
+            remote_subtree_root,
+            local_items.len(),
+            memory_budget,
+        ) {
+            return Ok(RibltReconciliationStep::FallbackToRadix(
+                ku_net::vnext_riblt::RibltFallbackMetric::new(reason),
+            ));
+        }
+
+        let radix_bound =
+            ku_net::vnext_riblt::radix_subtree_summary_upper_bound_bytes(local_items.len());
+        match ku_net::vnext_riblt::decode_riblt_sketch(
+            context_id,
+            range_start,
+            range_end,
+            &local_items,
+            remote_declared_items,
+            remote_symbols,
+            radix_bound,
+            memory_budget,
+        ) {
+            ku_net::vnext_riblt::RibltDecodeOutcome::CandidateDifference {
+                remote_only,
+                local_only,
+                peel_operations,
+            } => {
+                self.observability
+                    .observe_selector_coverage(remote_only.len() as u64, false);
+                Ok(RibltReconciliationStep::CandidateDifference {
+                    remote_only,
+                    local_only,
+                    peel_operations,
+                })
+            }
+            ku_net::vnext_riblt::RibltDecodeOutcome::FallbackToRadix { reason } => {
+                Ok(RibltReconciliationStep::FallbackToRadix(
+                    ku_net::vnext_riblt::RibltFallbackMetric::new(reason),
+                ))
+            }
+        }
+    }
+
+    /// Mandatory post-ingest Merkle root verification gate (`NEG-NET-004`).
+    pub fn verify_riblt_post_ingest(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+        local_only: &[(InventoryRecordKind, [u8; 32])],
+        validated_remote_only: &[InventoryLeaf],
+        scoped_subtree: Option<(
+            InventoryRecordKind,
+            ku_net::vnext_inventory_forest::InventoryRange,
+        )>,
+        target_subtree_root: [u8; 32],
+    ) -> Result<
+        Result<ku_net::vnext_riblt::VerifiedRibltSync, ku_net::vnext_riblt::RibltFallbackMetric>,
+        VNextNetworkRuntimeError,
+    > {
+        let forest = self.load_inventory_forest(selector)?;
+        Ok(ku_net::vnext_riblt::verify_riblt_against_hybrid_forest(
+            &forest,
+            local_only,
+            validated_remote_only,
+            scoped_subtree,
+            target_subtree_root,
+        )
+        .map_err(|outcome| match outcome {
+            ku_net::vnext_riblt::RibltDecodeOutcome::FallbackToRadix { reason } => {
+                ku_net::vnext_riblt::RibltFallbackMetric::new(reason)
+            }
+            ku_net::vnext_riblt::RibltDecodeOutcome::CandidateDifference { .. } => {
+                ku_net::vnext_riblt::RibltFallbackMetric::new(
+                    ku_net::vnext_riblt::RibltFallbackReason::HybridRootMismatch,
+                )
+            }
+        }))
+    }
+
+    /// Build a canonically ordered `FrontierSummaryPage` for `selector` (`P2` §3).
+    pub fn frontier_summary_page(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+        after_key: Option<([u8; 32], u64, [u8; 32])>,
+        max_entries: usize,
+        equivocation_proofs: &BTreeMap<([u8; 32], u64), [u8; 32]>,
+    ) -> Result<
+        (
+            Vec<onebrain_protocol::FrontierSummaryEntryV1>,
+            Option<([u8; 32], u64, [u8; 32])>,
+        ),
+        VNextNetworkRuntimeError,
+    > {
+        let forest = self.load_inventory_forest(selector)?;
+        forest
+            .feed_prefix_page(after_key, max_entries, equivocation_proofs)
+            .map_err(|error| VNextNetworkRuntimeError::Inventory(format!("{error:?}")))
+    }
+
+    /// Repair an `UnexplainedHybridRootDifference` using a peer's `FrontierSummaryPage`
+    /// (`P2` §3, `NEG-NET-006`): identifies missing feed-prefix heads (preserving forked
+    /// equivocated heads at the same `(feed_id, covered_sequence)`) and missing checkpoints.
+    pub fn repair_unexplained_hybrid_root_difference(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+        remote_hybrid_root: [u8; 32],
+        remote_frontier_entries: &[onebrain_protocol::FrontierSummaryEntryV1],
+    ) -> Result<FrontierRepairPlan, VNextNetworkRuntimeError> {
+        let forest = self.load_inventory_forest(selector)?;
+        let local_root = forest.root();
+        let mut local_heads = std::collections::BTreeSet::new();
+        let mut local_by_seq = BTreeMap::<([u8; 32], u64), Vec<[u8; 32]>>::new();
+        let mut local_checkpoints = std::collections::BTreeSet::new();
+        for prefix in forest.feed_prefixes() {
+            let feed_bytes = *prefix.feed.as_bytes();
+            let head_bytes = *prefix.head_event.as_bytes();
+            local_heads.insert((feed_bytes, prefix.through_sequence, head_bytes));
+            local_by_seq
+                .entry((feed_bytes, prefix.through_sequence))
+                .or_default()
+                .push(head_bytes);
+            for ckpt in prefix.checkpoint_frontier_refs {
+                local_checkpoints.insert(*ckpt.as_bytes());
+            }
+        }
+
+        let mut missing_feed_heads = Vec::new();
+        let mut conflicting_feed_heads = Vec::new();
+        let mut missing_checkpoints = Vec::new();
+        let mut remote_by_seq = BTreeMap::<([u8; 32], u64), Vec<[u8; 32]>>::new();
+
+        for entry in remote_frontier_entries {
+            remote_by_seq
+                .entry((entry.feed_id, entry.covered_sequence))
+                .or_default()
+                .push(entry.head_event_cid);
+            if !local_heads.contains(&(entry.feed_id, entry.covered_sequence, entry.head_event_cid))
+            {
+                missing_feed_heads.push((
+                    FeedId::from_bytes(entry.feed_id),
+                    entry.covered_sequence,
+                    ku_core::foundation::EventCid::from_bytes(entry.head_event_cid),
+                ));
+            }
+            if let Some(ckpt) = entry.checkpoint_cid {
+                if !local_checkpoints.contains(&ckpt) && !missing_checkpoints.contains(&ckpt) {
+                    missing_checkpoints.push(ckpt);
+                }
+            }
+        }
+
+        for ((feed_id, seq), mut heads) in remote_by_seq {
+            if let Some(existing) = local_by_seq.get(&(feed_id, seq)) {
+                for h in existing {
+                    if !heads.contains(h) {
+                        heads.push(*h);
+                    }
+                }
+            }
+            heads.sort();
+            heads.dedup();
+            if heads.len() > 1 {
+                conflicting_feed_heads.push((FeedId::from_bytes(feed_id), seq, heads));
+            }
+        }
+
+        Ok(FrontierRepairPlan {
+            selector,
+            unexplained_hybrid_root_difference: local_root != remote_hybrid_root,
+            missing_feed_heads,
+            conflicting_feed_heads,
+            missing_checkpoints,
+        })
+    }
+
+    /// Record a verified relay `MailboxStoredReceipt` (`Pending -> PendingMailboxPickup`, `FW-05`).
+    pub fn record_mailbox_stored_receipt(
+        &self,
+        id: &[u8; 32],
+        receipt: &onebrain_protocol::MailboxStoredReceipt,
+        relay_public_key: &[u8; 32],
+    ) -> Result<OutboundIntentState, VNextNetworkRuntimeError> {
+        let state = self
+            .outbound
+            .outbox
+            .record_mailbox_stored_receipt(id, receipt, relay_public_key)
+            .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+        self.outbound.refresh_outbox_observability()?;
+        Ok(state)
+    }
+
+    /// Record an end-to-end recipient `MailboxDeliveryReceiptV1` (`PendingMailboxPickup -> Acknowledged`).
+    pub fn record_mailbox_delivery_receipt(
+        &self,
+        id: &[u8; 32],
+        receipt: &onebrain_protocol::MailboxDeliveryReceiptV1,
+    ) -> Result<OutboundIntentState, VNextNetworkRuntimeError> {
+        let state = self
+            .outbound
+            .outbox
+            .record_mailbox_delivery_receipt(id, receipt)
+            .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+        self.outbound.refresh_outbox_observability()?;
+        Ok(state)
     }
 
     pub(crate) fn typed_record_delta(

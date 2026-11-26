@@ -9,6 +9,7 @@ pub struct MobileFeatureFlags {
     pub cloud_llm: bool,
     pub registry_network: bool,
     pub peer_transport: bool,
+    pub obp_reunion_match: bool,
     pub background_seeding: bool,
     pub public_publish: bool,
     pub push_notifications: bool,
@@ -22,6 +23,7 @@ impl Default for MobileFeatureFlags {
             cloud_llm: false,
             registry_network: false,
             peer_transport: false,
+            obp_reunion_match: false,
             background_seeding: false,
             public_publish: false,
             push_notifications: false,
@@ -40,6 +42,7 @@ impl MobileFeatureFlags {
             || self.cloud_llm
             || self.registry_network
             || self.peer_transport
+            || self.obp_reunion_match
             || self.background_seeding
             || self.public_publish
             || self.push_notifications
@@ -47,6 +50,20 @@ impl MobileFeatureFlags {
             return Err(MobileCoreError::InvalidArgument(
                 "the mobile BootstrapOnly profile cannot enable model, network, seeding, publish or push lanes"
                     .into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn validate_feature_runtime(&self) -> Result<(), MobileCoreError> {
+        if !self.local_kql {
+            return Err(MobileCoreError::InvalidArgument(
+                "the mobile runtime requires the deterministic local KQL lane".into(),
+            ));
+        }
+        if self.public_publish || self.background_seeding {
+            return Err(MobileCoreError::FeatureGateDisabled(
+                "public publication and background seeding remain gated off in v1".into(),
             ));
         }
         Ok(())

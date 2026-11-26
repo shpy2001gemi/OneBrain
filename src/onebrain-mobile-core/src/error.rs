@@ -30,6 +30,28 @@ pub enum MobileCoreError {
     UnexpectedRestore(String),
     #[error("encrypted mobile archive rejected: {0}")]
     Archive(String),
+    #[error("Concept Registry is not ReadyOffline: {0}")]
+    RegistryNotReady(String),
+    #[error("insufficient device storage: required {required_bytes} bytes, measured {measured_bytes} bytes")]
+    InsufficientStorage {
+        required_bytes: u64,
+        measured_bytes: u64,
+    },
+    #[error("app upgrade required for Registry trust profile generation {required_generation} (embedded {embedded_generation})")]
+    UpgradeRequiredForRegistryTrustProfile {
+        required_generation: u64,
+        embedded_generation: u64,
+    },
+    #[error("high-water equivocation detected on {domain}: {detail}")]
+    EquivocationDetected { domain: String, detail: String },
+    #[error("forbidden LLM tool or policy violation: {0}")]
+    ForbiddenTool(String),
+    #[error("feature gate is disabled: {0}")]
+    FeatureGateDisabled(String),
+    #[error("rollback target is unavailable: {0}")]
+    RollbackUnavailable(String),
+    #[error("runtime is in safe mode: {0}")]
+    SafeModeActive(String),
     #[error("the private mobile node is locked")]
     Locked,
     #[error("the runtime generation has already been quiesced")]

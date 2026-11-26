@@ -11,6 +11,10 @@ use ku_core::concept_registry::{ConceptCategory, ResolveResult};
 use ku_encoder::extraction::review_lowering::{
     self as lowering, LookupOption, Role, UnitTransform,
 };
+use ku_encoder::extraction::review_lowering_v2::{
+    self as lowering_v2, DISJUNCTION_EXCLUSIVE_XOR_CCID, DISJUNCTION_INCLUSIVE_OR_CCID,
+    LOWERING_SCHEMA_V2, QUALIFIER_APPROXIMATION_CCID, QUALIFIER_FREQUENCY_CCID,
+};
 use ku_encoder::extraction::{ExtractionError, WorkBudget};
 use serde_json::json;
 use std::sync::OnceLock;
@@ -39,6 +43,32 @@ fn implementation() -> Option<[u8; 32]> {
 }
 pub(super) fn is_lowering_commitment(commitment: [u8; 32]) -> bool {
     implementation() == Some(commitment)
+}
+
+fn implementation_v2() -> Option<[u8; 32]> {
+    static VALUE: OnceLock<Option<[u8; 32]>> = OnceLock::new();
+    *VALUE.get_or_init(|| {
+        lowering_v2::commitment_v2()
+            .ok()
+            .map(|c| blake3::derive_key("onebrain:ku-review-lowering:2", c.as_bytes()))
+    })
+}
+
+pub(super) fn is_lowering_v2_commitment(commitment: [u8; 32]) -> bool {
+    implementation_v2() == Some(commitment)
+}
+
+pub(super) fn is_any_lowering_commitment(commitment: [u8; 32]) -> bool {
+    is_lowering_commitment(commitment) || is_lowering_v2_commitment(commitment)
+}
+
+pub(super) fn lowering_v2_reserved_ccids() -> [[u8; 16]; 4] {
+    [
+        *DISJUNCTION_INCLUSIVE_OR_CCID.as_bytes(),
+        *DISJUNCTION_EXCLUSIVE_XOR_CCID.as_bytes(),
+        *QUALIFIER_FREQUENCY_CCID.as_bytes(),
+        *QUALIFIER_APPROXIMATION_CCID.as_bytes(),
+    ]
 }
 
 /// Minimal host-owned exact unit transforms keyed by the Registry unit
@@ -120,6 +150,20 @@ impl KuStore {
         }
         if input.operation_id == input.review_operation_id {
             return Err(invalid());
+        }
+        if self.inputs.review_selection_v2() {
+            let (_src, profile, _claim) = self.review_claim_with_profile(
+                principal,
+                input.review_operation_id.0,
+                input.window as usize,
+                input.statement as usize,
+            )?;
+            if matches!(
+                profile.as_deref(),
+                Some("ku-semantic-draft/2.0") | Some(LOWERING_SCHEMA_V2)
+            ) {
+                return self.review_lower_v2(principal, input, budget);
+            }
         }
         let (source, claim) = self.review_claim(
             principal,
@@ -253,6 +297,182 @@ impl KuStore {
         }
         Ok(ManualEditorResponse::ReviewLowering {
             review_lowering: json!({"saveable": true, "preparation": encoded, "unresolved": [], "limitations": limitations}),
+        })
+    }
+
+    /// P1 Semantic Selection v2 lowering (`ku-semantic-draft/2.0` / `ku-review-lowering/2.0`).
+    /// Preserves all v1 `review_lower` behavior while adding n-ary arguments,
+    /// negation, inclusive/exclusive disjunction, temporal intervals, and
+    /// frequency/approximation qualifiers.
+    pub(crate) fn review_lower_v2(
+        &self,
+        principal: [u8; 32],
+        input: ReviewLowerInput,
+        budget: &ResourceBudgetV1,
+    ) -> Result<ManualEditorResponse, BaseServiceError> {
+        if !input.reviewed {
+            return Err(BaseServiceError::new(
+                BaseErrorCodeV1::InvalidRequest,
+                "explicit_review_required",
+            ));
+        }
+        if input.operation_id == input.review_operation_id {
+            return Err(invalid());
+        }
+        let (source, _profile, claim) = self.review_claim_with_profile(
+            principal,
+            input.review_operation_id.0,
+            input.window as usize,
+            input.statement as usize,
+        )?;
+        let intake = self.review_intake(principal, input.review_operation_id.0)?;
+        if intake.input.text != source {
+            return Err(corrupt());
+        }
+        let source_ref = *intake.preparation.source_refs.first().ok_or_else(corrupt)?;
+        self.inputs.restore_text(intake.clone())?;
+        let lease = self
+            .registry
+            .as_ref()
+            .ok_or_else(unavailable)?
+            .reader_lease();
+        let root: [u8; 32] = decode_hex(
+            lease
+                .status()
+                .release_aggregate_root
+                .as_deref()
+                .ok_or_else(unavailable)?,
+        )
+        .map_err(|_| unavailable())?;
+        let mut work = WorkBudget::new(
+            budget.max_work_units.min(1_000_000),
+            Duration::from_secs(30),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .map_err(|_| resource())?;
+        let mut lookup = |label: &str, role: Role| -> Result<Vec<LookupOption>, ExtractionError> {
+            let found = match lease
+                .resolve_checked(label)
+                .map_err(|_| ExtractionError("registry_unavailable"))?
+            {
+                ResolveResult::Found(c) => vec![c],
+                ResolveResult::Ambiguous(c) => c,
+                ResolveResult::NotFound | ResolveResult::Fuzzy(_) => vec![],
+            };
+            Ok(found
+                .into_iter()
+                .filter(|c| (c.category == ConceptCategory::Unit) == (role == Role::Unit))
+                .map(|c| LookupOption {
+                    ccid: c.ccid,
+                    unit: (role == Role::Unit)
+                        .then(|| unit_transform(&c.canonical_name))
+                        .flatten(),
+                })
+                .collect())
+        };
+        let lowered = lowering_v2::lower_claim_v2(
+            &source,
+            source_ref.0,
+            root,
+            &claim,
+            &mut lookup,
+            &mut work,
+        )
+        .map_err(lowering_error)?;
+        let limitations = json!([
+            "review_lowering_v2_structured_claims",
+            "semantic_fidelity_unassessed",
+            "experimental_model_unqualified",
+            "local_only"
+        ]);
+        let unresolved: Vec<_> = lowered
+            .unresolved
+            .iter()
+            .map(|u| json!({"role": u.role.as_str(), "label": u.label, "candidates": u.candidates}))
+            .collect();
+        let Some(mut semantic) = lowered.semantic else {
+            return Ok(ManualEditorResponse::ReviewLowering {
+                review_lowering: json!({
+                    "saveable": false,
+                    "lowering_schema": LOWERING_SCHEMA_V2,
+                    "unresolved": unresolved,
+                    "limitations": limitations
+                }),
+            });
+        };
+        // Normalize SourceSpan reference_kind to SOURCE_ARTIFACT_KIND (1) for KuStore::prepare.
+        for statement in &mut semantic.statements {
+            for span in &mut statement.qualifiers.source_spans {
+                if span.source.reference_kind == 0 && span.source.cid == source_ref.0 {
+                    span.source.reference_kind = 1;
+                }
+            }
+        }
+        let bytes = semantic.canonical_bytes().map_err(|_| invalid())?;
+        let mut reference = blake3::Hasher::new_derive_key("onebrain:ku:review-lowering-draft:2");
+        reference.update(&self.dataset.0);
+        reference.update(&input.review_operation_id.0);
+        reference.update(&input.window.to_le_bytes());
+        reference.update(&input.statement.to_le_bytes());
+        reference.update(&bytes);
+        let preparation = KuPrepareV1 {
+            operation_id: input.operation_id,
+            idempotency_key: input.idempotency_key,
+            input_mode: InputMode::ResolvedSemanticDraft,
+            source_refs: vec![source_ref],
+            registry_release_root: ReleaseRoot(root),
+            semantic_profile: SEMANTIC_CONTENT_PROFILE.into(),
+            implementation_commitment: ImplementationCommitment(
+                implementation_v2().ok_or_else(unavailable)?,
+            ),
+            destination: Disclosure::LOCALONLY,
+            draft_ref: Some(ObjectCID(*reference.finalize().as_bytes())),
+        };
+        preparation.validate().map_err(|_| invalid())?;
+        let encoded = serde_json::to_value(&preparation).map_err(|_| invalid())?;
+        if encoded.to_string().len() as u64 > budget.max_bytes {
+            return Err(resource());
+        }
+        {
+            let mut drafts = self.lowered.lock().map_err(|_| corrupt())?;
+            if let Some(old) = drafts.get(&input.operation_id.0) {
+                if old.principal != principal
+                    || old.input != input
+                    || serde_json::to_vec(&old.preparation).ok()
+                        != serde_json::to_vec(&preparation).ok()
+                {
+                    return Err(conflict());
+                }
+            } else if drafts.len() >= MAX_LOWERED {
+                return Err(resource());
+            }
+            drafts.insert(
+                input.operation_id.0,
+                LoweredDraft {
+                    principal,
+                    input,
+                    preparation,
+                    semantic,
+                    source: intake.source,
+                    bindings: lowered
+                        .bindings
+                        .into_iter()
+                        .map(|b| KuConceptBinding {
+                            label: b.label,
+                            selected: Some(b.ccid),
+                        })
+                        .collect(),
+                },
+            );
+        }
+        Ok(ManualEditorResponse::ReviewLowering {
+            review_lowering: json!({
+                "saveable": true,
+                "lowering_schema": LOWERING_SCHEMA_V2,
+                "preparation": encoded,
+                "unresolved": [],
+                "limitations": limitations
+            }),
         })
     }
 

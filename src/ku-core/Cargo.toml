@@ -33,6 +33,9 @@ blake3 = "1"         # ★ v6: BLAKE3 hash for CID computation
 indexmap = "2"          # Insertion-ordered map for O(1) LRU cache
 memmap2 = "0.9"         # Read-only, demand-paged sidecar indexes
 ed25519-dalek = { version = "2", features = ["rand_core"] }  # Ed25519 signature verification
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "zeroize"] }
+sha2 = "0.10"
+hex = "0.4"
 unicode-normalization = "0.1" # vNext canonical NormalizedText validation (reject, never rewrite)
 chacha20poly1305 = "0.11" # vNext Private Vault XChaCha20-Poly1305 AEAD
 zeroize = "1"            # erase caller-supplied vault key material on drop

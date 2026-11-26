@@ -150,6 +150,8 @@ pub struct AppState {
     pub obp_binding: Option<crate::obp_api::Binding>,
     /// Runtime gate for the separately compiled bounded legacy read view.
     pub legacy_read_compat_enabled: bool,
+    /// Additive Pillar 10 Personal Mesh, surface token, and adapter projection state.
+    pub p10_state: crate::p10_api::P10ApiRuntimeState,
     #[cfg(feature = "base-v1")]
     base_management: BaseRestManagementCoordinator,
 }
@@ -260,6 +262,7 @@ impl ApiServer {
                 #[cfg(feature = "vnext-outbound-first")]
                 obp_binding: None,
                 legacy_read_compat_enabled: false,
+                p10_state: crate::p10_api::P10ApiRuntimeState::default(),
                 #[cfg(feature = "base-v1")]
                 base_management: BaseRestManagementCoordinator::default(),
             },
@@ -282,6 +285,7 @@ impl ApiServer {
                 #[cfg(feature = "vnext-outbound-first")]
                 obp_binding: None,
                 legacy_read_compat_enabled: false,
+                p10_state: crate::p10_api::P10ApiRuntimeState::default(),
                 #[cfg(feature = "base-v1")]
                 base_management: BaseRestManagementCoordinator::default(),
             },
@@ -584,7 +588,69 @@ impl ApiServer {
             .route("/api/analytics", get(handlers::get_analytics))
             // Phase 1 Tier C: Domain Taxonomy
             .route("/api/domains", get(handlers::list_domains))
-            .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain));
+            .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain))
+            // Pillar 10 Personal Mesh, Scoped Surface Capabilities & Cross-Pillar Status (`P10-SURFACES-SYNC-001`)
+            .route("/api/vnext/mesh/status", get(crate::p10_api::mesh_status))
+            .route(
+                "/api/vnext/mesh/pair/start",
+                post(crate::p10_api::mesh_pair_start),
+            )
+            .route(
+                "/api/vnext/mesh/pair/confirm",
+                post(crate::p10_api::mesh_pair_confirm),
+            )
+            .route("/api/vnext/mesh/revoke", post(crate::p10_api::mesh_revoke))
+            .route("/api/vnext/mesh/sync", post(crate::p10_api::mesh_sync))
+            .route(
+                "/api/vnext/surfaces/tokens",
+                get(crate::p10_api::list_surface_tokens).post(crate::p10_api::mint_surface_token),
+            )
+            .route(
+                "/api/vnext/surfaces/tokens/{id}",
+                delete(crate::p10_api::revoke_surface_token),
+            )
+            .route(
+                "/api/vnext/kql/needs/compile",
+                post(crate::p10_api::compile_need_ir),
+            )
+            .route(
+                "/api/vnext/obkg/snapshot",
+                get(crate::p10_api::obkg_snapshot),
+            )
+            .route("/api/vnext/obt/status", get(crate::p10_api::obt_status))
+            .route(
+                "/api/vnext/cognition/status",
+                get(crate::p10_api::cognition_status),
+            )
+            .route(
+                "/api/vnext/extension/capture",
+                post(crate::p10_api::extension_capture),
+            )
+            .route(
+                "/api/vnext/extension/drafts/{id}",
+                get(crate::p10_api::extension_get_draft),
+            )
+            .route(
+                "/api/vnext/bot/query",
+                post(crate::p10_api::bot_public_query),
+            )
+            .route(
+                "/api/vnext/bot/submissions",
+                post(crate::p10_api::bot_quarantine_submission),
+            )
+            .route(
+                "/api/vnext/hud/session/heartbeat",
+                post(crate::p10_api::hud_heartbeat),
+            )
+            .route(
+                "/api/vnext/hud/session/doff",
+                post(crate::p10_api::hud_doff),
+            )
+            .route("/api/vnext/hud/cards", get(crate::p10_api::hud_cards))
+            .route(
+                "/api/vnext/hud/confirm/commit",
+                post(crate::p10_api::hud_confirm_commit),
+            );
 
         #[cfg(feature = "base-v1")]
         {
@@ -699,9 +765,45 @@ async fn auth_middleware(
 
     match auth_header {
         Some(value) if value.starts_with("Bearer ") => {
-            let token = &value[7..];
+            let token = value[7..].to_owned();
             if constant_time_eq(token.as_bytes(), state.api_token.as_bytes()) {
+                let mut req = req;
+                req.extensions_mut()
+                    .insert(crate::p10_api::AuthenticatedSurfacePrincipal::HostOwner);
                 next.run(req).await
+            } else if token.starts_with(onebrain_node::SURFACE_TOKEN_PREFIX) {
+                let method_str = req.method().as_str().to_owned();
+                let path_owned = path.to_owned();
+                let has_obm1 = req
+                    .headers()
+                    .get("x-onebrain-obp-management")
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|v| v.starts_with(onebrain_node::MANAGEMENT_TOKEN_PREFIX));
+                let now_s = crate::p10_api::unix_now_s();
+                let auth_res = {
+                    let node = state.node.lock().await;
+                    node.surface_capabilities().authorize_token_for_route(
+                        &token,
+                        &method_str,
+                        &path_owned,
+                        has_obm1,
+                        now_s,
+                    )
+                };
+                match auth_res {
+                    Ok((claims, _decision)) => {
+                        let mut req = req;
+                        req.extensions_mut().insert(
+                            crate::p10_api::AuthenticatedSurfacePrincipal::ScopedSurface(claims),
+                        );
+                        next.run(req).await
+                    }
+                    Err(err) => crate::p10_api::err_envelope(
+                        StatusCode::FORBIDDEN,
+                        "surface_capability_denied",
+                        err.to_string(),
+                    ),
+                }
             } else {
                 if path.starts_with("/api/vnext/obp/") {
                     return crate::obp_api::auth_error(StatusCode::FORBIDDEN);

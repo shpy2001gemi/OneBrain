@@ -11,11 +11,14 @@ use ku_core::foundation::{
 };
 
 use crate::types::{
-    wire_id, InventoryDiffRange, InventoryLane, InventorySummaryNode, ReconcileManifestEntry,
-    ReconcileManifestKind, ReconcileReceiptEntry, ReconcileReceiptStatus, ReconciliationAbortCode,
-    ReconciliationBody, ReconciliationBudget, ReconciliationContext, ReconciliationMessage,
-    ReconciliationPhase, ReconciliationResumeMode, ReconciliationResumeToken,
-    ReconciliationSummaryMethod, SessionCapability, SessionProfile,
+    wire_id, FrontierContinuationCursorV1, FrontierSummaryEntryV1, InventoryDiffRange,
+    InventoryLane, InventorySummaryNode, ReconcileManifestEntry, ReconcileManifestKind,
+    ReconcileReceiptEntry, ReconcileReceiptStatus, ReconciliationAbortCode, ReconciliationBody,
+    ReconciliationBudget, ReconciliationContext, ReconciliationMessage, ReconciliationPhase,
+    ReconciliationResumeMode, ReconciliationResumeToken, ReconciliationSummaryMethod,
+    RibltCodedSymbolV1, SessionCapability, SessionProfile, CAPABILITY_RECONCILE_FRONTIER_V1,
+    CAPABILITY_RECONCILE_RIBLT_V1, CAPABILITY_RECONCILE_V1, MAX_FRONTIER_ENTRIES_PER_PAGE,
+    MAX_RIBLT_CODED_SYMBOLS_PER_RANGE, MAX_RIBLT_RANGE_ITEMS,
 };
 
 pub const OBP_RECONCILE_SCHEMA_MAJOR: u64 = 1;
@@ -36,10 +39,88 @@ pub const fn reconciliation_profile() -> SessionProfile {
 
 /// Stable capability ID for the UTF-8 capability name `obp/reconcile/1`.
 pub fn reconciliation_capability() -> SessionCapability {
-    let value = CanonicalValue::Text("obp/reconcile/1".to_owned());
+    let value = CanonicalValue::Text(CAPABILITY_RECONCILE_V1.to_owned());
     let bytes = encode_canonical(&value, ResourceProfile::ControlV1)
         .expect("fixed NFC capability name is canonical");
     SessionCapability::from_bytes(ReservedDomain::CapabilityDefinition.digest(&bytes))
+}
+
+/// Stable capability ID for negotiated `RIBLT-1` fast-path (`obp/reconcile-riblt/1`).
+pub fn reconciliation_riblt_capability() -> SessionCapability {
+    let value = CanonicalValue::Text(CAPABILITY_RECONCILE_RIBLT_V1.to_owned());
+    let bytes = encode_canonical(&value, ResourceProfile::ControlV1)
+        .expect("fixed NFC capability name is canonical");
+    SessionCapability::from_bytes(ReservedDomain::CapabilityDefinition.digest(&bytes))
+}
+
+/// Stable capability ID for feed-prefix frontier exchange (`obp/reconcile-frontier/1`).
+pub fn reconciliation_frontier_capability() -> SessionCapability {
+    let value = CanonicalValue::Text(CAPABILITY_RECONCILE_FRONTIER_V1.to_owned());
+    let bytes = encode_canonical(&value, ResourceProfile::ControlV1)
+        .expect("fixed NFC capability name is canonical");
+    SessionCapability::from_bytes(ReservedDomain::CapabilityDefinition.digest(&bytes))
+}
+
+/// Construct a MAC-bound continuation cursor for paginated `FrontierSummaryPage` responses.
+pub fn make_frontier_cursor(
+    context: &ReconciliationContext,
+    last_entry: &FrontierSummaryEntryV1,
+    cursor_key: [u8; 32],
+) -> Result<FrontierContinuationCursorV1, ReconciliationCodecError> {
+    let binding_digest = reconciliation_binding_digest(context)?;
+    let mac = compute_frontier_cursor_mac(
+        cursor_key,
+        binding_digest,
+        last_entry.feed_id,
+        last_entry.covered_sequence,
+        last_entry.head_event_cid,
+    );
+    Ok(FrontierContinuationCursorV1 {
+        binding_digest,
+        last_feed_id: last_entry.feed_id,
+        last_covered_sequence: last_entry.covered_sequence,
+        last_head_event_cid: last_entry.head_event_cid,
+        mac,
+    })
+}
+
+/// Verify a `FrontierContinuationCursorV1` against the active context and local secret key.
+pub fn verify_frontier_cursor(
+    context: &ReconciliationContext,
+    cursor: &FrontierContinuationCursorV1,
+    cursor_key: [u8; 32],
+) -> Result<(), ReconciliationCodecError> {
+    let expected_binding = reconciliation_binding_digest(context)?;
+    if cursor.binding_digest != expected_binding {
+        return Err(ReconciliationCodecError::BindingDigestMismatch);
+    }
+    let expected_mac = compute_frontier_cursor_mac(
+        cursor_key,
+        cursor.binding_digest,
+        cursor.last_feed_id,
+        cursor.last_covered_sequence,
+        cursor.last_head_event_cid,
+    );
+    if cursor.mac != expected_mac {
+        return Err(ReconciliationCodecError::InvalidFrontierCursor);
+    }
+    Ok(())
+}
+
+fn compute_frontier_cursor_mac(
+    cursor_key: [u8; 32],
+    binding_digest: [u8; 32],
+    last_feed_id: [u8; 32],
+    last_covered_sequence: u64,
+    last_head_event_cid: [u8; 32],
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new_keyed(&cursor_key);
+    hasher.update(b"onebrain:vnext:frontier-cursor-mac:1\0");
+    hasher.update(&binding_digest);
+    hasher.update(&last_feed_id);
+    hasher.update(&last_covered_sequence.to_be_bytes());
+    hasher.update(&last_head_event_cid);
+    *hasher.finalize().as_bytes()
 }
 
 pub fn reconciliation_binding_digest(
@@ -213,7 +294,9 @@ pub fn decode_reconciliation_message(
 
 fn message_byte_limit(body: &ReconciliationBody) -> usize {
     match body {
-        ReconciliationBody::InventorySummary { .. } => 1_048_576,
+        ReconciliationBody::InventorySummary { .. }
+        | ReconciliationBody::FrontierSummaryPage { .. }
+        | ReconciliationBody::RibltSketch { .. } => 1_048_576,
         ReconciliationBody::Manifest { .. } | ReconciliationBody::Receipt { .. } => {
             ResourceProfile::ManifestV1.limits().max_bytes
         }
@@ -229,6 +312,14 @@ fn validate_context(context: &ReconciliationContext) -> Result<(), Reconciliatio
     }
     if context.disclosure == DisclosureClass::LocalOnly {
         return Err(ReconciliationCodecError::LocalOnlyDisclosure);
+    }
+    if context.summary_method == ReconciliationSummaryMethod::RibltV1
+        && !matches!(
+            context.disclosure,
+            DisclosureClass::Public | DisclosureClass::RouteMinimal
+        )
+    {
+        return Err(ReconciliationCodecError::InvalidField("context.disclosure"));
     }
     let budget = context.budget;
     if budget.max_summary_nodes == 0
@@ -330,6 +421,85 @@ fn validate_message(message: &ReconciliationMessage) -> Result<(), Reconciliatio
         ReconciliationBody::Abort { .. } => {}
         ReconciliationBody::Resume { token } => {
             validate_token(message, token, true)?;
+        }
+        ReconciliationBody::FrontierSummaryRequest {
+            cursor,
+            max_entries,
+            ..
+        } => {
+            if *max_entries == 0 || (*max_entries as usize) > MAX_FRONTIER_ENTRIES_PER_PAGE {
+                return Err(ReconciliationCodecError::ResourceLimit);
+            }
+            if let Some(cursor) = cursor {
+                if cursor.binding_digest != message.binding_digest || cursor.mac == [0; 32] {
+                    return Err(ReconciliationCodecError::InvalidFrontierCursor);
+                }
+            }
+        }
+        ReconciliationBody::FrontierSummaryPage {
+            entries,
+            next_cursor,
+            ..
+        } => {
+            if entries.len() > MAX_FRONTIER_ENTRIES_PER_PAGE {
+                return Err(ReconciliationCodecError::ResourceLimit);
+            }
+            if !strictly_sorted_by(entries, |entry| {
+                (entry.feed_id, entry.covered_sequence, entry.head_event_cid)
+            }) {
+                return Err(ReconciliationCodecError::NonCanonicalSet(
+                    "frontier.entries",
+                ));
+            }
+            if let Some(cursor) = next_cursor {
+                let Some(last) = entries.last() else {
+                    return Err(ReconciliationCodecError::InvalidFrontierCursor);
+                };
+                if cursor.binding_digest != message.binding_digest
+                    || cursor.last_feed_id != last.feed_id
+                    || cursor.last_covered_sequence != last.covered_sequence
+                    || cursor.last_head_event_cid != last.head_event_cid
+                    || cursor.mac == [0; 32]
+                {
+                    return Err(ReconciliationCodecError::InvalidFrontierCursor);
+                }
+            }
+        }
+        ReconciliationBody::RibltSketch {
+            range_start,
+            range_end,
+            local_range_items,
+            coded_symbols,
+            ..
+        } => {
+            if !matches!(
+                message.context.disclosure,
+                DisclosureClass::Public | DisclosureClass::RouteMinimal
+            ) {
+                return Err(ReconciliationCodecError::InvalidField("context.disclosure"));
+            }
+            if let Some(end) = range_end {
+                if end <= range_start {
+                    return Err(ReconciliationCodecError::InvalidField("riblt.range_end"));
+                }
+            }
+            if *local_range_items == 0 || *local_range_items > MAX_RIBLT_RANGE_ITEMS {
+                return Err(ReconciliationCodecError::ResourceLimit);
+            }
+            if coded_symbols.is_empty() || coded_symbols.len() > MAX_RIBLT_CODED_SYMBOLS_PER_RANGE {
+                return Err(ReconciliationCodecError::ResourceLimit);
+            }
+            if coded_symbols
+                .iter()
+                .any(|symbol| (symbol.symbol_index as usize) >= MAX_RIBLT_CODED_SYMBOLS_PER_RANGE)
+            {
+                return Err(ReconciliationCodecError::ResourceLimit);
+            }
+            if !strictly_sorted_by(coded_symbols, |symbol| symbol.symbol_index) {
+                return Err(ReconciliationCodecError::NonCanonicalSet(
+                    "riblt.coded_symbols",
+                ));
+            }
         }
     }
     Ok(())
@@ -487,6 +657,43 @@ fn body_value(body: &ReconciliationBody) -> CanonicalValue {
             (2, CanonicalValue::Bytes(progress_digest.to_vec())),
         ]),
         ReconciliationBody::Resume { token } => CanonicalValue::Map(vec![(0, token_value(token))]),
+        ReconciliationBody::FrontierSummaryRequest {
+            after_feed_id,
+            cursor,
+            max_entries,
+        } => CanonicalValue::Map(vec![
+            (0, optional_bytes32_value(*after_feed_id)),
+            (1, optional_frontier_cursor_value(cursor.as_ref())),
+            (2, CanonicalValue::Unsigned(u64::from(*max_entries))),
+        ]),
+        ReconciliationBody::FrontierSummaryPage {
+            inventory_root,
+            entries,
+            next_cursor,
+        } => CanonicalValue::Map(vec![
+            (0, CanonicalValue::Bytes(inventory_root.to_vec())),
+            (
+                1,
+                CanonicalValue::Array(entries.iter().map(frontier_entry_value).collect()),
+            ),
+            (2, optional_frontier_cursor_value(next_cursor.as_ref())),
+        ]),
+        ReconciliationBody::RibltSketch {
+            range_start,
+            range_end,
+            target_subtree_root,
+            local_range_items,
+            coded_symbols,
+        } => CanonicalValue::Map(vec![
+            (0, CanonicalValue::Bytes(range_start.to_vec())),
+            (1, optional_bytes32_value(*range_end)),
+            (2, CanonicalValue::Bytes(target_subtree_root.to_vec())),
+            (3, CanonicalValue::Unsigned(u64::from(*local_range_items))),
+            (
+                4,
+                CanonicalValue::Array(coded_symbols.iter().map(riblt_symbol_value).collect()),
+            ),
+        ]),
     }
 }
 
@@ -555,6 +762,50 @@ fn optional_unsigned_value(value: Option<u64>) -> CanonicalValue {
 
 fn optional_token_value(value: Option<&ReconciliationResumeToken>) -> CanonicalValue {
     value.map_or(CanonicalValue::Null, token_value)
+}
+
+fn frontier_entry_value(entry: &FrontierSummaryEntryV1) -> CanonicalValue {
+    CanonicalValue::Map(vec![
+        (0, CanonicalValue::Bytes(entry.feed_id.to_vec())),
+        (1, CanonicalValue::Unsigned(entry.covered_sequence)),
+        (2, CanonicalValue::Bytes(entry.head_event_cid.to_vec())),
+        (3, optional_bytes32_value(entry.checkpoint_cid)),
+        (4, optional_bytes32_value(entry.equivocation_proof_cid)),
+    ])
+}
+
+fn frontier_cursor_value(cursor: &FrontierContinuationCursorV1) -> CanonicalValue {
+    CanonicalValue::Map(vec![
+        (0, CanonicalValue::Bytes(cursor.binding_digest.to_vec())),
+        (1, CanonicalValue::Bytes(cursor.last_feed_id.to_vec())),
+        (2, CanonicalValue::Unsigned(cursor.last_covered_sequence)),
+        (
+            3,
+            CanonicalValue::Bytes(cursor.last_head_event_cid.to_vec()),
+        ),
+        (4, CanonicalValue::Bytes(cursor.mac.to_vec())),
+    ])
+}
+
+fn optional_frontier_cursor_value(value: Option<&FrontierContinuationCursorV1>) -> CanonicalValue {
+    value.map_or(CanonicalValue::Null, frontier_cursor_value)
+}
+
+fn signed_i64_value(value: i64) -> CanonicalValue {
+    if value >= 0 {
+        CanonicalValue::Unsigned(value as u64)
+    } else {
+        CanonicalValue::Negative((-(value + 1)) as u64)
+    }
+}
+
+fn riblt_symbol_value(symbol: &RibltCodedSymbolV1) -> CanonicalValue {
+    CanonicalValue::Map(vec![
+        (0, CanonicalValue::Unsigned(u64::from(symbol.symbol_index))),
+        (1, signed_i64_value(symbol.count_delta)),
+        (2, CanonicalValue::Bytes(symbol.key_xor.to_vec())),
+        (3, CanonicalValue::Unsigned(symbol.checksum_xor)),
+    ])
 }
 
 fn parse_context(
@@ -642,6 +893,49 @@ fn parse_body(
         wire_id::RECONCILE_RESUME => Ok(ReconciliationBody::Resume {
             token: parse_token(required(map, 0, "resume.token")?, "resume.token")?,
         }),
+        wire_id::RECONCILE_FRONTIER_SUMMARY_REQUEST => {
+            let max_entries = u16::try_from(unsigned(map, 2, "frontier_req.max_entries")?)
+                .map_err(|_| ReconciliationCodecError::ResourceLimit)?;
+            Ok(ReconciliationBody::FrontierSummaryRequest {
+                after_feed_id: optional_bytes32(
+                    required(map, 0, "frontier_req.after_feed_id")?,
+                    "frontier_req.after_feed_id",
+                )?,
+                cursor: optional_frontier_cursor(
+                    required(map, 1, "frontier_req.cursor")?,
+                    "frontier_req.cursor",
+                )?,
+                max_entries,
+            })
+        }
+        wire_id::RECONCILE_FRONTIER_SUMMARY_PAGE => Ok(ReconciliationBody::FrontierSummaryPage {
+            inventory_root: bytes32(map, 0, "frontier_page.inventory_root")?,
+            entries: array(map, 1, "frontier_page.entries")?
+                .iter()
+                .map(parse_frontier_entry)
+                .collect::<Result<_, _>>()?,
+            next_cursor: optional_frontier_cursor(
+                required(map, 2, "frontier_page.next_cursor")?,
+                "frontier_page.next_cursor",
+            )?,
+        }),
+        wire_id::RECONCILE_RIBLT_SKETCH => {
+            let local_range_items = u32::try_from(unsigned(map, 3, "riblt.local_range_items")?)
+                .map_err(|_| ReconciliationCodecError::ResourceLimit)?;
+            Ok(ReconciliationBody::RibltSketch {
+                range_start: bytes32(map, 0, "riblt.range_start")?,
+                range_end: optional_bytes32(
+                    required(map, 1, "riblt.range_end")?,
+                    "riblt.range_end",
+                )?,
+                target_subtree_root: bytes32(map, 2, "riblt.target_subtree_root")?,
+                local_range_items,
+                coded_symbols: array(map, 4, "riblt.coded_symbols")?
+                    .iter()
+                    .map(parse_riblt_symbol)
+                    .collect::<Result<_, _>>()?,
+            })
+        }
         value => Err(ReconciliationCodecError::UnknownWireId(value)),
     }
 }
@@ -726,6 +1020,97 @@ fn optional_token(
     }
 }
 
+fn parse_frontier_entry(
+    value: &CanonicalValue,
+) -> Result<FrontierSummaryEntryV1, ReconciliationCodecError> {
+    let map = as_map(value, "frontier.entry")?;
+    Ok(FrontierSummaryEntryV1 {
+        feed_id: bytes32(map, 0, "frontier.entry.feed_id")?,
+        covered_sequence: unsigned(map, 1, "frontier.entry.covered_sequence")?,
+        head_event_cid: bytes32(map, 2, "frontier.entry.head_event_cid")?,
+        checkpoint_cid: optional_bytes32(
+            required(map, 3, "frontier.entry.checkpoint_cid")?,
+            "frontier.entry.checkpoint_cid",
+        )?,
+        equivocation_proof_cid: optional_bytes32(
+            required(map, 4, "frontier.entry.equivocation_proof_cid")?,
+            "frontier.entry.equivocation_proof_cid",
+        )?,
+    })
+}
+
+fn parse_frontier_cursor(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<FrontierContinuationCursorV1, ReconciliationCodecError> {
+    let map = as_map(value, field)?;
+    Ok(FrontierContinuationCursorV1 {
+        binding_digest: bytes32(map, 0, "frontier.cursor.binding")?,
+        last_feed_id: bytes32(map, 1, "frontier.cursor.last_feed_id")?,
+        last_covered_sequence: unsigned(map, 2, "frontier.cursor.last_sequence")?,
+        last_head_event_cid: bytes32(map, 3, "frontier.cursor.last_head")?,
+        mac: bytes32(map, 4, "frontier.cursor.mac")?,
+    })
+}
+
+fn optional_frontier_cursor(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<Option<FrontierContinuationCursorV1>, ReconciliationCodecError> {
+    match value {
+        CanonicalValue::Null => Ok(None),
+        _ => parse_frontier_cursor(value, field).map(Some),
+    }
+}
+
+fn parse_signed_i64(
+    map: &[(u64, CanonicalValue)],
+    key: u64,
+    field: &'static str,
+) -> Result<i64, ReconciliationCodecError> {
+    match required(map, key, field)? {
+        CanonicalValue::Unsigned(v) => {
+            i64::try_from(*v).map_err(|_| ReconciliationCodecError::InvalidField(field))
+        }
+        CanonicalValue::Negative(n) => {
+            if *n > i64::MAX as u64 {
+                Err(ReconciliationCodecError::InvalidField(field))
+            } else {
+                Ok(-1i64 - (*n as i64))
+            }
+        }
+        _ => Err(ReconciliationCodecError::InvalidField(field)),
+    }
+}
+
+fn bytes40(
+    map: &[(u64, CanonicalValue)],
+    key: u64,
+    field: &'static str,
+) -> Result<[u8; 40], ReconciliationCodecError> {
+    let bytes = byte_string(map, key, field)?;
+    if bytes.len() != 40 {
+        return Err(ReconciliationCodecError::InvalidField(field));
+    }
+    let mut output = [0; 40];
+    output.copy_from_slice(bytes);
+    Ok(output)
+}
+
+fn parse_riblt_symbol(
+    value: &CanonicalValue,
+) -> Result<RibltCodedSymbolV1, ReconciliationCodecError> {
+    let map = as_map(value, "riblt.symbol")?;
+    let symbol_index = u32::try_from(unsigned(map, 0, "riblt.symbol.index")?)
+        .map_err(|_| ReconciliationCodecError::ResourceLimit)?;
+    Ok(RibltCodedSymbolV1 {
+        symbol_index,
+        count_delta: parse_signed_i64(map, 1, "riblt.symbol.count_delta")?,
+        key_xor: bytes40(map, 2, "riblt.symbol.key_xor")?,
+        checksum_xor: unsigned(map, 3, "riblt.symbol.checksum_xor")?,
+    })
+}
+
 fn parse_disclosure(value: u64) -> Result<DisclosureClass, ReconciliationCodecError> {
     match value {
         0 => Ok(DisclosureClass::Public),
@@ -741,6 +1126,7 @@ fn parse_summary_method(
 ) -> Result<ReconciliationSummaryMethod, ReconciliationCodecError> {
     match value {
         1 => Ok(ReconciliationSummaryMethod::RadixForest256V1),
+        2 => Ok(ReconciliationSummaryMethod::RibltV1),
         _ => Err(ReconciliationCodecError::InvalidField(
             "context.summary_method",
         )),
@@ -940,6 +1326,7 @@ pub enum ReconciliationCodecError {
     ResumeNotNegotiated,
     ResumeBindingMismatch,
     InvalidResumeSequence,
+    InvalidFrontierCursor,
     NonCanonicalSet(&'static str),
     NonCanonicalMessage,
     ResourceLimit,
@@ -1281,5 +1668,92 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(actual, vector["hello_expected_hex"].as_str().unwrap());
+    }
+
+    #[test]
+    fn riblt_sketch_and_frontier_summary_round_trip_and_enforce_bounds() {
+        let mut riblt_ctx = context();
+        riblt_ctx.summary_method = ReconciliationSummaryMethod::RibltV1;
+        let sketch = bind_reconciliation_message(
+            riblt_ctx.clone(),
+            10,
+            ReconciliationBody::RibltSketch {
+                range_start: [0x10; 32],
+                range_end: Some([0x20; 32]),
+                target_subtree_root: [0x30; 32],
+                local_range_items: 128,
+                coded_symbols: vec![
+                    RibltCodedSymbolV1 {
+                        symbol_index: 0,
+                        count_delta: -3,
+                        key_xor: [0xaa; 40],
+                        checksum_xor: 0x1122_3344_5566_7788,
+                    },
+                    RibltCodedSymbolV1 {
+                        symbol_index: 1,
+                        count_delta: 4,
+                        key_xor: [0xbb; 40],
+                        checksum_xor: 0x8877_6655_4433_2211,
+                    },
+                ],
+            },
+        )
+        .unwrap();
+        let encoded_sketch = encode_reconciliation_message(&sketch).unwrap();
+        assert_eq!(
+            decode_reconciliation_message(&encoded_sketch).unwrap(),
+            sketch
+        );
+
+        let entry_a = FrontierSummaryEntryV1 {
+            feed_id: [0x01; 32],
+            covered_sequence: 5,
+            head_event_cid: [0x11; 32],
+            checkpoint_cid: Some([0x21; 32]),
+            equivocation_proof_cid: None,
+        };
+        let entry_b_conflict = FrontierSummaryEntryV1 {
+            feed_id: [0x01; 32],
+            covered_sequence: 5,
+            head_event_cid: [0x12; 32],
+            checkpoint_cid: None,
+            equivocation_proof_cid: Some([0x31; 32]),
+        };
+        let cursor = make_frontier_cursor(&context(), &entry_b_conflict, [0x99; 32]).unwrap();
+        verify_frontier_cursor(&context(), &cursor, [0x99; 32]).unwrap();
+        assert_eq!(
+            verify_frontier_cursor(&context(), &cursor, [0x98; 32]).unwrap_err(),
+            ReconciliationCodecError::InvalidFrontierCursor
+        );
+
+        let page = bind_reconciliation_message(
+            context(),
+            11,
+            ReconciliationBody::FrontierSummaryPage {
+                inventory_root: [0x44; 32],
+                entries: vec![entry_a, entry_b_conflict],
+                next_cursor: Some(cursor),
+            },
+        )
+        .unwrap();
+        assert_eq!(page.wire_id(), wire_id::RECONCILE_FRONTIER_SUMMARY_PAGE);
+        let encoded_page = encode_reconciliation_message(&page).unwrap();
+        assert_eq!(decode_reconciliation_message(&encoded_page).unwrap(), page);
+
+        let req = bind_reconciliation_message(
+            context(),
+            12,
+            ReconciliationBody::FrontierSummaryRequest {
+                after_feed_id: Some([0x01; 32]),
+                cursor: Some(cursor),
+                max_entries: 512,
+            },
+        )
+        .unwrap();
+        assert_eq!(req.wire_id(), wire_id::RECONCILE_FRONTIER_SUMMARY_REQUEST);
+        assert_eq!(
+            decode_reconciliation_message(&encode_reconciliation_message(&req).unwrap()).unwrap(),
+            req
+        );
     }
 }

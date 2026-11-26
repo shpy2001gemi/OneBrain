@@ -142,12 +142,33 @@ impl StagedArchiveBackendFactory for VNextStagedArchiveBackendFactory {
             OutboundOutbox::open(&outbox).map_err(|error| NodeError::Storage(error.to_string()))?;
         let provenance = RedbRecordProvenance::open(&provenance).map_err(NodeError::Storage)?;
 
+        let private_kql_dir = resolver
+            .owner_path(BaseStorageOwnerId::PRIVATE_KQL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let private_pomv_dir = resolver
+            .owner_path(BaseStorageOwnerId::PRIVATE_POMV)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let operational_dir = resolver
+            .owner_path(BaseStorageOwnerId::OPERATIONAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let rollout_dir = resolver
+            .owner_path(BaseStorageOwnerId::ROLLOUT)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let optional_net_dir = resolver
+            .owner_path(BaseStorageOwnerId::OPTIONAL_NETWORK)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+
         Ok(vec![
             Arc::new(ValidatedCanonicalArchiveBackend::new(sink)),
             Arc::new(ReconciliationArchiveBackend::new(reconciliation)),
             Arc::new(InventoryArchiveBackend::new(inventory)),
             Arc::new(LogicalRowsArchiveBackend::new(outbox)),
             Arc::new(LogicalRowsArchiveBackend::new(provenance)),
+            Arc::new(RolloutArchiveBackend::new(rollout_dir)),
+            Arc::new(LazyPomvArchiveBackend::new(private_pomv_dir)),
+            Arc::new(OptionalNetworkArchiveStores::new(optional_net_dir)),
+            Arc::new(LazyPrivateKqlArchiveBackend::new(private_kql_dir)),
+            Arc::new(LazyOperationalArchiveBackend::new(operational_dir)),
         ])
     }
 }
@@ -450,18 +471,39 @@ fn authority_high_water_bytes(records: &[AcceptedRecordEntry]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-/// Portable private Vault adapter. Only canonical plaintext crosses this
-/// boundary, already inside the authenticated encrypted archive stream; the
-/// target port validates it and encrypts it under the target Vault key.
+/// Portable private Vault adapter (`0x0002`).
+///
+/// Keeps `namespace == 1` 100% identical for `PrivateVault` (`base_gate_integration`
+/// compatible) and optionally snapshots/restores `namespace == 2` for `KuStore`
+/// (`ku-product-v1/journal.redb` rows when present), transitioning uncommitted
+/// `D-062` `ku_public_share_prepared_v1` share-prepare previews to
+/// `b"InvalidatedAcrossRestore"` across restore!
 pub struct VaultArchiveBackend<T> {
     vault: T,
+    ku_journal_dir: Option<std::path::PathBuf>,
 }
 
 impl<T> VaultArchiveBackend<T> {
     pub const fn new(vault: T) -> Self {
-        Self { vault }
+        Self {
+            vault,
+            ku_journal_dir: None,
+        }
+    }
+
+    pub fn with_ku_journal_dir(mut self, ku_journal_dir: impl Into<std::path::PathBuf>) -> Self {
+        self.ku_journal_dir = Some(ku_journal_dir.into());
+        self
     }
 }
+
+const KU_JOURNAL_NS2_TABLES: [(&str, u8); 5] = [
+    ("ku_private_journal_v1", 1),
+    ("ku_private_extraction_v1", 2),
+    ("ku_private_text_intake_v1", 3),
+    ("ku_private_terminal_v1", 4),
+    ("ku_public_share_prepared_v1", 5),
+];
 
 impl<T> SnapshotVerifiedBackend for VaultArchiveBackend<T>
 where
@@ -505,6 +547,14 @@ where
             });
         }
         rows.sort_by(|left, right| left.key.cmp(&right.key));
+
+        if let Some(dir) = &self.ku_journal_dir {
+            let journal_path = dir.join("journal.redb");
+            if journal_path.exists() {
+                let mut ns2_rows = snapshot_ku_journal_namespace2(&journal_path)?;
+                rows.append(&mut ns2_rows);
+            }
+        }
         Ok(rows)
     }
 
@@ -512,6 +562,20 @@ where
         if record.owner != ArchiveOwner::VAULT {
             return Err(NodeError::ArchiveCapability(
                 "Vault adapter received the wrong owner".into(),
+            ));
+        }
+        if record.namespace == 2 {
+            let Some(dir) = &self.ku_journal_dir else {
+                return Err(NodeError::ArchiveCapability(
+                    "Vault namespace 2 KuStore journal directory is not configured".into(),
+                ));
+            };
+            std::fs::create_dir_all(dir).map_err(|e| NodeError::Storage(e.to_string()))?;
+            return restore_ku_journal_namespace2(&dir.join("journal.redb"), record);
+        }
+        if record.namespace != 1 {
+            return Err(NodeError::ArchiveCapability(
+                "Vault archive row has an unknown namespace".into(),
             ));
         }
         match (record.kind, record.key.first()) {
@@ -544,6 +608,85 @@ where
             )),
         }
     }
+}
+
+fn snapshot_ku_journal_namespace2(
+    journal_path: &Path,
+) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+    use redb::ReadableTable as _;
+    let db = redb::Database::open(journal_path).map_err(|e| NodeError::Storage(e.to_string()))?;
+    let read = db
+        .begin_read()
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+    let mut out = Vec::new();
+    for (table_name, table_id) in KU_JOURNAL_NS2_TABLES {
+        let def: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::new(table_name);
+        let Ok(tbl) = read.open_table(def) else {
+            continue;
+        };
+        for entry in tbl.iter().map_err(|e| NodeError::Storage(e.to_string()))? {
+            let (k, v) = entry.map_err(|e| NodeError::Storage(e.to_string()))?;
+            let row = PortableArchiveRow {
+                table: table_id,
+                key: k.value().to_vec(),
+                value: v.value().to_vec(),
+            };
+            let key = logical_row_archive_key(row.table, &row.key);
+            let bytes = encode_logical_row_envelope(&row)?;
+            out.push(ArchiveSnapshotRecord {
+                kind: ArchiveEntryKind::VaultRecord,
+                owner: ArchiveOwner::VAULT,
+                namespace: 2,
+                key,
+                bytes,
+                required: true,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(out)
+}
+
+fn restore_ku_journal_namespace2(
+    journal_path: &Path,
+    record: &ArchiveSnapshotRecord,
+) -> Result<(), NodeError> {
+    if record.kind != ArchiveEntryKind::VaultRecord {
+        return Err(NodeError::ArchiveCapability(
+            "Vault namespace 2 row kind mismatch".into(),
+        ));
+    }
+    let row = decode_logical_row_envelope(&record.key, &record.bytes)?;
+    let Some((table_name, _)) = KU_JOURNAL_NS2_TABLES
+        .iter()
+        .find(|(_, id)| *id == row.table)
+    else {
+        return Err(NodeError::ArchiveCapability(
+            "Vault namespace 2 table ID is unknown".into(),
+        ));
+    };
+    let db = redb::Database::create(journal_path).map_err(|e| NodeError::Storage(e.to_string()))?;
+    let write = db
+        .begin_write()
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+    {
+        let def: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::new(table_name);
+        let mut tbl = write
+            .open_table(def)
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+        // D-062 uncommitted public share preparations transition to `InvalidatedAcrossRestore`
+        // so an archive restore NEVER silently preserves or auto-resumes a share consent preview!
+        let restored_value: &[u8] = if row.table == 5 {
+            b"InvalidatedAcrossRestore"
+        } else {
+            row.value.as_slice()
+        };
+        tbl.insert(row.key.as_slice(), restored_value)
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+    }
+    write
+        .commit()
+        .map_err(|e| NodeError::Storage(e.to_string()))
 }
 
 fn stored_record_kind(value: u8) -> Result<StoredRecordKind, NodeError> {
@@ -1155,7 +1298,23 @@ fn restore_records(
     backends: &[Arc<dyn SnapshotVerifiedBackend>],
     records: &[ArchiveSnapshotRecord],
 ) -> Result<(), NodeError> {
-    for record in records {
+    // Wave 6 `P8` deterministic restore phase order:
+    // 1. `0x000E` (`ROLLOUT`): conservative union of kill switches + max version fence,
+    // 2. `0x000C` (`PRIVATE_POMV`): `max(local_seq_floor, archive_highest_issued_seq)` (`NEG-P8-001`),
+    // 3. `0x000F` (`OPTIONAL_NETWORK`): `ProviderRetire` / replay floors + `reconciliation_restore_salt` rotation,
+    // 4. `0x000B` (`PRIVATE_KQL`): wrapped `LocalNeedVaultKey` & tombstones BEFORE active `StandingNeed`s,
+    // 5. `0x000D` (`OPERATIONAL`): overflow summary roots & cold tombstone epochs,
+    // 6. `0x0001..0x000A` & remaining owners (with `AuthorityHighWater` verified after `AuthorityEvent`s).
+    let mut ordered: Vec<&ArchiveSnapshotRecord> = records.iter().collect();
+    ordered.sort_by(|left, right| {
+        restore_owner_priority(left)
+            .cmp(&restore_owner_priority(right))
+            .then_with(|| (left.kind as u16).cmp(&(right.kind as u16)))
+            .then_with(|| left.namespace.cmp(&right.namespace))
+            .then_with(|| left.key.cmp(&right.key))
+    });
+
+    for record in ordered {
         let backend = backends
             .iter()
             .find(|backend| backend.owns(record.owner))
@@ -1171,6 +1330,581 @@ fn restore_records(
         backend.reconcile_after_restore()?;
     }
     Ok(())
+}
+
+fn restore_owner_priority(record: &ArchiveSnapshotRecord) -> (u8, u8) {
+    match record.owner {
+        ArchiveOwner::ROLLOUT => (0, 0),
+        ArchiveOwner::PRIVATE_POMV => (1, 0),
+        ArchiveOwner::OPTIONAL_NETWORK => (2, 0),
+        ArchiveOwner::PRIVATE_KQL => {
+            // Within 0x000B: wrapped key metadata (namespace 2) & tombstones precede active needs!
+            let sub = if record.namespace == 2 {
+                0
+            } else if is_private_kql_tombstone_row(record) {
+                1
+            } else {
+                2
+            };
+            (3, sub)
+        }
+        ArchiveOwner::OPERATIONAL => (4, 0),
+        ArchiveOwner::CANONICAL if record.kind == ArchiveEntryKind::AuthorityHighWater => (9, 1),
+        _ => (5, 0),
+    }
+}
+
+fn is_private_kql_tombstone_row(record: &ArchiveSnapshotRecord) -> bool {
+    if let Ok(row) = decode_logical_row_envelope(&record.key, &record.bytes) {
+        if row.table == 1 {
+            // In `ku_kql::vnext_private_need::PrivateNeedRecord`, field 3 (`lifecycle`) is
+            // `Canceled` (2) or `Retired` (3) with `Null` bundle for tombstones.
+            if let Ok(ku_core::foundation::CanonicalValue::Map(fields)) =
+                ku_core::foundation::decode_canonical(
+                    &row.value,
+                    ku_core::foundation::ResourceProfile::ObjectV1,
+                )
+            {
+                return fields.iter().any(|(k, v)| {
+                    *k == 3 && matches!(v, ku_core::foundation::CanonicalValue::Unsigned(2 | 3))
+                });
+            }
+        }
+    }
+    false
+}
+
+// ─── Wave 6 `P8` Archive Owner Adapters (`0x000B..0x000F`) ───────────────────
+
+/// `0x000E` (`ArchiveOwner::ROLLOUT`) adapter enforcing conservative union of kill switches
+/// and `max(local_version_fence, archive_version_fence)`.
+pub struct RolloutArchiveBackend {
+    rollout_dir: std::path::PathBuf,
+}
+
+impl RolloutArchiveBackend {
+    pub const FILE_NAME: &'static str = "vnext_extended_rollout.cbor";
+
+    pub fn new(rollout_dir: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            rollout_dir: rollout_dir.into(),
+        }
+    }
+}
+
+impl SnapshotVerifiedBackend for RolloutArchiveBackend {
+    fn owns(&self, owner: ArchiveOwner) -> bool {
+        owner == ArchiveOwner::ROLLOUT
+    }
+
+    fn bounded_snapshot(&self) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+        let path = self.rollout_dir.join(Self::FILE_NAME);
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let raw = std::fs::read(&path).map_err(|e| NodeError::Storage(e.to_string()))?;
+        let cfg =
+            crate::vnext_extended_config::VNextExtendedFeatureConfig::decode_canonical_bytes(&raw)
+                .map_err(|e| NodeError::ArchiveCapability(e.to_string()))?;
+        let bytes = cfg
+            .encode_canonical_bytes()
+            .map_err(|e| NodeError::ArchiveCapability(e.to_string()))?;
+        Ok(vec![ArchiveSnapshotRecord {
+            kind: ArchiveEntryKind::RolloutRecord,
+            owner: ArchiveOwner::ROLLOUT,
+            namespace: 1,
+            key: b"vnext-extended-rollout-v1".to_vec(),
+            bytes,
+            required: true,
+        }])
+    }
+
+    fn restore_validated(&self, record: &ArchiveSnapshotRecord) -> Result<(), NodeError> {
+        if record.owner != ArchiveOwner::ROLLOUT
+            || record.kind != ArchiveEntryKind::RolloutRecord
+            || record.key != b"vnext-extended-rollout-v1"
+        {
+            return Err(NodeError::ArchiveCapability(
+                "0x000E rollout record key/kind invalid".into(),
+            ));
+        }
+        let incoming =
+            crate::vnext_extended_config::VNextExtendedFeatureConfig::decode_canonical_bytes(
+                &record.bytes,
+            )
+            .map_err(|e| NodeError::ArchiveCapability(e.to_string()))?;
+        std::fs::create_dir_all(&self.rollout_dir)
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+        let path = self.rollout_dir.join(Self::FILE_NAME);
+        let merged = if path.exists() {
+            let local_bytes =
+                std::fs::read(&path).map_err(|e| NodeError::Storage(e.to_string()))?;
+            let local =
+                crate::vnext_extended_config::VNextExtendedFeatureConfig::decode_canonical_bytes(
+                    &local_bytes,
+                )
+                .map_err(|e| NodeError::Storage(e.to_string()))?;
+            local.merge_conservative_restore(&incoming)
+        } else {
+            incoming
+        };
+        let encoded = merged
+            .encode_canonical_bytes()
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+        std::fs::write(&path, encoded).map_err(|e| NodeError::Storage(e.to_string()))
+    }
+}
+
+/// Portable state persisted under `0x000F` (`ArchiveOwner::OPTIONAL_NETWORK`):
+/// `ProviderRetire` generation floors, `RoutePacketReplayGuard` & `CognitiveTaskReplayGuard`
+/// tombstones, and `reconciliation_restore_salt` (rotated deterministically on every restore!).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OptionalNetworkFloorSnapshot {
+    pub provider_retire_floors: Vec<([u8; 32], u64)>,
+    pub route_packet_replay_tags: Vec<([u8; 32], u64)>,
+    pub cognitive_task_replay_entries: Vec<([u8; 32], [u8; 32])>,
+    pub reconciliation_restore_salt: [u8; 32],
+}
+
+impl OptionalNetworkFloorSnapshot {
+    pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, NodeError> {
+        use ku_core::foundation::{encode_canonical, CanonicalValue, ResourceProfile};
+        let retires = self
+            .provider_retire_floors
+            .iter()
+            .map(|(tuple_digest, floor)| {
+                CanonicalValue::Array(vec![
+                    CanonicalValue::Bytes(tuple_digest.to_vec()),
+                    CanonicalValue::Unsigned(*floor),
+                ])
+            })
+            .collect();
+        let routes = self
+            .route_packet_replay_tags
+            .iter()
+            .map(|(tag, exp)| {
+                CanonicalValue::Array(vec![
+                    CanonicalValue::Bytes(tag.to_vec()),
+                    CanonicalValue::Unsigned(*exp),
+                ])
+            })
+            .collect();
+        let tasks = self
+            .cognitive_task_replay_entries
+            .iter()
+            .map(|(tid, commit)| {
+                CanonicalValue::Array(vec![
+                    CanonicalValue::Bytes(tid.to_vec()),
+                    CanonicalValue::Bytes(commit.to_vec()),
+                ])
+            })
+            .collect();
+        let root = CanonicalValue::Map(vec![
+            (0, CanonicalValue::Unsigned(1)),
+            (1, CanonicalValue::Array(retires)),
+            (2, CanonicalValue::Array(routes)),
+            (3, CanonicalValue::Array(tasks)),
+            (
+                4,
+                CanonicalValue::Bytes(self.reconciliation_restore_salt.to_vec()),
+            ),
+        ]);
+        encode_canonical(&root, ResourceProfile::ObjectV1)
+            .map_err(|e| NodeError::ArchiveCapability(format!("{e:?}")))
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, NodeError> {
+        use ku_core::foundation::{decode_canonical, CanonicalValue, ResourceProfile};
+        let val = decode_canonical(bytes, ResourceProfile::ObjectV1)
+            .map_err(|e| NodeError::ArchiveCapability(format!("{e:?}")))?;
+        let CanonicalValue::Map(fields) = val else {
+            return Err(NodeError::ArchiveCapability("0x000F map".into()));
+        };
+        if fields.len() != 5 {
+            return Err(NodeError::ArchiveCapability("0x000F field count".into()));
+        }
+        let parse_b32_u64 = |v: &CanonicalValue| -> Result<Vec<([u8; 32], u64)>, NodeError> {
+            let CanonicalValue::Array(arr) = v else {
+                return Err(NodeError::ArchiveCapability("0x000F array".into()));
+            };
+            let mut out = Vec::with_capacity(arr.len());
+            for item in arr {
+                let CanonicalValue::Array(pair) = item else {
+                    return Err(NodeError::ArchiveCapability("0x000F pair".into()));
+                };
+                if pair.len() != 2 {
+                    return Err(NodeError::ArchiveCapability("0x000F pair len".into()));
+                }
+                let CanonicalValue::Bytes(b) = &pair[0] else {
+                    return Err(NodeError::ArchiveCapability("0x000F bytes".into()));
+                };
+                let b32: [u8; 32] = b
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| NodeError::ArchiveCapability("0x000F 32B".into()))?;
+                let CanonicalValue::Unsigned(u) = pair[1] else {
+                    return Err(NodeError::ArchiveCapability("0x000F u64".into()));
+                };
+                out.push((b32, u));
+            }
+            Ok(out)
+        };
+        let CanonicalValue::Array(task_arr) = &fields[3].1 else {
+            return Err(NodeError::ArchiveCapability("0x000F tasks".into()));
+        };
+        let mut cognitive_task_replay_entries = Vec::with_capacity(task_arr.len());
+        for item in task_arr {
+            let CanonicalValue::Array(pair) = item else {
+                return Err(NodeError::ArchiveCapability("0x000F task pair".into()));
+            };
+            if pair.len() != 2 {
+                return Err(NodeError::ArchiveCapability("0x000F task pair len".into()));
+            }
+            let CanonicalValue::Bytes(a) = &pair[0] else {
+                return Err(NodeError::ArchiveCapability("0x000F task id".into()));
+            };
+            let CanonicalValue::Bytes(b) = &pair[1] else {
+                return Err(NodeError::ArchiveCapability("0x000F task commit".into()));
+            };
+            let tid: [u8; 32] = a
+                .as_slice()
+                .try_into()
+                .map_err(|_| NodeError::ArchiveCapability("0x000F task id len".into()))?;
+            let commit: [u8; 32] = b
+                .as_slice()
+                .try_into()
+                .map_err(|_| NodeError::ArchiveCapability("0x000F commit len".into()))?;
+            cognitive_task_replay_entries.push((tid, commit));
+        }
+        let CanonicalValue::Bytes(salt_b) = &fields[4].1 else {
+            return Err(NodeError::ArchiveCapability("0x000F salt".into()));
+        };
+        let reconciliation_restore_salt: [u8; 32] = salt_b
+            .as_slice()
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("0x000F salt len".into()))?;
+        Ok(Self {
+            provider_retire_floors: parse_b32_u64(&fields[1].1)?,
+            route_packet_replay_tags: parse_b32_u64(&fields[2].1)?,
+            cognitive_task_replay_entries,
+            reconciliation_restore_salt,
+        })
+    }
+
+    pub fn rotated_for_restore(&self, restore_entropy_binding: &[u8]) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:reconciliation-restore-salt:1\0");
+        hasher.update(&self.reconciliation_restore_salt);
+        hasher.update(restore_entropy_binding);
+        let mut next = self.clone();
+        next.reconciliation_restore_salt = *hasher.finalize().as_bytes();
+        next
+    }
+}
+
+/// `0x000F` (`ArchiveOwner::OPTIONAL_NETWORK`) archive adapter.
+pub struct OptionalNetworkArchiveStores {
+    optional_net_dir: std::path::PathBuf,
+}
+
+impl OptionalNetworkArchiveStores {
+    pub const FILE_NAME: &'static str = "vnext_optional_net_floors.cbor";
+
+    pub fn new(optional_net_dir: impl Into<std::path::PathBuf>) -> Self {
+        Self {
+            optional_net_dir: optional_net_dir.into(),
+        }
+    }
+
+    pub fn write_snapshot(&self, snapshot: &OptionalNetworkFloorSnapshot) -> Result<(), NodeError> {
+        std::fs::create_dir_all(&self.optional_net_dir)
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+        let bytes = snapshot.to_canonical_bytes()?;
+        std::fs::write(self.optional_net_dir.join(Self::FILE_NAME), bytes)
+            .map_err(|e| NodeError::Storage(e.to_string()))
+    }
+
+    pub fn read_snapshot(&self) -> Result<Option<OptionalNetworkFloorSnapshot>, NodeError> {
+        let path = self.optional_net_dir.join(Self::FILE_NAME);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&path).map_err(|e| NodeError::Storage(e.to_string()))?;
+        OptionalNetworkFloorSnapshot::from_canonical_bytes(&bytes).map(Some)
+    }
+}
+
+impl SnapshotVerifiedBackend for OptionalNetworkArchiveStores {
+    fn owns(&self, owner: ArchiveOwner) -> bool {
+        owner == ArchiveOwner::OPTIONAL_NETWORK
+    }
+
+    fn bounded_snapshot(&self) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+        let Some(snap) = self.read_snapshot()? else {
+            return Ok(Vec::new());
+        };
+        Ok(vec![ArchiveSnapshotRecord {
+            kind: ArchiveEntryKind::OperationalRecord,
+            owner: ArchiveOwner::OPTIONAL_NETWORK,
+            namespace: 1,
+            key: b"optional-network-floors-v1".to_vec(),
+            bytes: snap.to_canonical_bytes()?,
+            required: true,
+        }])
+    }
+
+    fn restore_validated(&self, record: &ArchiveSnapshotRecord) -> Result<(), NodeError> {
+        if record.owner != ArchiveOwner::OPTIONAL_NETWORK
+            || record.kind != ArchiveEntryKind::OperationalRecord
+            || record.key != b"optional-network-floors-v1"
+        {
+            return Err(NodeError::ArchiveCapability(
+                "0x000F optional network row key/kind invalid".into(),
+            ));
+        }
+        let incoming = OptionalNetworkFloorSnapshot::from_canonical_bytes(&record.bytes)?;
+        // Merge retire floors monotonically & rotate `reconciliation_restore_salt`!
+        let mut merged = if let Some(local) = self.read_snapshot()? {
+            let mut retire_map: BTreeMap<[u8; 32], u64> =
+                local.provider_retire_floors.into_iter().collect();
+            for (k, v) in incoming.provider_retire_floors {
+                retire_map
+                    .entry(k)
+                    .and_modify(|cur| *cur = (*cur).max(v))
+                    .or_insert(v);
+            }
+            let mut route_map: BTreeMap<[u8; 32], u64> =
+                local.route_packet_replay_tags.into_iter().collect();
+            for (k, v) in incoming.route_packet_replay_tags {
+                route_map
+                    .entry(k)
+                    .and_modify(|cur| *cur = (*cur).max(v))
+                    .or_insert(v);
+            }
+            let mut task_map: BTreeMap<[u8; 32], [u8; 32]> =
+                local.cognitive_task_replay_entries.into_iter().collect();
+            for (tid, commit) in incoming.cognitive_task_replay_entries {
+                if let Some(existing) = task_map.get(&tid) {
+                    if *existing != commit {
+                        return Err(NodeError::ArchiveCapability(
+                            "0x000F cognitive task replay conflict".into(),
+                        ));
+                    }
+                } else {
+                    task_map.insert(tid, commit);
+                }
+            }
+            OptionalNetworkFloorSnapshot {
+                provider_retire_floors: retire_map.into_iter().collect(),
+                route_packet_replay_tags: route_map.into_iter().collect(),
+                cognitive_task_replay_entries: task_map.into_iter().collect(),
+                reconciliation_restore_salt: incoming.reconciliation_restore_salt,
+            }
+        } else {
+            incoming
+        };
+        let binding = self.optional_net_dir.to_string_lossy();
+        merged = merged.rotated_for_restore(binding.as_bytes());
+        self.write_snapshot(&merged)
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+struct LazyPomvArchiveBackend {
+    dir: std::path::PathBuf,
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl LazyPomvArchiveBackend {
+    fn new(dir: std::path::PathBuf) -> Self {
+        Self { dir }
+    }
+
+    fn open_adapter(
+        &self,
+    ) -> Result<
+        LogicalRowsArchiveBackend<crate::vnext_distributed_pomv::PomvArchiveStores>,
+        NodeError,
+    > {
+        let publisher = Arc::new(
+            crate::vnext_distributed_pomv::PublicUseEvidencePublisher::open(&self.dir)
+                .map_err(|e| NodeError::Storage(e.to_string()))?,
+        );
+        let policies = crate::vnext_route_authority::LocalPolicyRegistry::new(std::iter::empty())
+            .map_err(|e| NodeError::Storage(e.to_string()))?;
+        let runtime = Arc::new(
+            crate::vnext_distributed_pomv::DistributedPomvRuntime::open(&self.dir, 1_024, policies)
+                .map_err(|e| NodeError::Storage(e.to_string()))?,
+        );
+        Ok(LogicalRowsArchiveBackend::new(
+            crate::vnext_distributed_pomv::PomvArchiveStores::new(publisher, runtime),
+        ))
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl SnapshotVerifiedBackend for LazyPomvArchiveBackend {
+    fn owns(&self, owner: ArchiveOwner) -> bool {
+        owner == ArchiveOwner::PRIVATE_POMV
+    }
+
+    fn bounded_snapshot(&self) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+        if !self.dir.join("vnext_public_use_sender.redb").exists()
+            && !self.dir.join("vnext_distributed_pomv.redb").exists()
+        {
+            return Ok(Vec::new());
+        }
+        self.open_adapter()?.bounded_snapshot()
+    }
+
+    fn restore_validated(&self, record: &ArchiveSnapshotRecord) -> Result<(), NodeError> {
+        self.open_adapter()?.restore_validated(record)
+    }
+
+    fn reconcile_after_restore(&self) -> Result<(), NodeError> {
+        if !self.dir.join("vnext_public_use_sender.redb").exists()
+            && !self.dir.join("vnext_distributed_pomv.redb").exists()
+        {
+            return Ok(());
+        }
+        self.open_adapter()?.reconcile_after_restore()
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+struct LazyPrivateKqlArchiveBackend {
+    dir: std::path::PathBuf,
+    vault_key_override: Option<[u8; 32]>,
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl LazyPrivateKqlArchiveBackend {
+    const WRAPPED_KEY_FILE: &'static str = "wrapped_local_need_vault_key.bin";
+
+    fn new(dir: std::path::PathBuf) -> Self {
+        Self {
+            dir,
+            vault_key_override: None,
+        }
+    }
+
+    fn derive_generation_key(&self) -> ku_kql::vnext_private_need::LocalNeedVaultKey {
+        if let Some(arr) = self.vault_key_override {
+            return ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes(arr);
+        }
+        let wrapped_path = self.dir.join(Self::WRAPPED_KEY_FILE);
+        if let Ok(bytes) = std::fs::read(&wrapped_path) {
+            if let Ok(arr) = <[u8; 32]>::try_from(bytes.as_slice()) {
+                if arr != [0; 32] {
+                    return ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes(arr);
+                }
+            }
+        }
+        let derived = blake3::derive_key(
+            "onebrain:vnext:staged-private-kql-key:1",
+            self.dir.to_string_lossy().as_bytes(),
+        );
+        ku_kql::vnext_private_need::LocalNeedVaultKey::from_bytes(derived)
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl SnapshotVerifiedBackend for LazyPrivateKqlArchiveBackend {
+    fn owns(&self, owner: ArchiveOwner) -> bool {
+        owner == ArchiveOwner::PRIVATE_KQL
+    }
+
+    fn bounded_snapshot(&self) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+        if !self.dir.join("vnext_private_need_vault.redb").exists()
+            && !self.dir.join("vnext_distributed_kql.redb").exists()
+        {
+            return Ok(Vec::new());
+        }
+        let kql = crate::vnext_distributed_kql::DistributedKqlRuntime::open(
+            &self.dir,
+            self.derive_generation_key(),
+        )
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+        let mut rows = LogicalRowsArchiveBackend::new(kql).bounded_snapshot()?;
+        let wrapped_path = self.dir.join(Self::WRAPPED_KEY_FILE);
+        if wrapped_path.exists() {
+            let key_bytes =
+                std::fs::read(&wrapped_path).map_err(|e| NodeError::Storage(e.to_string()))?;
+            if key_bytes.len() == 32 {
+                rows.push(ArchiveSnapshotRecord {
+                    kind: ArchiveEntryKind::PrivateNeedRecord,
+                    owner: ArchiveOwner::PRIVATE_KQL,
+                    namespace: 2,
+                    key: b"wrapped-local-need-vault-key-v1".to_vec(),
+                    bytes: key_bytes,
+                    required: true,
+                });
+            }
+        }
+        Ok(rows)
+    }
+
+    fn restore_validated(&self, record: &ArchiveSnapshotRecord) -> Result<(), NodeError> {
+        if record.namespace == 2 && record.key == b"wrapped-local-need-vault-key-v1" {
+            if record.bytes.len() != 32 || record.bytes.as_slice() == [0; 32] {
+                return Err(NodeError::ArchiveCapability(
+                    "invalid wrapped LocalNeedVaultKey".into(),
+                ));
+            }
+            std::fs::create_dir_all(&self.dir).map_err(|e| NodeError::Storage(e.to_string()))?;
+            return std::fs::write(self.dir.join(Self::WRAPPED_KEY_FILE), &record.bytes)
+                .map_err(|e| NodeError::Storage(e.to_string()));
+        }
+        let kql = crate::vnext_distributed_kql::DistributedKqlRuntime::open(
+            &self.dir,
+            self.derive_generation_key(),
+        )
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+        LogicalRowsArchiveBackend::new(kql).restore_validated(record)
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+struct LazyOperationalArchiveBackend {
+    dir: std::path::PathBuf,
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl LazyOperationalArchiveBackend {
+    fn new(dir: std::path::PathBuf) -> Self {
+        Self { dir }
+    }
+}
+
+#[cfg(feature = "vnext-network-runtime")]
+impl SnapshotVerifiedBackend for LazyOperationalArchiveBackend {
+    fn owns(&self, owner: ArchiveOwner) -> bool {
+        owner == ArchiveOwner::OPERATIONAL
+    }
+
+    fn bounded_snapshot(&self) -> Result<Vec<ArchiveSnapshotRecord>, NodeError> {
+        let db_path = self.dir.join("vnext_operational_compaction.redb");
+        if !db_path.exists() {
+            return Ok(Vec::new());
+        }
+        let store = crate::vnext_operational_compaction::OperationalCompactionStore::open(
+            &db_path,
+            crate::vnext_operational_compaction::OperationalCompactionPolicy::default(),
+        )
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+        LogicalRowsArchiveBackend::new(store).bounded_snapshot()
+    }
+
+    fn restore_validated(&self, record: &ArchiveSnapshotRecord) -> Result<(), NodeError> {
+        std::fs::create_dir_all(&self.dir).map_err(|e| NodeError::Storage(e.to_string()))?;
+        let db_path = self.dir.join("vnext_operational_compaction.redb");
+        let store = crate::vnext_operational_compaction::OperationalCompactionStore::open(
+            &db_path,
+            crate::vnext_operational_compaction::OperationalCompactionPolicy::default(),
+        )
+        .map_err(|e| NodeError::Storage(e.to_string()))?;
+        LogicalRowsArchiveBackend::new(store).restore_validated(record)
+    }
 }
 
 struct CachedSnapshot {

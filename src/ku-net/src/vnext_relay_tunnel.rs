@@ -28,7 +28,8 @@ use onebrain_protocol::{
     decode_relay_control, encode_relay_control, relay_control_signing_bytes,
     relay_control_signing_parts, RelayControlSignatureRoleV1, RelayControlV1,
     RelayOuterClientHelloV1, RelayPossessionProofV1, RelayTransportV1, RelayWireFrameV1,
-    RelayWireKindV1, MAX_RELAY_CONTROL_VALIDITY_SECONDS, MAX_RELAY_WIRE_PAYLOAD_BYTES,
+    RelayWireKindV1, MAX_RELAY_CONTROL_VALIDITY_SECONDS, MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES,
+    MAX_RELAY_WIRE_PAYLOAD_BYTES,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -896,7 +897,7 @@ where
         .await
         .map_err(|_| OuterRelayIoError::Closed)?;
     let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_RELAY_WIRE_PAYLOAD_BYTES + 26 {
+    if length == 0 || length > MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES + 26 {
         return Err(OuterRelayIoError::InvalidFrame);
     }
     let mut bytes = vec![0; length];

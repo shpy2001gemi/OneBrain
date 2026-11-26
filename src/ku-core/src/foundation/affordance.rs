@@ -1,5 +1,7 @@
 //! Explicit, provenance-preserving Knowledge Affordance objects.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use super::canonical::{canonicalize_set_by_key, CanonicalValue, ResourceProfile};
 use super::object::{
     DisclosureClass, KnowledgeObjectEnvelope, ObjectError, ObjectKind, ObjectReference,
@@ -7,12 +9,16 @@ use super::object::{
 };
 use super::receptor::StatementLocator;
 use super::schema_registry::OBJECT_KIND_KNOWLEDGE_AFFORDANCE;
-use super::semantic::{ConceptCcid, SemanticError, SemanticFrameSet};
+use super::semantic::{
+    ConceptCcid, ConstraintExpression, LiteralValue, Modality, SemanticError, SemanticFrameSet,
+    StatementFrame, StatementId, StatementQualifiers, TermRef, TypedConstraint,
+};
 
 pub const KNOWLEDGE_AFFORDANCE_KIND: ObjectKind = ObjectKind(OBJECT_KIND_KNOWLEDGE_AFFORDANCE);
 pub const AFFORDANCE_PROFILE_MAJOR: u64 = 1;
 pub const AFFORDANCE_PROFILE_MINOR: u64 = 0;
 pub const MAX_AFFORDANCE_MEMBERS: usize = 4_096;
+pub const VIRTUAL_SFS_AFFORDANCE_PROFILE: &str = "virtual-sfs-affordance/1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AcceptedInput {
@@ -477,12 +483,199 @@ impl From<super::canonical::CanonicalError> for AffordanceError {
     }
 }
 
+/// Deterministic virtual `KnowledgeAffordance` projection (`virtual-sfs-affordance/1`)
+/// over a saved Knowledge Unit's `SemanticFrameSet` (consumed by P3 active discovery
+/// and composition engines when an explicit `KnowledgeAffordance` object has not yet
+/// been authored).
+///
+/// Extracts:
+/// - deduplicated statement `operator_or_predicate` CCIDs as `offered_roles`,
+/// - `QuantityLiteral` / `DimensionVector` / `Range` statements as `semantics.properties`
+///   (attaching explicit `ConstraintExpression::Dimension` constraints for quantity terms),
+/// - non-default `StatementQualifiers` statements as `semantics.operating_conditions`.
+pub fn project_virtual_sfs_affordance(
+    ku_ref: ObjectReference,
+    semantic: &SemanticFrameSet,
+) -> Result<KnowledgeAffordance, AffordanceError> {
+    if ku_ref.cid == [0; 32] || semantic.statements.is_empty() {
+        return Err(AffordanceError::InvalidField(
+            "virtual_sfs_affordance.input",
+        ));
+    }
+
+    let mut stripped = semantic.clone();
+    for stmt in &mut stripped.statements {
+        stmt.qualifiers.source_spans.clear();
+    }
+    let normalized = stripped.alpha_normalized()?;
+
+    let mut role_set = BTreeSet::new();
+    let mut property_ids = BTreeSet::new();
+    let mut condition_ids = BTreeSet::new();
+
+    for stmt in &normalized.statements {
+        role_set.insert(stmt.operator_or_predicate);
+        if statement_has_typed_property(stmt) {
+            property_ids.insert(stmt.statement_id);
+        }
+        if statement_has_operating_condition(&stmt.qualifiers) {
+            condition_ids.insert(stmt.statement_id);
+        }
+    }
+
+    let properties = build_projected_subset(&normalized, &property_ids, true)?;
+    let operating_conditions = build_projected_subset(&normalized, &condition_ids, false)?;
+    let empty = SemanticFrameSet {
+        statements: Vec::new(),
+    };
+
+    let affordance = KnowledgeAffordance {
+        sources: vec![ku_ref.clone()],
+        offered_roles: role_set.into_iter().collect(),
+        accepted_inputs: Vec::new(),
+        semantics: AffordanceSemantics {
+            preconditions: empty.clone(),
+            outputs: normalized,
+            effects: empty.clone(),
+            properties,
+            invariants: empty.clone(),
+            operating_conditions,
+            limits: empty,
+        },
+        abstraction_patterns: Vec::new(),
+        origin: AffordanceOrigin::Derived {
+            derivation_engine: virtual_affordance_ref(
+                b"onebrain:vnext:virtual-sfs-affordance:engine:1\0",
+            ),
+            derivation_rule: virtual_affordance_ref(
+                b"onebrain:vnext:virtual-sfs-affordance:rule:1\0",
+            ),
+            inputs: vec![ku_ref],
+        },
+    };
+    affordance.canonical_payload()?;
+    Ok(affordance)
+}
+
+fn virtual_affordance_ref(domain: &[u8]) -> ObjectReference {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(domain);
+    hasher.update(VIRTUAL_SFS_AFFORDANCE_PROFILE.as_bytes());
+    ObjectReference::new(0, *hasher.finalize().as_bytes())
+}
+
+fn term_has_quantity(term: &TermRef) -> bool {
+    matches!(term, TermRef::Literal(LiteralValue::Quantity(_)))
+}
+
+fn constraint_has_quantity_or_dimension(constraint: &TypedConstraint) -> bool {
+    match &constraint.expression {
+        ConstraintExpression::Compare { left, right, .. } => {
+            term_has_quantity(left) || term_has_quantity(right)
+        }
+        ConstraintExpression::Dimension { .. } | ConstraintExpression::Range { .. } => true,
+    }
+}
+
+fn statement_has_typed_property(stmt: &StatementFrame) -> bool {
+    stmt.arguments.iter().any(term_has_quantity)
+        || stmt
+            .constraints
+            .iter()
+            .any(constraint_has_quantity_or_dimension)
+        || stmt.qualifiers.tolerance.is_some()
+}
+
+fn statement_has_operating_condition(qualifiers: &StatementQualifiers) -> bool {
+    qualifiers.negated
+        || qualifiers.modality != Modality::Asserted
+        || qualifiers.condition.is_some()
+        || qualifiers.time.is_some()
+        || qualifiers.location.is_some()
+        || qualifiers.perspective.is_some()
+        || qualifiers.tolerance.is_some()
+}
+
+fn build_projected_subset(
+    normalized: &SemanticFrameSet,
+    initial_ids: &BTreeSet<StatementId>,
+    attach_dimension_constraints: bool,
+) -> Result<SemanticFrameSet, AffordanceError> {
+    if initial_ids.is_empty() {
+        return Ok(SemanticFrameSet {
+            statements: Vec::new(),
+        });
+    }
+    let stmt_map: BTreeMap<StatementId, &StatementFrame> = normalized
+        .statements
+        .iter()
+        .map(|s| (s.statement_id, s))
+        .collect();
+
+    // Transitively include any referenced `qualifiers.condition` statements so
+    // `SemanticFrameSet::alpha_normalized()` never fails on dangling statement IDs.
+    let mut included = initial_ids.clone();
+    let mut queue: Vec<StatementId> = initial_ids.iter().copied().collect();
+    while let Some(id) = queue.pop() {
+        if let Some(stmt) = stmt_map.get(&id) {
+            if let Some(cond_id) = stmt.qualifiers.condition {
+                if included.insert(cond_id) {
+                    queue.push(cond_id);
+                }
+            }
+        }
+    }
+
+    let id_remap: BTreeMap<StatementId, StatementId> = included
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(new_idx, old_id)| (old_id, StatementId(new_idx as u32)))
+        .collect();
+
+    let mut statements = Vec::with_capacity(included.len());
+    for old_id in &included {
+        let Some(orig) = stmt_map.get(old_id) else {
+            continue;
+        };
+        let mut cloned = (*orig).clone();
+        cloned.statement_id = id_remap[old_id];
+        if let Some(cond_id) = cloned.qualifiers.condition {
+            cloned.qualifiers.condition = id_remap.get(&cond_id).copied();
+        }
+        if attach_dimension_constraints && initial_ids.contains(old_id) {
+            let mut extra = Vec::new();
+            for arg in &cloned.arguments {
+                if let TermRef::Literal(LiteralValue::Quantity(q)) = arg {
+                    let dim_constraint = TypedConstraint {
+                        expression: ConstraintExpression::Dimension {
+                            term: arg.clone(),
+                            expected: q.source_unit.dimension,
+                        },
+                        required: true,
+                    };
+                    if !cloned.constraints.contains(&dim_constraint)
+                        && !extra.contains(&dim_constraint)
+                    {
+                        extra.push(dim_constraint);
+                    }
+                }
+            }
+            cloned.constraints.extend(extra);
+        }
+        statements.push(cloned);
+    }
+
+    Ok(SemanticFrameSet { statements }.alpha_normalized()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::foundation::{
-        decode_knowledge_object, ConstraintExpression, KnownObjectKind, StatementFrame,
-        StatementId, StatementQualifiers, TermRef, TypedConstraint,
+        decode_knowledge_object, ConstraintExpression, DimensionVector, ExactRatio,
+        KnownObjectKind, QuantityLiteral, SourceSpan, StatementFrame, StatementId,
+        StatementQualifiers, TermRef, TypedConstraint, UnitRef,
     };
 
     fn concept(byte: u8) -> ConceptCcid {
@@ -626,5 +819,73 @@ mod tests {
             KnowledgeAffordance::from_canonical_payload(&noncanonical).unwrap_err(),
             AffordanceError::NonCanonicalValue
         );
+    }
+
+    #[test]
+    fn project_virtual_sfs_affordance_extracts_roles_typed_properties_and_operating_conditions() {
+        let ku = reference(42);
+        let qty = QuantityLiteral {
+            value: ExactRatio::new(100, 1).unwrap(),
+            source_unit: UnitRef {
+                unit: concept(6),
+                dimension: DimensionVector::new([0, 0, 0, 0, 1, 0, 0]),
+                scale_to_base: ExactRatio::new(1, 1).unwrap(),
+                offset_to_base: ExactRatio::new(27315, 100).unwrap(),
+            },
+        };
+        let cond_stmt = StatementFrame {
+            statement_id: StatementId(10),
+            operator_or_predicate: concept(3),
+            arguments: vec![TermRef::Concept(concept(4))],
+            constraints: vec![],
+            qualifiers: StatementQualifiers {
+                source_spans: vec![SourceSpan {
+                    source: reference(1),
+                    start: 0,
+                    end: 12,
+                }],
+                ..StatementQualifiers::default()
+            },
+        };
+        let main_stmt = StatementFrame {
+            statement_id: StatementId(20),
+            operator_or_predicate: concept(2),
+            arguments: vec![
+                TermRef::Concept(concept(1)),
+                TermRef::Literal(LiteralValue::Quantity(qty)),
+            ],
+            constraints: vec![],
+            qualifiers: StatementQualifiers {
+                condition: Some(StatementId(10)),
+                source_spans: vec![SourceSpan {
+                    source: reference(1),
+                    start: 13,
+                    end: 35,
+                }],
+                ..StatementQualifiers::default()
+            },
+        };
+        let sfs = SemanticFrameSet {
+            statements: vec![cond_stmt, main_stmt],
+        };
+
+        let projected = project_virtual_sfs_affordance(ku.clone(), &sfs).unwrap();
+        assert!(projected.supports_role(concept(2)));
+        assert!(projected.supports_role(concept(3)));
+        assert_eq!(projected.sources, vec![ku.clone()]);
+        assert_eq!(projected.semantics.properties.statements.len(), 2);
+        assert!(projected.semantics.properties.statements.iter().any(|s| s
+            .constraints
+            .iter()
+            .any(|c| matches!(
+                c.expression,
+                ConstraintExpression::Dimension { expected, .. }
+                if expected == DimensionVector::new([0, 0, 0, 0, 1, 0, 0])
+            ))));
+        assert_eq!(projected.semantics.operating_conditions.statements.len(), 2);
+        assert!(matches!(
+            &projected.origin,
+            AffordanceOrigin::Derived { inputs, .. } if inputs == &vec![ku]
+        ));
     }
 }

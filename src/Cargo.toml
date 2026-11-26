@@ -2,11 +2,13 @@
 members = [
     # ── Core Libraries ──
     "ku-core",          # vNext foundation (canonical objects, semantic frames, vault) + legacy Core DNA/OBT
+    "onebrain-core",    # ARCH-10 sync, tokio-free canonical KU & composition engine shared by node and mobile
     "ku-net",           # vNext QUIC session/reconciliation (feature-gated) + legacy DHT/SWIM/gossip
     "ku-kql",           # Legacy text KQL (local read-only surface) + typed vNext KQL library
     "ku-ai",            # AI backend (Ollama integration)
     "ku-encoder",       # Text → KU encoding pipeline
     "ku-mediator",      # User intent → AI → response pipeline
+    "onebrain-obt",     # Isolated post-commit vNext OBT benefit & accepted-work economy (P5, FW-07)
 
     # ── Shared Protocol ──
     "onebrain-protocol",# Shared P2P message types (node ↔ seed)
@@ -19,6 +21,8 @@ members = [
     "onebrain-cli",     # Interface: CLI REPL (Phase 0 ✅)
     "onebrain-api",     # Interface: Local REST + WebSocket API (Phase 1)
     "onebrain-desktop", # Interface: Tauri 2.x Desktop App (Phase 2)
+    "onebrain-bot",     # Restricted BotPrincipal DMZ chat adapter (P10, PUBLIC-only + quarantine)
+    "onebrain-glasses", # Paired companion HUD client with <=40ms doff-lock & zero at-rest secrets (P10)
     "onebrain-mobile-core", # Autonomous mobile runtime profile and bootstrap state
     "onebrain-mobile-bridge", # Narrow C ABI/JNI feasibility bridge for Flutter NativeHost
     "onebrain-archive",   # Shared encrypted Base archive container and verified spool

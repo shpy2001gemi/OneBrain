@@ -198,7 +198,8 @@ enum class HostOnboardingCursor(val raw: Int) {
   IDENTITY(2),
   SECURITY(3),
   INIT_HANDOFF(4),
-  LIMITED_HOME(5);
+  LIMITED_HOME(5),
+  READINESS(6);
 
   companion object {
     fun ofRaw(raw: Int): HostOnboardingCursor? {
@@ -857,6 +858,59 @@ data class HostRegistryImportProgress (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
+data class HostRegistryActivationReceipt (
+  val releaseId: String,
+  val readinessState: String,
+  val previousReleaseId: String? = null,
+  val compensatedRollback: Boolean,
+  val healthProbesChecked: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRegistryActivationReceipt {
+      val releaseId = pigeonVar_list[0] as String
+      val readinessState = pigeonVar_list[1] as String
+      val previousReleaseId = pigeonVar_list[2] as String?
+      val compensatedRollback = pigeonVar_list[3] as Boolean
+      val healthProbesChecked = pigeonVar_list[4] as Long
+      return HostRegistryActivationReceipt(releaseId, readinessState, previousReleaseId, compensatedRollback, healthProbesChecked)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      releaseId,
+      readinessState,
+      previousReleaseId,
+      compensatedRollback,
+      healthProbesChecked,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRegistryActivationReceipt
+    return MobileHostApiPigeonUtils.deepEquals(this.releaseId, other.releaseId) && MobileHostApiPigeonUtils.deepEquals(this.readinessState, other.readinessState) && MobileHostApiPigeonUtils.deepEquals(this.previousReleaseId, other.previousReleaseId) && MobileHostApiPigeonUtils.deepEquals(this.compensatedRollback, other.compensatedRollback) && MobileHostApiPigeonUtils.deepEquals(this.healthProbesChecked, other.healthProbesChecked)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.releaseId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.readinessState)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.previousReleaseId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.compensatedRollback)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.healthProbesChecked)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRegistryActivationReceipt(releaseId=$releaseId, readinessState=$readinessState, previousReleaseId=$previousReleaseId, compensatedRollback=$compensatedRollback, healthProbesChecked=$healthProbesChecked)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class HostOperationEvent (
   val operationId: String,
   val kind: HostOperationEventKind,
@@ -975,6 +1029,11 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
       }
       143.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          HostRegistryActivationReceipt.fromList(it)
+        }
+      }
+      144.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
       }
@@ -1039,8 +1098,12 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(142)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostRegistryActivationReceipt -> {
         stream.write(143)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(144)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -1060,6 +1123,8 @@ interface MobileHostApi {
   fun deferRegistryInit(operationId: String, manifestDigest: String, callback: (Result<Boolean>) -> Unit)
   fun confirmRegistryInit(operationId: String, manifestDigest: String, networkPolicy: HostRegistryNetworkPolicy, oneTimeNetworkOverride: Boolean, callback: (Result<HostRegistryInitPlan>) -> Unit)
   fun pickAndImportRegistryArtifact(operationId: String, manifestDigest: String, artifactRole: HostRegistryArtifactRole, callback: (Result<HostRegistryImportProgress>) -> Unit)
+  fun activateRegistryRelease(operationId: String, transferNonce: String, callback: (Result<HostRegistryActivationReceipt>) -> Unit)
+  fun rollbackRegistryRelease(callback: (Result<Boolean>) -> Unit)
   fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
   fun inspectPendingShareSpools(callback: (Result<List<HostShareSpoolSummary>>) -> Unit)
   fun importSharedText(spoolRef: String, contentLanguage: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
@@ -1205,6 +1270,45 @@ interface MobileHostApi {
             val manifestDigestArg = args[1] as String
             val artifactRoleArg = args[2] as HostRegistryArtifactRole
             api.pickAndImportRegistryArtifact(operationIdArg, manifestDigestArg, artifactRoleArg) { result: Result<HostRegistryImportProgress> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.activateRegistryRelease$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val operationIdArg = args[0] as String
+            val transferNonceArg = args[1] as String
+            api.activateRegistryRelease(operationIdArg, transferNonceArg) { result: Result<HostRegistryActivationReceipt> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.rollbackRegistryRelease$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.rollbackRegistryRelease{ result: Result<Boolean> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

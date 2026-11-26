@@ -4,30 +4,59 @@ OBR binary file builder for the OneBrain Concept Registry.
 Reads ``concepts_deduped.jsonl`` and produces a compact binary
 ``.obr`` file with blake3-based CCIDs, matching the Rust-side
 ``ConceptRegistry`` layout.
+
+P1 §2.2 fail-closed collision rule: if any two distinct
+``(source_namespace, source_identifier)`` tuples collide on the same
+16-byte ``ConceptCcid``, ``collision_quarantine.json`` is written to an
+explicit diagnostics directory outside the 5-file release directory and
+candidate build aborts with ``SystemExit(1)``.
 """
 
-import json
+import argparse
 import heapq
+import json
 import logging
 import struct
+import sys
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import blake3
-from tqdm import tqdm
 
-from config import (
-    OBR_MAGIC,
-    OBR_VERSION,
-    SOURCE_CHEBI,
-    SOURCE_ENGLISH_DICT,
-    SOURCE_GEONAMES,
-    SOURCE_NAMES,
-    SOURCE_NCBI,
-    SOURCE_WIKIDATA,
-)
+try:
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - fallback when tqdm is absent
+    def tqdm(iterable: Any, **_kwargs: Any) -> Any:
+        return iterable
+
+try:
+    from .config import (
+        CHECKPOINT_DIR,
+        OBR_MAGIC,
+        OBR_VERSION,
+        SOURCE_CHEBI,
+        SOURCE_ENGLISH_DICT,
+        SOURCE_GEONAMES,
+        SOURCE_NAMES,
+        SOURCE_NCBI,
+        SOURCE_WIKIDATA,
+    )
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from config import (  # type: ignore[no-redef]
+        CHECKPOINT_DIR,
+        OBR_MAGIC,
+        OBR_VERSION,
+        SOURCE_CHEBI,
+        SOURCE_ENGLISH_DICT,
+        SOURCE_GEONAMES,
+        SOURCE_NAMES,
+        SOURCE_NCBI,
+        SOURCE_WIKIDATA,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +81,8 @@ CCID_INDEX_MAGIC = b"OBCI"
 MANIFEST_VERSION = 1
 BUILDER_VERSION = "onebrain-concept-registry-builder/1"
 DEDUP_POLICY_VERSION = "crossref-label-dedup-v1"
+COLLISION_QUARANTINE_PROFILE = "onebrain/ccid-collision-quarantine/1"
+COLLISION_DISAMBIG_DOMAIN = "onebrain:ccid:disambig:1\\0"
 
 _SOURCE_PROVENANCE: dict[int, tuple[str, str, str, str]] = {
     SOURCE_WIKIDATA: (
@@ -91,17 +122,42 @@ def _compute_ccid(source: int, ext_id: int | str) -> bytes:
     """Compute a 16-byte CCID using blake3.
 
     The CCID is the first 16 bytes of ``blake3(prefix + str(ext_id))``.
-
-    Args:
-        source: Source code (``SOURCE_WIKIDATA``, etc.).
-        ext_id: External numeric ID or string ID.
-
-    Returns:
-        16-byte CCID digest.
     """
     prefix = _SOURCE_PREFIX.get(source, f"src{source}:")
     input_str = f"{prefix}{ext_id}"
     return blake3.blake3(input_str.encode("utf-8")).digest(length=16)
+
+
+def _source_namespace(rec: dict[str, Any]) -> str:
+    explicit = rec.get("source_namespace")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    source = int(rec["source"])
+    if source in _SOURCE_PROVENANCE:
+        return _SOURCE_PROVENANCE[source][0]
+    return SOURCE_NAMES.get(source, f"src{source}")
+
+
+def _source_identifier(rec: dict[str, Any]) -> str:
+    explicit = rec.get("source_identifier")
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip()
+    return str(rec["ext_id"])
+
+
+def _resolve_diagnostics_dir(output_path: Path, diagnostics_dir: Path | None) -> Path:
+    release_dir = output_path.resolve().parent
+    if diagnostics_dir is None:
+        candidate = (CHECKPOINT_DIR / "diagnostics").resolve()
+        if candidate == release_dir or release_dir in candidate.parents:
+            candidate = (release_dir.parent / "obr_diagnostics").resolve()
+        return candidate
+    resolved = diagnostics_dir.resolve()
+    if resolved == release_dir or release_dir in resolved.parents:
+        raise ValueError(
+            "diagnostics_dir must be outside the release artifact directory"
+        )
+    return resolved
 
 
 def _snapshot_id(path: Path) -> str:
@@ -262,33 +318,24 @@ def _write_manifest(
     return manifest_path, obr_blake3
 
 
-def build(input_path: Path, output_path: Path) -> dict[str, Any]:
+def build(
+    input_path: Path,
+    output_path: Path,
+    diagnostics_dir: Path | None = None,
+    ccid_fn: Callable[[int, int | str], bytes] | None = None,
+) -> dict[str, Any]:
     """Build a binary .obr file from deduplicated JSONL.
 
-    Binary format (all integers little-endian):
-
-    - **Header** (32 bytes): magic(4B ``OBR1``) + version(u32) +
-      entry_count(u64) + label_count(u64) + reserved(8B zeros)
-    - **Per entry**: ccid(16B) + ext_id(u32) + source(u8) + category(u8) +
-      name_len(u16) + name_bytes + num_labels(u16) +
-      [label_len(u16) + label_bytes]*
-
-    Args:
-        input_path: Path to ``concepts_deduped.jsonl``.
-        output_path: Path for the output ``.obr`` file.
-
-    Returns:
-        Statistics dict with keys: ``file_size``, ``entries``,
-        ``labels``, ``collisions``.
+    Fails closed (`SystemExit(1)`) before publishing release artifacts if any
+    two distinct ``(source_namespace, source_identifier)`` tuples collide on
+    the same 16-byte ``ConceptCcid``, writing ``collision_quarantine.json`` to
+    ``diagnostics_dir`` (which must reside outside ``output_path.parent``).
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    label_unsorted = Path(f"{output_path}.labels.idx.unsorted")
-    ccid_unsorted = Path(f"{output_path}.ccids.idx.unsorted")
-    label_index_path = Path(f"{output_path}.labels.idx")
-    ccid_index_path = Path(f"{output_path}.ccids.idx")
+    diag_dir = _resolve_diagnostics_dir(output_path, diagnostics_dir)
+    compute_ccid = ccid_fn or _compute_ccid
 
     # -----------------------------------------------------------------------
-    # Pass 1: Load all records, compute CCIDs, detect collisions
+    # Pass 1: Load all records, precompute CCIDs, and fail closed on collisions
     # -----------------------------------------------------------------------
     logger.info("Loading records from %s …", input_path)
     records: list[dict[str, Any]] = []
@@ -302,9 +349,72 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
 
     logger.info("Loaded %d records", len(records))
 
-    # Collision detection
-    ccid_map: dict[bytes, str] = {}  # ccid → canonical_form
-    collisions: list[tuple[str, str]] = []
+    ccid_origins: dict[bytes, tuple[str, str, dict[str, Any]]] = {}
+    quarantined_collisions: list[dict[str, Any]] = []
+    computed_ccids: list[bytes] = []
+
+    for rec in records:
+        source = int(rec["source"])
+        ext_id = rec["ext_id"]
+        ns = _source_namespace(rec)
+        ident = _source_identifier(rec)
+        ccid = compute_ccid(source, ext_id)
+        if len(ccid) != 16:
+            raise ValueError(f"Expected 16-byte ConceptCcid, got {len(ccid)} bytes")
+        computed_ccids.append(ccid)
+
+        if ccid in ccid_origins:
+            prev_ns, prev_ident, prev_rec = ccid_origins[ccid]
+            if (prev_ns, prev_ident) != (ns, ident):
+                quarantined_collisions.append(
+                    {
+                        "ccid_hex": ccid.hex(),
+                        "existing": {
+                            "source_namespace": prev_ns,
+                            "source_identifier": prev_ident,
+                            "canonical_form": prev_rec.get(
+                                "canonical_form", f"{prev_ns}:{prev_ident}"
+                            ),
+                            "name": prev_rec.get("name", ""),
+                        },
+                        "quarantined": {
+                            "source_namespace": ns,
+                            "source_identifier": ident,
+                            "canonical_form": rec.get(
+                                "canonical_form", f"{ns}:{ident}"
+                            ),
+                            "name": rec.get("name", ""),
+                        },
+                    }
+                )
+        else:
+            ccid_origins[ccid] = (ns, ident, rec)
+
+    if quarantined_collisions:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        quarantine_path = diag_dir / "collision_quarantine.json"
+        quarantine_payload = {
+            "profile": COLLISION_QUARANTINE_PROFILE,
+            "disambiguation_domain": COLLISION_DISAMBIG_DOMAIN,
+            "input_path": str(input_path),
+            "collision_count": len(quarantined_collisions),
+            "collisions": quarantined_collisions,
+        }
+        with open(quarantine_path, "w", encoding="utf-8") as qfh:
+            json.dump(quarantine_payload, qfh, ensure_ascii=False, indent=2, sort_keys=True)
+            qfh.write("\n")
+        logger.error(
+            "Quarantined %d 128-bit ConceptCcid collision(s) into %s; aborting candidate build.",
+            len(quarantined_collisions),
+            quarantine_path,
+        )
+        raise SystemExit(1)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    label_unsorted = Path(f"{output_path}.labels.idx.unsorted")
+    ccid_unsorted = Path(f"{output_path}.ccids.idx.unsorted")
+    label_index_path = Path(f"{output_path}.labels.idx")
+    ccid_index_path = Path(f"{output_path}.ccids.idx")
 
     entry_count = len(records)
     total_labels = 0
@@ -323,31 +433,21 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
         # Write placeholder header (will be overwritten at end)
         fh.write(b"\x00" * HEADER_SIZE)
 
-        for rec in tqdm(records, desc="Building OBR", unit=" entries"):
+        for rec, ccid in tqdm(
+            zip(records, computed_ccids),
+            total=len(records),
+            desc="Building OBR",
+            unit=" entries",
+        ):
             entry_offset = fh.tell()
-            source = rec["source"]
+            source = int(rec["source"])
             per_source_counts[source] = per_source_counts.get(source, 0) + 1
             ext_id = rec["ext_id"]
             category = rec["category"]
             name = rec.get("name", "")
             labels = rec.get("labels", {})
 
-            # Compute CCID
-            ccid = _compute_ccid(source, ext_id)
             ccid_fh.write(struct.pack(INDEX_RECORD_FORMAT, ccid, entry_offset))
-
-            # Collision check
-            canonical = rec.get("canonical_form", f"{source}:{ext_id}")
-            if ccid in ccid_map:
-                collisions.append((ccid_map[ccid], canonical))
-                logger.warning(
-                    "CCID collision: %s vs %s (ccid=%s)",
-                    ccid_map[ccid],
-                    canonical,
-                    ccid.hex(),
-                )
-            else:
-                ccid_map[ccid] = canonical
 
             # Encode name
             name_bytes = name.encode("utf-8")
@@ -376,11 +476,9 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
             # Write entry
             # ccid(16B) + ext_id(u32) + source(u8) + category(u8) + name_len(u16)
             fh.write(ccid)
-            # ext_id: convert string IDs to hash u32
             if isinstance(ext_id, int):
                 fh.write(struct.pack("<I", ext_id))
             else:
-                # Hash string ID to u32 for binary compatibility
                 ext_id_hash = int.from_bytes(
                     blake3.blake3(str(ext_id).encode("utf-8")).digest(length=4),
                     "little",
@@ -418,7 +516,7 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
         "file_size_mb": round(file_size / (1024 * 1024), 2),
         "entries": entry_count,
         "labels": total_labels,
-        "collisions": len(collisions),
+        "collisions": 0,
     }
     obr_blake3 = _blake3_file(output_path)
     logger.info("Building bounded on-demand sidecar indexes …")
@@ -442,19 +540,11 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
     stats["manifest_path"] = str(manifest_path)
     stats["obr_blake3"] = manifest_obr_blake3
 
-    if collisions:
-        logger.warning("Detected %d CCID collisions!", len(collisions))
-        for c1, c2 in collisions[:10]:
-            logger.warning("  Collision: %s ↔ %s", c1, c2)
-    else:
-        logger.info("No CCID collisions detected.")
-
     logger.info(
-        "OBR build complete: %d entries, %d labels, %.2f MB, %d collisions",
+        "OBR build complete: %d entries, %d labels, %.2f MB, 0 collisions",
         stats["entries"],
         stats["labels"],
         stats["file_size_mb"],
-        stats["collisions"],
     )
     logger.info("Manifest: %s", manifest_path)
     return stats
@@ -465,7 +555,26 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    from config import MERGED_DIR, OBR_OUTPUT
+    from config import MERGED_DIR, OBR_OUTPUT  # type: ignore[no-redef]
 
-    OBR_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    build(MERGED_DIR / "concepts_deduped.jsonl", OBR_OUTPUT)
+    parser = argparse.ArgumentParser(description="Build OneBrain Concept Registry (.obr)")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=MERGED_DIR / "concepts_deduped.jsonl",
+        help="Path to deduplicated concepts JSONL",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OBR_OUTPUT,
+        help="Output .obr path",
+    )
+    parser.add_argument(
+        "--diagnostics-dir",
+        type=Path,
+        default=None,
+        help="Diagnostics output directory outside the release directory",
+    )
+    args = parser.parse_args()
+    build(args.input, args.output, diagnostics_dir=args.diagnostics_dir)

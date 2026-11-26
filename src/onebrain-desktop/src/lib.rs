@@ -198,6 +198,7 @@ where
             commands::wizard_get_defaults,
             commands::wizard_check_ollama,
             commands::wizard_complete,
+            commands::desktop_p10_surface_summary,
         ])
         // ── Window Close → Hide (close-to-tray) ───────────────────────
         .on_window_event(|window, event| {

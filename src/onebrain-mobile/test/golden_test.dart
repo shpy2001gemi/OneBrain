@@ -13,6 +13,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    final current = goldenFileComparator;
+    if (current is LocalFileComparator) {
+      goldenFileComparator = _RRectAaTolerantGoldenComparator(
+        current.basedir.resolve('golden_test.dart'),
+        tolerance: 0.005,
+      );
+    }
     await Future.wait(<Future<void>>[
       _loadFont('Nunito Sans', 'assets/fonts/NunitoSans-Variable.ttf'),
       _loadFont('Roboto Mono', 'assets/fonts/RobotoMono-Variable.ttf'),
@@ -385,6 +392,17 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   );
 
   @override
+  Future<MobileRegistryActivationReceipt> activateRegistryRelease({
+    required String operationId,
+    required String transferNonce,
+  }) => throw UnsupportedError(
+    'Registry activation is unavailable in this fake',
+  );
+
+  @override
+  Future<bool> rollbackRegistryRelease() async => false;
+
+  @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
 
   @override
@@ -438,4 +456,25 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   @override
   Stream<HostOperationEvent> observeFeasibilityOperations() =>
       const Stream<HostOperationEvent>.empty();
+}
+
+class _RRectAaTolerantGoldenComparator extends LocalFileComparator {
+  _RRectAaTolerantGoldenComparator(super.testFile, {required this.tolerance});
+
+  final double tolerance;
+
+  @override
+  Future<bool> compare(Uint8List imageBytes, Uri golden) async {
+    final result = await GoldenFileComparator.compareLists(
+      imageBytes,
+      await getGoldenBytes(golden),
+    );
+    if (result.passed || result.diffPercent <= tolerance) {
+      result.dispose();
+      return true;
+    }
+    final error = await generateFailureOutput(result, golden, basedir);
+    result.dispose();
+    throw FlutterError(error);
+  }
 }

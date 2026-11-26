@@ -258,6 +258,20 @@ private final class IOSMobileHost: MobileHostApi {
     completion(.failure(registryTrustUnavailableError()))
   }
 
+  func activateRegistryRelease(
+    operationId: String,
+    transferNonce: String,
+    completion: @escaping (Result<HostRegistryActivationReceipt, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
+  func rollbackRegistryRelease(
+    completion: @escaping (Result<Bool, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
   private func registryTrustUnavailableError() -> PigeonError {
     PigeonError(
       code: "REGISTRY_TRUST_UNAVAILABLE",
@@ -340,6 +354,25 @@ private final class IOSMobileHost: MobileHostApi {
       default:
         activationPhase = "Unknown"
       }
+      let registryState: String
+      if runtime.registry_bootstrap_only != 0 {
+        registryState = "BootstrapOnly"
+      } else {
+        switch ob_mobile_runtime_registry_readiness_code() {
+        case 0:
+          registryState = "BootstrapOnly"
+        case 1:
+          registryState = "Provisioning"
+        case 2:
+          registryState = "ReadyOffline"
+        case 3:
+          registryState = "ReadyOffline(UpdateHealthPending)"
+        case 4:
+          registryState = "RegistryDegraded"
+        default:
+          registryState = "Unknown"
+        }
+      }
       let snapshot = HostRuntimeSnapshot(
         profileVersion: "MOB-04/3",
         processGeneration: Int64(runtime.process_generation),
@@ -347,8 +380,7 @@ private final class IOSMobileHost: MobileHostApi {
         activeGrantCount: Int64(runtime.active_grant_count),
         recoveredUncleanStart: runtime.recovered_unclean_start != 0,
         bootstrapStoreOpened: runtime.bootstrap_store_opened != 0,
-        registryState:
-          runtime.registry_bootstrap_only != 0 ? "BootstrapOnly" : "Unknown",
+        registryState: registryState,
         localKqlFixtureVerified: runtime.local_kql_fixture_verified != 0,
         privatePlannerVerified: runtime.private_planner_verified != 0,
         noLlmProvider: runtime.no_llm_provider != 0,

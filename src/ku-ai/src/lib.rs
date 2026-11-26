@@ -41,6 +41,7 @@ pub mod traits;
 pub mod types;
 pub mod vnext_executor;
 pub mod vnext_fidelity;
+pub mod vnext_kge_recall;
 pub mod vnext_manifest;
 pub mod vnext_model_recall;
 
@@ -83,6 +84,16 @@ pub use vnext_fidelity::{
     BlindAttemptPortfolio, BlindEncodingCoordinator, BlindEncodingRequest, BlindFidelityError,
     BlindSessionPhase, CandidateEncodingInspection, CompletedBlindAttestation,
     EncodingAttemptArtifact, FidelityCheckPlan,
+};
+pub use vnext_kge_recall::{
+    derive_grounded_kge_seed, DreamAffordanceHop, DreamCandidateKind, DreamConsolidationError,
+    DreamConsolidationProposal, DreamConsolidationRun, DreamConsolidatorV1, DreamGraphSnapshot,
+    DreamNeedBridgeTarget, DreamRelationEdge, FedRError, FedROperatorMatrixV1,
+    FedRQuarantineOutcome, FedRQuarantinePolicy, FedRQuarantineValidator, GroundedConceptEmbedding,
+    GroundedKgeCandidateEntry, GroundedKgeRecallAdapter, GroundedKgeRecallConfig,
+    KgeEmbeddingInitSource, KgeRecallError, DEFAULT_KGE_EMBEDDING_DIM,
+    DREAM_CONSOLIDATOR_PROFILE_ID, FEDR_PROTOCOL_ID, FEDR_QUARANTINE_REASON_CODE,
+    KGE_FIXED_POINT_SCALE, KGE_INIT_DOMAIN, MAX_KGE_EMBEDDING_DIM,
 };
 pub use vnext_manifest::{
     output_commitment, CapabilityConformanceExecutor, CapabilityConformanceRunner,

@@ -4,14 +4,60 @@ use std::collections::BTreeSet;
 
 use ku_core::foundation::{
     canonicalize_set_by_key, decode_canonical, encode_canonical, CanonicalError, CanonicalValue,
-    FeedId, NamespaceCommitment, NodeId, ObjectReference, ResourceProfile,
+    FeedId, NamespaceCommitment, NodeId, NormalizedText, ObjectReference, ReservedDomain,
+    ResourceProfile,
 };
 
 use crate::types::{
     wire_id, SelectiveFeedProof, SessionCapability, SessionFinish, SessionHandshakeMessage,
-    SessionHello, SessionProfile, SessionWelcome, VNEXT_PROTOCOL_SCHEMA_ID,
-    VNEXT_PROTOCOL_SCHEMA_MAJOR, VNEXT_PROTOCOL_SCHEMA_MINOR,
+    SessionHello, SessionProfile, SessionWelcome, CAPABILITY_BLOB_CHUNKS_V1, CAPABILITY_MAILBOX_V1,
+    CAPABILITY_RECONCILE_FRONTIER_V1, CAPABILITY_RECONCILE_RIBLT_V1, CAPABILITY_REGISTRY_CHUNKS_V1,
+    VNEXT_PROTOCOL_SCHEMA_ID, VNEXT_PROTOCOL_SCHEMA_MAJOR, VNEXT_PROTOCOL_SCHEMA_MINOR,
 };
+
+/// Derive a canonical 32-byte `SessionCapability` digest from a UTF-8 NFC capability name.
+pub fn session_capability_from_name(name: &str) -> Result<SessionCapability, SessionCodecError> {
+    let normalized = NormalizedText::new(name)?;
+    let bytes = encode_canonical(
+        &CanonicalValue::from(normalized),
+        ResourceProfile::ControlV1,
+    )?;
+    Ok(SessionCapability::from_bytes(
+        ReservedDomain::CapabilityDefinition.digest(&bytes),
+    ))
+}
+
+pub fn reconcile_riblt_capability() -> SessionCapability {
+    session_capability_from_name(CAPABILITY_RECONCILE_RIBLT_V1)
+        .expect("fixed NFC capability name is canonical")
+}
+
+pub fn reconcile_frontier_capability() -> SessionCapability {
+    session_capability_from_name(CAPABILITY_RECONCILE_FRONTIER_V1)
+        .expect("fixed NFC capability name is canonical")
+}
+
+pub fn mailbox_capability() -> SessionCapability {
+    session_capability_from_name(CAPABILITY_MAILBOX_V1)
+        .expect("fixed NFC capability name is canonical")
+}
+
+pub fn blob_chunks_capability() -> SessionCapability {
+    session_capability_from_name(CAPABILITY_BLOB_CHUNKS_V1)
+        .expect("fixed NFC capability name is canonical")
+}
+
+pub fn registry_chunks_capability() -> SessionCapability {
+    session_capability_from_name(CAPABILITY_REGISTRY_CHUNKS_V1)
+        .expect("fixed NFC capability name is canonical")
+}
+
+pub fn session_negotiates_capability(
+    welcome: &SessionWelcome,
+    capability: SessionCapability,
+) -> bool {
+    welcome.negotiated_capabilities.contains(&capability)
+}
 
 pub fn encode_session_message(
     message: &SessionHandshakeMessage,

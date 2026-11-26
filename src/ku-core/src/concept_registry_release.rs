@@ -17,16 +17,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
+use crate::concept_lifecycle::{ConceptLifecycleError, ConceptLifecycleTable};
 use crate::concept_registry::{ConceptRegistry, ObrLoadError};
 use crate::concept_registry_manifest::{
     load_and_validate_manifest_uncached, ConceptRegistryManifest, ConceptRegistryManifestError,
 };
+use crate::foundation::canonical::ResourceProfile;
 
 pub const CONCEPT_REGISTRY_RELEASE_PROFILE: &str = "onebrain/concept-registry-release/1";
+pub const CONCEPT_REGISTRY_RELEASE_PROFILE_V2: &str = "onebrain/concept-registry-release/2";
 pub const CONCEPT_REGISTRY_STATE_PROFILE: &str = "onebrain/concept-registry-release-state/1";
 pub const RELEASE_STAMP_FILE: &str = "release.stamp.json";
 pub const RELEASE_SBOM_FILE: &str = "sbom.spdx.json";
 pub const RELEASE_OBR_FILE: &str = "concepts.obr";
+pub const RELEASE_LIFECYCLE_FILE: &str = "concepts.lifecycle.cbor";
 
 const MAX_RELEASE_STAMP_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_STATE_BYTES: u64 = 64 * 1024;
@@ -43,6 +47,14 @@ const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("LABEL_INDEX", "concepts.obr.labels.idx"),
     ("CCID_INDEX", "concepts.obr.ccids.idx"),
     ("MANIFEST", "concepts.obr.manifest.json"),
+    ("SPDX_SBOM", "sbom.spdx.json"),
+];
+const REQUIRED_ARTIFACTS_V2: [(&str, &str); 6] = [
+    ("OBR", "concepts.obr"),
+    ("LABEL_INDEX", "concepts.obr.labels.idx"),
+    ("CCID_INDEX", "concepts.obr.ccids.idx"),
+    ("MANIFEST", "concepts.obr.manifest.json"),
+    ("LIFECYCLE", RELEASE_LIFECYCLE_FILE),
     ("SPDX_SBOM", "sbom.spdx.json"),
 ];
 
@@ -130,6 +142,135 @@ pub fn package_concept_registry_release(
         signing_key,
         |path| fs2::available_space(path),
     )
+}
+
+/// Build and install one immutable v2 release (`concepts.lifecycle.cbor`
+/// included) without changing the active state.
+pub fn package_concept_registry_release_v2(
+    obr_path: &Path,
+    lifecycle_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+    input: ConceptRegistryReleasePackageInput,
+    signing_key: &SigningKey,
+) -> Result<ConceptRegistryReleaseStamp, ConceptRegistryReleaseError> {
+    package_concept_registry_release_v2_with_space_probe(
+        obr_path,
+        lifecycle_path,
+        sbom_path,
+        registry_root,
+        input,
+        signing_key,
+        |path| fs2::available_space(path),
+    )
+}
+
+/// Calculate the exact staging admission requirement for a v2 release.
+pub fn concept_registry_release_capacity_v2(
+    obr_path: &Path,
+    lifecycle_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+) -> Result<ConceptRegistryReleaseCapacity, ConceptRegistryReleaseError> {
+    validate_regular_file(sbom_path, "SPDX SBOM")?;
+    validate_spdx_sbom(sbom_path)?;
+    validate_regular_file(lifecycle_path, "Concept Lifecycle CBOR")?;
+    let source_artifacts = release_source_artifacts_v2(obr_path, lifecycle_path, sbom_path);
+    for (_, source, target_name) in &source_artifacts {
+        validate_regular_file(source, target_name)?;
+    }
+    let releases_dir = registry_root.join("releases");
+    fs::create_dir_all(&releases_dir)?;
+    release_capacity(&source_artifacts, fs2::available_space(&releases_dir)?)
+}
+
+fn package_concept_registry_release_v2_with_space_probe<F>(
+    obr_path: &Path,
+    lifecycle_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+    input: ConceptRegistryReleasePackageInput,
+    signing_key: &SigningKey,
+    space_probe: F,
+) -> Result<ConceptRegistryReleaseStamp, ConceptRegistryReleaseError>
+where
+    F: FnOnce(&Path) -> std::io::Result<u64>,
+{
+    validate_release_id(&input.release_id)?;
+    validate_sources_shape(&input.sources)?;
+    validate_regular_file(sbom_path, "SPDX SBOM")?;
+    validate_spdx_sbom(sbom_path)?;
+    validate_regular_file(lifecycle_path, "Concept Lifecycle CBOR")?;
+
+    let source_artifacts = release_source_artifacts_v2(obr_path, lifecycle_path, sbom_path);
+    for (_, source, target_name) in &source_artifacts {
+        validate_regular_file(source, target_name)?;
+    }
+
+    let releases_dir = registry_root.join("releases");
+    fs::create_dir_all(&releases_dir)?;
+    let final_dir = releases_dir.join(&input.release_id);
+    if final_dir.exists() {
+        return Err(ConceptRegistryReleaseError::ReleaseExists(input.release_id));
+    }
+    let capacity = release_capacity(&source_artifacts, space_probe(&releases_dir)?)?;
+    if !capacity.sufficient {
+        return Err(ConceptRegistryReleaseError::InsufficientSpace {
+            required: capacity.required_bytes,
+            available: capacity.available_bytes,
+        });
+    }
+    let staging_dir = releases_dir.join(format!(
+        ".{}.staging-{}-{}",
+        input.release_id,
+        std::process::id(),
+        unix_nanos()?
+    ));
+    fs::create_dir(&staging_dir)?;
+    let mut staging = StagingDirectoryGuard::new(staging_dir);
+    for (_, source, target_name) in &source_artifacts {
+        copy_file_sync(source, &staging.path().join(target_name))?;
+    }
+
+    let artifacts = source_artifacts
+        .iter()
+        .map(|(role, _, target_name)| {
+            artifact_metadata(role, target_name, &staging.path().join(target_name))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let manifest = validate_packaged_registry(staging.path())?;
+    validate_sources_against_manifest(&input.sources, &manifest)?;
+    validate_packaged_lifecycle(staging.path(), &manifest)?;
+
+    let mut stamp = ConceptRegistryReleaseStamp {
+        profile: CONCEPT_REGISTRY_RELEASE_PROFILE_V2.to_owned(),
+        release_id: input.release_id.clone(),
+        builder_version: manifest.builder_version,
+        dedup_policy_version: manifest.dedup_policy_version,
+        artifact_root: artifact_root(&artifacts),
+        artifacts,
+        source_root: source_root(&input.sources),
+        sources: input.sources,
+        distribution: RELEASE_DISTRIBUTION.to_owned(),
+        signer_public_key: encode_hex(signing_key.verifying_key().as_bytes()),
+        signature: String::new(),
+    };
+    let message = release_signature_message(&stamp)?;
+    stamp.signature = encode_hex(&signing_key.sign(&message).to_bytes());
+    write_new_json_sync(&staging.path().join(RELEASE_STAMP_FILE), &stamp)?;
+
+    verify_concept_registry_release_inner(
+        staging.path(),
+        &input.release_id,
+        &signing_key.verifying_key(),
+    )?;
+    qualification_failpoint("release-publication-before")?;
+    fs::rename(staging.path(), &final_dir)?;
+    staging.disarm();
+    qualification_failpoint("release-publication-during")?;
+    sync_directory(&releases_dir)?;
+    qualification_failpoint("release-publication-after")?;
+    verify_concept_registry_release(&final_dir, &signing_key.verifying_key())
 }
 
 /// Calculate the exact staging admission requirement against the filesystem
@@ -286,8 +427,16 @@ fn verify_concept_registry_release_inner(
             actual: stamp.release_id,
         });
     }
-    if stamp.profile != CONCEPT_REGISTRY_RELEASE_PROFILE
-        || stamp.distribution != RELEASE_DISTRIBUTION
+    let is_v2 = match stamp.profile.as_str() {
+        CONCEPT_REGISTRY_RELEASE_PROFILE => false,
+        CONCEPT_REGISTRY_RELEASE_PROFILE_V2 => true,
+        _ => {
+            return Err(ConceptRegistryReleaseError::InvalidField(
+                "release stamp identity".to_owned(),
+            ));
+        }
+    };
+    if stamp.distribution != RELEASE_DISTRIBUTION
         || stamp.builder_version.trim().is_empty()
         || stamp.dedup_policy_version.trim().is_empty()
     {
@@ -299,7 +448,7 @@ fn verify_concept_registry_release_inner(
     if signer != expected_signer.to_bytes() {
         return Err(ConceptRegistryReleaseError::UntrustedSigner);
     }
-    validate_artifact_shape(&stamp.artifacts)?;
+    validate_artifact_shape(&stamp.artifacts, is_v2)?;
     validate_sources_shape(&stamp.sources)?;
     if stamp.artifact_root != artifact_root(&stamp.artifacts)
         || stamp.source_root != source_root(&stamp.sources)
@@ -320,7 +469,7 @@ fn verify_concept_registry_release_inner(
         .map(|artifact| artifact.relative_path.as_str())
         .chain(std::iter::once(RELEASE_STAMP_FILE))
         .collect();
-    let actual_files = collect_release_files(release_dir)?;
+    let actual_files = collect_release_files(release_dir, is_v2)?;
     if actual_files != expected_files {
         return Err(ConceptRegistryReleaseError::UnexpectedFileSet);
     }
@@ -346,6 +495,11 @@ fn verify_concept_registry_release_inner(
         return Err(ConceptRegistryReleaseError::ManifestBinding);
     }
     validate_sources_against_manifest(&stamp.sources, &manifest)?;
+    if is_v2 {
+        validate_packaged_lifecycle(release_dir, &manifest)?;
+    } else if manifest.lifecycle_blake3.is_some() {
+        return Err(ConceptRegistryReleaseError::ManifestBinding);
+    }
     Ok(stamp)
 }
 
@@ -568,17 +722,55 @@ fn validate_sources_against_manifest(
     Ok(())
 }
 
+fn validate_packaged_lifecycle(
+    release_dir: &Path,
+    manifest: &ConceptRegistryManifest,
+) -> Result<ConceptLifecycleTable, ConceptRegistryReleaseError> {
+    let expected = manifest
+        .lifecycle_blake3
+        .as_deref()
+        .ok_or(ConceptRegistryReleaseError::ManifestBinding)?;
+    let path = release_dir.join(RELEASE_LIFECYCLE_FILE);
+    validate_regular_file(&path, RELEASE_LIFECYCLE_FILE)?;
+    let max_bytes = ResourceProfile::ControlV1.limits().max_bytes as u64;
+    let mut bytes = Vec::new();
+    File::open(&path)?
+        .take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(ConceptRegistryReleaseError::TooLarge {
+            path,
+            length: bytes.len() as u64,
+        });
+    }
+    let actual = blake3::hash(&bytes).to_hex().to_string();
+    if actual != expected {
+        return Err(ConceptRegistryReleaseError::ArtifactMismatch {
+            artifact: RELEASE_LIFECYCLE_FILE.to_owned(),
+            expected: expected.to_owned(),
+            actual,
+        });
+    }
+    ConceptLifecycleTable::decode_bytes(&bytes).map_err(ConceptRegistryReleaseError::Lifecycle)
+}
+
 fn validate_artifact_shape(
     artifacts: &[ConceptRegistryReleaseArtifact],
+    is_v2: bool,
 ) -> Result<(), ConceptRegistryReleaseError> {
-    if artifacts.len() != REQUIRED_ARTIFACTS.len() {
+    let required: &[(&str, &str)] = if is_v2 {
+        &REQUIRED_ARTIFACTS_V2
+    } else {
+        &REQUIRED_ARTIFACTS
+    };
+    if artifacts.len() != required.len() {
         return Err(ConceptRegistryReleaseError::UnexpectedFileSet);
     }
     let actual: BTreeSet<_> = artifacts
         .iter()
         .map(|artifact| (artifact.role.as_str(), artifact.relative_path.as_str()))
         .collect();
-    let expected: BTreeSet<_> = REQUIRED_ARTIFACTS.into_iter().collect();
+    let expected: BTreeSet<_> = required.iter().copied().collect();
     if actual != expected {
         return Err(ConceptRegistryReleaseError::UnexpectedFileSet);
     }
@@ -707,9 +899,15 @@ fn validate_spdx_sbom(path: &Path) -> Result<(), ConceptRegistryReleaseError> {
 
 fn collect_release_files(
     release_dir: &Path,
+    is_v2: bool,
 ) -> Result<BTreeSet<&str>, ConceptRegistryReleaseError> {
     // The returned strings are matched against static names, so convert by
     // lookup instead of retaining directory-entry owned strings.
+    let required: &[(&str, &str)] = if is_v2 {
+        &REQUIRED_ARTIFACTS_V2
+    } else {
+        &REQUIRED_ARTIFACTS
+    };
     let mut files = BTreeSet::new();
     for entry in fs::read_dir(release_dir)? {
         let entry = entry?;
@@ -719,7 +917,7 @@ fn collect_release_files(
         }
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let static_name = REQUIRED_ARTIFACTS
+        let static_name = required
             .iter()
             .map(|(_, path)| *path)
             .chain(std::iter::once(RELEASE_STAMP_FILE))
@@ -783,9 +981,9 @@ fn validate_lower_hex(
     Ok(())
 }
 
-type ReleaseSourceArtifacts = [(&'static str, PathBuf, &'static str); 5];
+type ReleaseSourceArtifact = (&'static str, PathBuf, &'static str);
 
-fn release_source_artifacts(obr_path: &Path, sbom_path: &Path) -> ReleaseSourceArtifacts {
+fn release_source_artifacts(obr_path: &Path, sbom_path: &Path) -> [ReleaseSourceArtifact; 5] {
     [
         ("OBR", obr_path.to_path_buf(), RELEASE_OBR_FILE),
         (
@@ -807,8 +1005,39 @@ fn release_source_artifacts(obr_path: &Path, sbom_path: &Path) -> ReleaseSourceA
     ]
 }
 
+fn release_source_artifacts_v2(
+    obr_path: &Path,
+    lifecycle_path: &Path,
+    sbom_path: &Path,
+) -> [ReleaseSourceArtifact; 6] {
+    [
+        ("OBR", obr_path.to_path_buf(), RELEASE_OBR_FILE),
+        (
+            "LABEL_INDEX",
+            append_suffix(obr_path, ".labels.idx"),
+            "concepts.obr.labels.idx",
+        ),
+        (
+            "CCID_INDEX",
+            append_suffix(obr_path, ".ccids.idx"),
+            "concepts.obr.ccids.idx",
+        ),
+        (
+            "MANIFEST",
+            append_suffix(obr_path, ".manifest.json"),
+            "concepts.obr.manifest.json",
+        ),
+        (
+            "LIFECYCLE",
+            lifecycle_path.to_path_buf(),
+            RELEASE_LIFECYCLE_FILE,
+        ),
+        ("SPDX_SBOM", sbom_path.to_path_buf(), RELEASE_SBOM_FILE),
+    ]
+}
+
 fn release_capacity(
-    source_artifacts: &ReleaseSourceArtifacts,
+    source_artifacts: &[ReleaseSourceArtifact],
     available_bytes: u64,
 ) -> Result<ConceptRegistryReleaseCapacity, ConceptRegistryReleaseError> {
     let source_bytes = source_artifacts
@@ -974,6 +1203,7 @@ pub enum ConceptRegistryReleaseError {
     Json(serde_json::Error),
     Obr(ObrLoadError),
     Manifest(ConceptRegistryManifestError),
+    Lifecycle(ConceptLifecycleError),
     InvalidField(String),
     UnsupportedEntry(PathBuf),
     TooLarge {
@@ -1011,6 +1241,7 @@ impl fmt::Display for ConceptRegistryReleaseError {
             Self::Json(error) => write!(formatter, "registry release JSON error: {error}"),
             Self::Obr(error) => write!(formatter, "registry release OBR error: {error}"),
             Self::Manifest(error) => write!(formatter, "registry release manifest error: {error}"),
+            Self::Lifecycle(error) => write!(formatter, "registry release lifecycle error: {error}"),
             Self::InvalidField(field) => write!(formatter, "invalid registry release field: {field}"),
             Self::UnsupportedEntry(path) => write!(formatter, "unsupported registry release entry: {}", path.display()),
             Self::TooLarge { path, length } => write!(formatter, "registry release metadata is too large: {} ({length} bytes)", path.display()),
@@ -1234,6 +1465,7 @@ mod tests {
                 .collect(),
             label_index: Some(index(&label_index)),
             ccid_index: Some(index(&ccid_index)),
+            lifecycle_blake3: None,
         };
         fs::write(
             append_suffix(&obr_path, ".manifest.json"),
@@ -1559,6 +1791,143 @@ mod tests {
             }
             other => panic!("unknown kill operation: {other}"),
         }
+    }
+
+    #[test]
+    fn v2_release_verifies_lifecycle_cbor_and_blocks_cyclic_activation_closed() {
+        use crate::concept_lifecycle::{
+            ConceptLifecycleRecord, ConceptLifecycleTable, ConceptRedirect,
+        };
+        use crate::foundation::ConceptCcid;
+
+        let directory = tempfile::tempdir().unwrap();
+        let registry = directory.path().join("registry");
+        let key = SigningKey::from_bytes(&[42; 32]);
+
+        // Activate a stable v1 release first.
+        package(
+            &directory.path().join("fixture-v1"),
+            &registry,
+            "registry-v1",
+            1,
+            &key,
+        );
+        activate_concept_registry_release(&registry, "registry-v1", &key.verifying_key()).unwrap();
+
+        // Build a valid v2 release with an acyclic ConceptLifecycleTable.
+        let v2_fixture = directory.path().join("fixture-v2");
+        let (obr_path, sbom_path) = write_fixture(&v2_fixture, 2);
+        let table = ConceptLifecycleTable::from_records(vec![ConceptLifecycleRecord::Redirect(
+            ConceptRedirect {
+                deprecated_ccid: ConceptCcid::from_bytes([0xAA; 16]),
+                canonical_ccid: ConceptCcid::from_bytes([0xBB; 16]),
+                since_release_seq: 2,
+                provenance_ref: "wd:Q10->wd:Q20".to_owned(),
+            },
+        )])
+        .unwrap();
+        let lifecycle_bytes = table.encode_bytes().unwrap();
+        let lifecycle_path = v2_fixture.join("concepts.lifecycle.cbor");
+        fs::write(&lifecycle_path, &lifecycle_bytes).unwrap();
+
+        let manifest_file = append_suffix(&obr_path, ".manifest.json");
+        let mut manifest: ConceptRegistryManifest =
+            serde_json::from_slice(&fs::read(&manifest_file).unwrap()).unwrap();
+        manifest.lifecycle_blake3 = Some(blake3::hash(&lifecycle_bytes).to_hex().to_string());
+        fs::write(
+            &manifest_file,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        let stamp = package_concept_registry_release_v2(
+            &obr_path,
+            &lifecycle_path,
+            &sbom_path,
+            &registry,
+            ConceptRegistryReleasePackageInput {
+                release_id: "registry-v2".to_owned(),
+                sources: sources(),
+            },
+            &key,
+        )
+        .unwrap();
+        assert_eq!(stamp.profile, CONCEPT_REGISTRY_RELEASE_PROFILE_V2);
+        assert_eq!(stamp.artifacts.len(), 6);
+
+        let activated =
+            activate_concept_registry_release(&registry, "registry-v2", &key.verifying_key())
+                .unwrap();
+        assert_eq!(activated.generation, 2);
+        assert_eq!(activated.active_release, "registry-v2");
+
+        // Roll back to v1, then craft a signed-looking cyclic v2 candidate and confirm
+        // activation fails closed while retaining registry-v1 active.
+        rollback_concept_registry_release(&registry, &key.verifying_key()).unwrap();
+
+        // Construct raw canonical CBOR with a 2-node cycle A -> B -> A.
+        let cyclic_value = crate::foundation::CanonicalValue::Map(vec![
+            (0, crate::foundation::CanonicalValue::Unsigned(1)),
+            (1, crate::foundation::CanonicalValue::Unsigned(0)),
+            (
+                2,
+                crate::foundation::CanonicalValue::Array(vec![
+                    crate::foundation::CanonicalValue::Map(vec![
+                        (0, crate::foundation::CanonicalValue::Unsigned(0)),
+                        (1, crate::foundation::CanonicalValue::Bytes(vec![0x01; 16])),
+                        (2, crate::foundation::CanonicalValue::Bytes(vec![0x02; 16])),
+                        (3, crate::foundation::CanonicalValue::Unsigned(3)),
+                        (
+                            4,
+                            crate::foundation::CanonicalValue::Text("a->b".to_owned()),
+                        ),
+                    ]),
+                    crate::foundation::CanonicalValue::Map(vec![
+                        (0, crate::foundation::CanonicalValue::Unsigned(0)),
+                        (1, crate::foundation::CanonicalValue::Bytes(vec![0x02; 16])),
+                        (2, crate::foundation::CanonicalValue::Bytes(vec![0x01; 16])),
+                        (3, crate::foundation::CanonicalValue::Unsigned(3)),
+                        (
+                            4,
+                            crate::foundation::CanonicalValue::Text("b->a".to_owned()),
+                        ),
+                    ]),
+                ]),
+            ),
+        ]);
+        let cyclic_bytes =
+            crate::foundation::encode_canonical(&cyclic_value, ResourceProfile::ControlV1).unwrap();
+        let bad_fixture = directory.path().join("fixture-cyclic");
+        let (bad_obr, bad_sbom) = write_fixture(&bad_fixture, 3);
+        let bad_lifecycle = bad_fixture.join("concepts.lifecycle.cbor");
+        fs::write(&bad_lifecycle, &cyclic_bytes).unwrap();
+        let bad_manifest_file = append_suffix(&bad_obr, ".manifest.json");
+        let mut bad_manifest: ConceptRegistryManifest =
+            serde_json::from_slice(&fs::read(&bad_manifest_file).unwrap()).unwrap();
+        bad_manifest.lifecycle_blake3 = Some(blake3::hash(&cyclic_bytes).to_hex().to_string());
+        fs::write(
+            &bad_manifest_file,
+            serde_json::to_vec_pretty(&bad_manifest).unwrap(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            package_concept_registry_release_v2(
+                &bad_obr,
+                &bad_lifecycle,
+                &bad_sbom,
+                &registry,
+                ConceptRegistryReleasePackageInput {
+                    release_id: "registry-cyclic".to_owned(),
+                    sources: sources(),
+                },
+                &key,
+            ),
+            Err(ConceptRegistryReleaseError::Lifecycle(_))
+        ));
+        let active =
+            resolve_active_concept_registry_release(&registry, &key.verifying_key()).unwrap();
+        assert_eq!(active.release_id, "registry-v1");
     }
 
     fn run_process_kill_case(phase: &str, activation: bool) {

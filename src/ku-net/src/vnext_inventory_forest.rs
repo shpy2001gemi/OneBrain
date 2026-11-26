@@ -200,6 +200,77 @@ impl HybridInventoryForest {
         self.semantic_shards.get(key)
     }
 
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn all_records(&self) -> Vec<InventoryLeaf> {
+        self.records.values().copied().collect()
+    }
+
+    pub fn feed_prefixes(&self) -> Vec<FeedPrefixInventory> {
+        self.feed_prefixes.values().cloned().collect()
+    }
+
+    /// Return a canonically ordered page of feed-prefix & checkpoint frontier entries
+    /// (`P2` §3) starting strictly after `after_key = (feed_id, covered_sequence, head_event_cid)`.
+    /// Conflicting heads at the same `(feed_id, covered_sequence)` are preserved (`NEG-NET-006`).
+    pub fn feed_prefix_page(
+        &self,
+        after_key: Option<([u8; 32], u64, [u8; 32])>,
+        max_entries: usize,
+        equivocation_proofs: &BTreeMap<([u8; 32], u64), [u8; 32]>,
+    ) -> Result<
+        (
+            Vec<onebrain_protocol::FrontierSummaryEntryV1>,
+            Option<([u8; 32], u64, [u8; 32])>,
+        ),
+        InventoryForestError,
+    > {
+        if max_entries == 0 || max_entries > onebrain_protocol::MAX_FRONTIER_ENTRIES_PER_PAGE {
+            return Err(InventoryForestError::Limit);
+        }
+        let iter: Box<
+            dyn Iterator<Item = (&([u8; 32], u64, [u8; 32]), &FeedPrefixInventory)> + '_,
+        > = match after_key {
+            Some(bound) => Box::new(
+                self.feed_prefixes
+                    .range((std::ops::Bound::Excluded(bound), std::ops::Bound::Unbounded)),
+            ),
+            None => Box::new(self.feed_prefixes.iter()),
+        };
+
+        let mut page = Vec::with_capacity(max_entries.min(self.feed_prefixes.len()));
+        let mut last_key = None;
+        let mut has_more = false;
+        for (idx, (key, prefix)) in iter.enumerate() {
+            if idx == max_entries {
+                has_more = true;
+                break;
+            }
+            let feed_id = *prefix.feed.as_bytes();
+            let covered_sequence = prefix.through_sequence;
+            let head_event_cid = *prefix.head_event.as_bytes();
+            let checkpoint_cid = prefix
+                .checkpoint_frontier_refs
+                .last()
+                .map(|cid| *cid.as_bytes());
+            let equivocation_proof_cid = equivocation_proofs
+                .get(&(feed_id, covered_sequence))
+                .copied();
+            page.push(onebrain_protocol::FrontierSummaryEntryV1 {
+                feed_id,
+                covered_sequence,
+                head_event_cid,
+                checkpoint_cid,
+                equivocation_proof_cid,
+            });
+            last_key = Some(*key);
+        }
+        let continuation = if has_more { last_key } else { None };
+        Ok((page, continuation))
+    }
+
     pub fn root(&self) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"onebrain:vnext:inventory-forest-root:1\0");

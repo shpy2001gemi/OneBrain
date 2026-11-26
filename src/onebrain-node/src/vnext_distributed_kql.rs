@@ -7,22 +7,41 @@
 #![cfg(feature = "vnext-network-runtime")]
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use ku_core::concept_lifecycle::{AuthoringConceptResolution, ConceptLifecycleTable};
 use ku_core::foundation::{
-    decode_knowledge_object, dr_m5_failpoint, CoverageBasis, CoverageLimitation, CoverageStatement,
-    CoverageStatus, DisclosureClass, EventCid, KnowledgeAffordance, KnownObjectKind, NodeId,
-    ObjectReference, ObjectSemantics, ResourceProfile, SelectorCid, KNOWLEDGE_AFFORDANCE_KIND,
+    decode_knowledge_object, decode_provider_lease, decode_provider_retire, dr_m5_failpoint,
+    project_virtual_sfs_affordance, ConceptCcid, CoverageBasis, CoverageLimitation,
+    CoverageStatement, CoverageStatus, DisclosureClass, EventCid, KeyStateReducer,
+    KnowledgeAffordance, KnownObjectKind, LeaseObservationOutcome, LeaseObservationStore, NodeId,
+    ObjectReference, ObjectSemantics, PermitValidator, ProviderApplyOutcome, ProviderLeaseMap,
+    ProviderRecordError, ResourceProfile, SelectorCid, SemanticFrameSet, TermRef,
+    ValidatedFeedInception, ValidatedProviderLease, ValidatedProviderRetire,
+    KNOWLEDGE_AFFORDANCE_KIND, SEMANTIC_KERNEL_OBJECT_KIND,
 };
+use ku_kql::vnext_disclosure_capsule::{
+    AuthorizedDisclosureSession, CapsuleCancelV1 as KqlCapsuleCancelV1, DisclosureCapsuleError,
+    DisclosureSessionKey, DisclosureSessionRequest, DisclosureStage, ProgressiveDisclosurePayload,
+    ProgressiveDisclosureSession,
+};
+use ku_kql::vnext_matcher::ExactTypedMatcher;
 use ku_kql::vnext_private_need::{
     LocalNeedVaultKey, PrivateNeedBundle, PrivateNeedLifecycle, RedbPrivateNeedVault,
 };
 use ku_kql::vnext_proposal::{BindingProposal, ProposalId, ProposalQuarantine};
+use ku_kql::vnext_query::{
+    CoarseRouteToken, DisclosureCompiler, QueryContractError, QueryRun, RouteSketchEntropy,
+};
 use ku_kql::vnext_reunion::{
     LocalNeedTarget, ReunionBudget, ReunionFrontier, ValidatedRemoteAffordance,
 };
+use ku_kql::vnext_route_packet::{
+    provider_dht_key, AcceptedRouteNeed, RedbRoutePacketReplayGuard, RoutePacketError,
+};
 use ku_kql::vnext_standing_need::{StandingNeed, StandingNeedId, StandingNeedWriteOutcome};
 use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
+use onebrain_protocol::pillar_wire::{DiscoveryWireMessageV1, WatchRootHintV1, MAX_WATCH_TTL_SECS};
 use onebrain_protocol::ReconcileManifestKind;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
@@ -36,9 +55,26 @@ const MATCHES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_matches_v1");
 const CURSORS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_cursors_v1");
+const SFS_CURSORS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_distributed_kql_sfs_cursors_v1");
 const MATCH_KEY_BYTES: usize = 64;
 const MATCH_VALUE_BYTES: usize = 96;
 pub(crate) const MAX_DURABLE_KQL_MATCHES: u64 = 65_536;
+pub const ROUTE_PACKET_REPLAY_DB_FILENAME: &str = "vnext_route_packet_replay.redb";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActiveSelectorWatch {
+    pub selector_cid: SelectorCid,
+    pub expires_at_unix_s: u64,
+    pub last_observed_root: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScheduledSelectorDeltaSync {
+    pub selector_cid: SelectorCid,
+    pub new_root: [u8; 32],
+    pub watch_expires_at_unix_s: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DistributedKqlBudget {
@@ -105,11 +141,19 @@ pub struct DistributedKqlReport {
 }
 
 pub struct DistributedKqlRuntime {
+    data_dir: PathBuf,
     private_needs: RedbPrivateNeedVault,
     targets: BTreeMap<[u8; 32], LocalNeedTarget>,
     frontier: ReunionFrontier,
     quarantine: ProposalQuarantine,
     durable_matches: DurableMatchIndex,
+    provider_leases: ProviderLeaseMap,
+    lease_observations: LeaseObservationStore,
+    route_replay_guard: Option<RedbRoutePacketReplayGuard>,
+    disclosure_compiler: DisclosureCompiler,
+    ephemeral_session_keys: BTreeMap<[u8; 32], DisclosureSessionKey>,
+    watch_leases: BTreeMap<[u8; 32], ActiveSelectorWatch>,
+    scheduled_watch_syncs: Vec<ScheduledSelectorDeltaSync>,
 }
 
 impl DistributedKqlRuntime {
@@ -135,11 +179,19 @@ impl DistributedKqlRuntime {
         let durable_matches =
             DurableMatchIndex::open(&data_dir.join("vnext_distributed_kql.redb"))?;
         Ok(Self {
+            data_dir: data_dir.to_path_buf(),
             private_needs,
             targets: BTreeMap::new(),
             frontier: ReunionFrontier::default(),
             quarantine: ProposalQuarantine::default(),
             durable_matches,
+            provider_leases: ProviderLeaseMap::default(),
+            lease_observations: LeaseObservationStore::default(),
+            route_replay_guard: None,
+            disclosure_compiler: DisclosureCompiler::default(),
+            ephemeral_session_keys: BTreeMap::new(),
+            watch_leases: BTreeMap::new(),
+            scheduled_watch_syncs: Vec::new(),
         })
     }
 
@@ -459,6 +511,652 @@ impl DistributedKqlRuntime {
             claims_network_completion: false,
         })
     }
+
+    /// Dual-kind local matcher (`P3` Wave 6): matches BOTH explicit `KNOWLEDGE_AFFORDANCE_KIND` (`5`)
+    /// AND `SEMANTIC_KERNEL_OBJECT_KIND` (`2`) via `project_virtual_sfs_affordance` +
+    /// `ExactTypedMatcher::match_semantic_frame_set` + `ConceptLifecycleTable` redirect expansion!
+    pub fn process_one_hop_semantic_and_affordance_delta(
+        &mut self,
+        network: &VNextNetworkRuntime,
+        selector: SelectorCid,
+        budget: DistributedKqlBudget,
+        lifecycle_table: Option<&ConceptLifecycleTable>,
+    ) -> Result<DistributedKqlReport, DistributedKqlError> {
+        budget.validate()?;
+        let targets: Vec<LocalNeedTarget> = self
+            .targets
+            .values()
+            .filter(|target| target.need.selector == selector)
+            .map(|target| expand_target_redirects(target, lifecycle_table))
+            .collect();
+
+        let page_limit = usize::try_from(budget.max_scan_records.min(budget.max_affordances))
+            .map_err(|_| DistributedKqlError::Limit)?
+            .min(MAX_TYPED_DELTA_PAGE_RECORDS);
+
+        let aff_cursor = self.durable_matches.cursor(selector)?;
+        let aff_indexed = network.typed_record_delta(
+            selector,
+            ReconcileManifestKind::Object,
+            KNOWLEDGE_AFFORDANCE_KIND.0,
+            aff_cursor,
+            page_limit,
+        )?;
+        let sfs_cursor = self.durable_matches.sfs_cursor(selector)?;
+        let sfs_indexed = network.typed_record_delta(
+            selector,
+            ReconcileManifestKind::Object,
+            SEMANTIC_KERNEL_OBJECT_KIND.0,
+            sfs_cursor,
+            page_limit,
+        )?;
+
+        let mut observations = BTreeMap::<[u8; 32], AffordanceObservation>::new();
+        let mut delta = Vec::new();
+        let mut ignored = 0u64;
+        let mut invalid_affordances = 0u64;
+
+        for record in &aff_indexed.records {
+            if record.source_peers.is_empty() {
+                continue;
+            }
+            let validated = decode_knowledge_object(
+                &record.canonical_bytes,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(KNOWLEDGE_AFFORDANCE_KIND, 1)],
+                &[],
+            )
+            .map_err(|error| DistributedKqlError::Affordance(error.to_string()))?;
+            let ObjectSemantics::Known(envelope) = validated.semantics() else {
+                ignored = ignored.saturating_add(1);
+                continue;
+            };
+            if envelope.kind != KNOWLEDGE_AFFORDANCE_KIND
+                || envelope.disclosure != DisclosureClass::Public
+            {
+                ignored = ignored.saturating_add(1);
+                continue;
+            }
+            let Ok(mut affordance) = KnowledgeAffordance::from_validated_object(&validated) else {
+                invalid_affordances = invalid_affordances.saturating_add(1);
+                continue;
+            };
+            if let Some(table) = lifecycle_table {
+                affordance = expand_affordance_redirects(&affordance, table);
+            }
+            let remote = ValidatedRemoteAffordance::from_public_object(&validated, affordance)
+                .map_err(|error| DistributedKqlError::Reunion(format!("{error:?}")))?;
+            let reference = remote.reference().clone();
+            observations.insert(
+                reference.cid,
+                AffordanceObservation {
+                    reference,
+                    peers: record.source_peers.clone(),
+                    canonical_bytes: u64::try_from(record.canonical_bytes.len())
+                        .map_err(|_| DistributedKqlError::Limit)?,
+                },
+            );
+            delta.push(remote);
+        }
+
+        let mut sfs_direct_matches = Vec::<(StandingNeedId, ProposalId, [u8; 32])>::new();
+        for record in &sfs_indexed.records {
+            if record.source_peers.is_empty() {
+                continue;
+            }
+            let validated = decode_knowledge_object(
+                &record.canonical_bytes,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(SEMANTIC_KERNEL_OBJECT_KIND, 1)],
+                &[],
+            )
+            .map_err(|error| DistributedKqlError::Affordance(error.to_string()))?;
+            let ObjectSemantics::Known(envelope) = validated.semantics() else {
+                ignored = ignored.saturating_add(1);
+                continue;
+            };
+            if envelope.kind != SEMANTIC_KERNEL_OBJECT_KIND
+                || envelope.disclosure != DisclosureClass::Public
+            {
+                ignored = ignored.saturating_add(1);
+                continue;
+            }
+            let Ok(raw_sfs) = SemanticFrameSet::from_canonical_value(&envelope.payload) else {
+                invalid_affordances = invalid_affordances.saturating_add(1);
+                continue;
+            };
+            let sfs = expand_sfs_redirects(&raw_sfs, lifecycle_table);
+            let ku_ref =
+                ObjectReference::new(SEMANTIC_KERNEL_OBJECT_KIND.0, validated.cid().into_bytes());
+            let Ok(virtual_affordance) = project_virtual_sfs_affordance(ku_ref.clone(), &sfs)
+            else {
+                invalid_affordances = invalid_affordances.saturating_add(1);
+                continue;
+            };
+
+            observations.insert(
+                ku_ref.cid,
+                AffordanceObservation {
+                    reference: ku_ref.clone(),
+                    peers: record.source_peers.clone(),
+                    canonical_bytes: u64::try_from(record.canonical_bytes.len())
+                        .map_err(|_| DistributedKqlError::Limit)?,
+                },
+            );
+
+            for target in &targets {
+                let need_id = target.need.id()?;
+                let req = ku_kql::vnext_matcher::TypedMatchRequest {
+                    receptor_reference: target.need.receptor_definition.clone(),
+                    receptor: &target.receptor,
+                    required_semantics: &target.required_semantics,
+                    local_context: &target.local_context,
+                    affordance_reference: ku_ref.clone(),
+                    affordance: &virtual_affordance,
+                    generator: target.generator.clone(),
+                    derivation_rule: target.derivation_rule.clone(),
+                    evidence: target.evidence.clone(),
+                    index_commitment: target.index_commitment.clone(),
+                    rule_commitment: target.rule_commitment.clone(),
+                    metrics: target.metrics,
+                    unmapped_reason: target.unmapped_reason,
+                    source_frontier: target.source_frontier,
+                    created_at_evaluation: target.created_at_evaluation,
+                    expires_after_evaluations: target.expires_after_evaluations,
+                    privacy: DisclosureClass::LocalOnly,
+                };
+                if let Ok(ku_kql::vnext_matcher::MatcherOutcome::Proposal { proposal, .. }) =
+                    ExactTypedMatcher::match_affordance(req)
+                {
+                    let pid = self
+                        .quarantine
+                        .insert(*proposal)
+                        .map_err(|e| DistributedKqlError::Reunion(format!("{e:?}")))?;
+                    sfs_direct_matches.push((need_id, pid, ku_ref.cid));
+                }
+            }
+        }
+
+        let reunion = self
+            .frontier
+            .join_affordance_delta(
+                delta,
+                &targets,
+                &mut self.quarantine,
+                ReunionBudget {
+                    max_delta_objects: budget.max_affordances,
+                    max_pairs: budget.max_pairs,
+                    max_proposals: budget.max_proposals,
+                },
+            )
+            .map_err(|error| DistributedKqlError::Reunion(format!("{error:?}")))?;
+
+        let target_by_id = targets
+            .iter()
+            .map(|target| {
+                target
+                    .need
+                    .id()
+                    .map(|id| (*id.as_bytes(), target.source_frontier))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let mut matches = Vec::new();
+        let mut returned_bytes = 0u64;
+        let mut new_matches = 0u64;
+        let mut replayed_matches = 0u64;
+
+        let mut combined_proposals: Vec<(StandingNeedId, ProposalId)> = reunion
+            .proposals
+            .iter()
+            .filter_map(|rec| rec.local_need.map(|n| (n, rec.proposal)))
+            .collect();
+        for (need_id, pid, _) in sfs_direct_matches {
+            combined_proposals.push((need_id, pid));
+        }
+
+        for (need, proposal_id) in combined_proposals {
+            let proposal = self
+                .quarantine
+                .get(proposal_id)
+                .ok_or(DistributedKqlError::MissingProposal)?;
+            let observation = proposal
+                .candidate_objects
+                .iter()
+                .find_map(|candidate| observations.get(&candidate.cid))
+                .ok_or(DistributedKqlError::MissingAffordanceProvenance)?;
+            let source_frontier = *target_by_id
+                .get(need.as_bytes())
+                .ok_or(DistributedKqlError::MissingStandingNeed)?;
+            let newly_recorded = self.durable_matches.record(
+                need,
+                proposal_id,
+                observation.reference.cid,
+                selector,
+                source_frontier,
+            )?;
+            if newly_recorded {
+                new_matches = new_matches.saturating_add(1);
+                returned_bytes = returned_bytes.saturating_add(observation.canonical_bytes);
+                matches.push(DistributedKqlMatch {
+                    proposal: proposal_id,
+                    standing_need: need,
+                    affordance: observation.reference.clone(),
+                    responder_scope: observation.peers.clone(),
+                    selector,
+                    assessed_frontier: source_frontier,
+                    newly_recorded,
+                });
+            } else {
+                replayed_matches = replayed_matches.saturating_add(1);
+            }
+        }
+
+        self.durable_matches
+            .set_cursor(selector, aff_indexed.next_cursor)?;
+        self.durable_matches
+            .set_sfs_cursor(selector, sfs_indexed.next_cursor)?;
+        matches.sort_by_key(|entry| (*entry.standing_need.as_bytes(), *entry.proposal.as_bytes()));
+
+        let mut assessed_frontier = target_by_id.values().copied().collect::<Vec<_>>();
+        assessed_frontier.sort_by_key(|event| *event.as_bytes());
+        assessed_frontier.dedup();
+        let mut limitations = vec![CoverageLimitation::PathLimited];
+        let exhausted = aff_indexed.exhausted && sfs_indexed.exhausted;
+        if !exhausted || reunion.budget_deferred_objects > 0 {
+            limitations.push(CoverageLimitation::BudgetExhausted);
+        }
+        let continuation_needed = !exhausted || reunion.budget_deferred_objects > 0;
+        let continuation = continuation_needed.then(|| {
+            continuation_token(
+                selector,
+                aff_indexed
+                    .next_cursor
+                    .wrapping_add(sfs_indexed.next_cursor),
+            )
+        });
+        let coverage = CoverageStatement {
+            selector,
+            assessed_frontier,
+            basis: CoverageBasis::ExactInventory,
+            status: CoverageStatus::Partial,
+            returned_records: matches.len() as u64,
+            returned_bytes,
+            continuation,
+            limitations,
+        };
+        coverage
+            .validate()
+            .map_err(|error| DistributedKqlError::Coverage(format!("{error:?}")))?;
+        Ok(DistributedKqlReport {
+            scanned_public_affordances: (aff_indexed.records.len() + sfs_indexed.records.len())
+                as u64,
+            ignored_non_affordance_objects: ignored,
+            ignored_invalid_affordances: invalid_affordances,
+            duplicate_frontier_objects: reunion.duplicate_frontier_objects,
+            hard_mismatches: reunion.hard_mismatches,
+            new_matches,
+            replayed_matches,
+            matches,
+            coverage,
+            claims_automatic_materialization: false,
+            claims_automatic_adoption: false,
+            claims_network_completion: false,
+        })
+    }
+
+    // ─── M6A.1: ProviderLeaseMap + Local-Only `first_seen_monotonic` ─────────
+
+    pub fn ingest_provider_lease(
+        &mut self,
+        signed_lease_bytes: &[u8],
+        signer: &ValidatedFeedInception,
+        key_state: &KeyStateReducer,
+        first_seen_monotonic: u64,
+    ) -> Result<
+        (
+            ValidatedProviderLease,
+            ProviderApplyOutcome,
+            LeaseObservationOutcome,
+        ),
+        DistributedKqlError,
+    > {
+        let lease = decode_provider_lease(signed_lease_bytes, signer, key_state)
+            .map_err(DistributedKqlError::ProviderRecord)?;
+        let obs = self
+            .lease_observations
+            .observe(lease.lease_id, first_seen_monotonic);
+        let outcome = self.provider_leases.apply_lease(lease.clone());
+        Ok((lease, outcome, obs))
+    }
+
+    pub fn ingest_provider_retire(
+        &mut self,
+        signed_retire_bytes: &[u8],
+        signer: &ValidatedFeedInception,
+        key_state: &KeyStateReducer,
+    ) -> Result<(ValidatedProviderRetire, ProviderApplyOutcome), DistributedKqlError> {
+        let retire = decode_provider_retire(signed_retire_bytes, signer, key_state)
+            .map_err(DistributedKqlError::ProviderRecord)?;
+        let outcome = self.provider_leases.apply_retirement(retire.clone());
+        Ok((retire, outcome))
+    }
+
+    pub fn provider_lease_map(&self) -> &ProviderLeaseMap {
+        &self.provider_leases
+    }
+
+    pub fn lease_observation_store(&self) -> &LeaseObservationStore {
+        &self.lease_observations
+    }
+
+    /// Lookup active providers under `provider_dht_key(selector, target_ccid_or_tuple)`,
+    /// pairing each active `ValidatedProviderLease` with its `LOCAL_ONLY` `first_seen_monotonic`.
+    pub fn lookup_providers_by_dht_key(
+        &self,
+        selector: SelectorCid,
+        target_ccid_or_tuple: &[u8],
+        current_local_tick: u64,
+        limit: usize,
+    ) -> ([u8; 32], Vec<(ValidatedProviderLease, Option<u64>)>, bool) {
+        let dht_key = provider_dht_key(selector, target_ccid_or_tuple);
+        let (leases, truncated) = self.provider_leases.active_for_index_bounded(
+            dht_key,
+            &self.lease_observations,
+            current_local_tick,
+            limit,
+        );
+        let items = leases
+            .into_iter()
+            .map(|l| (l.clone(), self.lease_observations.first_seen(l.lease_id)))
+            .collect();
+        (dht_key, items, truncated)
+    }
+
+    // ─── M6A.2: RouteNeedSketch (`support >= 64`), Durable Replay & Disclosure Capsules
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn compile_route_need_sketch(
+        &mut self,
+        run: &QueryRun,
+        token: CoarseRouteToken,
+        estimated_support: u64,
+        response_budget_bucket: u8,
+        expiry_evaluations: u32,
+        hop_budget: u8,
+        padding_class: u8,
+        entropy: RouteSketchEntropy,
+    ) -> Result<Vec<u8>, DistributedKqlError> {
+        let sketch = self
+            .disclosure_compiler
+            .compile_route_minimal(
+                run,
+                token,
+                estimated_support,
+                response_budget_bucket,
+                expiry_evaluations,
+                hop_budget,
+                padding_class,
+                entropy,
+            )
+            .map_err(DistributedKqlError::QueryContract)?;
+        sketch
+            .network_bytes()
+            .map_err(DistributedKqlError::QueryContract)
+    }
+
+    fn ensure_route_replay_guard(
+        &mut self,
+    ) -> Result<&RedbRoutePacketReplayGuard, DistributedKqlError> {
+        if self.route_replay_guard.is_none() {
+            let guard = RedbRoutePacketReplayGuard::open(
+                &self.data_dir.join(ROUTE_PACKET_REPLAY_DB_FILENAME),
+            )
+            .map_err(DistributedKqlError::RoutePacket)?;
+            self.route_replay_guard = Some(guard);
+        }
+        Ok(self.route_replay_guard.as_ref().expect("opened above"))
+    }
+
+    pub fn accept_route_need_sketch(
+        &mut self,
+        packet_bytes: &[u8],
+        now_unix_s: u64,
+    ) -> Result<AcceptedRouteNeed, DistributedKqlError> {
+        let guard = self.ensure_route_replay_guard()?;
+        guard
+            .accept(packet_bytes, now_unix_s)
+            .map_err(DistributedKqlError::RoutePacket)
+    }
+
+    pub fn open_progressive_disclosure_session(
+        &mut self,
+        permits: &PermitValidator,
+        request: DisclosureSessionRequest,
+        local_tick: u64,
+        session_key: DisclosureSessionKey,
+    ) -> Result<[u8; 32], DistributedKqlError> {
+        let auth = AuthorizedDisclosureSession::authorize(permits, request, local_tick)
+            .map_err(DistributedKqlError::DisclosureCapsule)?;
+        let session_id = *auth.session_id();
+        let session = ProgressiveDisclosureSession::new(auth);
+        self.private_needs.put_disclosure_session(&session)?;
+        self.ephemeral_session_keys.insert(session_id, session_key);
+        Ok(session_id)
+    }
+
+    pub fn approve_next_disclosure_stage(
+        &mut self,
+        session_id: [u8; 32],
+        stage: DisclosureStage,
+        request_nonce: [u8; 32],
+    ) -> Result<(), DistributedKqlError> {
+        let mut session = self
+            .private_needs
+            .get_disclosure_session(session_id)?
+            .ok_or(DistributedKqlError::DisclosureSessionNotFound)?;
+        session
+            .approve_next(stage, request_nonce)
+            .map_err(DistributedKqlError::DisclosureCapsule)?;
+        self.private_needs.put_disclosure_session(&session)?;
+        Ok(())
+    }
+
+    pub fn seal_progressive_disclosure_stage(
+        &mut self,
+        permits: &PermitValidator,
+        session_id: [u8; 32],
+        payload: ProgressiveDisclosurePayload,
+        local_tick: u64,
+        nonce: [u8; 24],
+    ) -> Result<Vec<u8>, DistributedKqlError> {
+        let mut session = self
+            .private_needs
+            .get_disclosure_session(session_id)?
+            .ok_or(DistributedKqlError::DisclosureSessionNotFound)?;
+        let key = self
+            .ephemeral_session_keys
+            .get_mut(&session_id)
+            .ok_or(DistributedKqlError::DisclosureSessionKeyZeroized)?;
+        let sealed = session
+            .seal_ephemeral(permits, payload, local_tick, nonce, key)
+            .map_err(DistributedKqlError::DisclosureCapsule)?;
+        let terminal = session.is_terminal();
+        self.private_needs.put_disclosure_session(&session)?;
+        if terminal {
+            self.ephemeral_session_keys.remove(&session_id);
+        }
+        Ok(sealed)
+    }
+
+    pub fn cancel_progressive_disclosure_session(
+        &mut self,
+        cancel: &KqlCapsuleCancelV1,
+        permits: &PermitValidator,
+        key_state: Option<&KeyStateReducer>,
+    ) -> Result<ProgressiveDisclosureSession, DistributedKqlError> {
+        let mut key = self
+            .ephemeral_session_keys
+            .remove(&cancel.session_id)
+            .ok_or(DistributedKqlError::DisclosureSessionKeyZeroized)?;
+        let result = self
+            .private_needs
+            .cancel_disclosure_session(cancel, permits, &mut key, key_state);
+        key.zeroize_now();
+        result.map_err(Into::into)
+    }
+
+    pub fn has_live_disclosure_session_key(&self, session_id: &[u8; 32]) -> bool {
+        self.ephemeral_session_keys
+            .get(session_id)
+            .is_some_and(|k| !k.is_zeroized())
+    }
+
+    // ─── M6A.3: Expiring `WatchSubscribe` & `WatchRootHintV1` (`TTL <= 3600s`)
+
+    pub fn subscribe_selector_watch(
+        &mut self,
+        selector_cid: SelectorCid,
+        requested_ttl_secs: u32,
+        now_unix_s: u64,
+    ) -> Result<DiscoveryWireMessageV1, DistributedKqlError> {
+        if selector_cid.as_bytes() == &[0; 32]
+            || requested_ttl_secs == 0
+            || requested_ttl_secs > MAX_WATCH_TTL_SECS
+        {
+            return Err(DistributedKqlError::InvalidWatchSubscription);
+        }
+        let expires_at_unix_s = now_unix_s.saturating_add(u64::from(requested_ttl_secs));
+        let last_observed_root = self
+            .watch_leases
+            .get(selector_cid.as_bytes())
+            .and_then(|w| w.last_observed_root);
+        self.watch_leases.insert(
+            selector_cid.into_bytes(),
+            ActiveSelectorWatch {
+                selector_cid,
+                expires_at_unix_s,
+                last_observed_root,
+            },
+        );
+        Ok(DiscoveryWireMessageV1::WatchSubscribe {
+            selector_cid,
+            requested_ttl_secs,
+        })
+    }
+
+    pub fn handle_watch_root_hint(
+        &mut self,
+        hint: WatchRootHintV1,
+        now_unix_s: u64,
+    ) -> Result<Option<ScheduledSelectorDeltaSync>, DistributedKqlError> {
+        if hint.selector_cid.as_bytes() == &[0; 32]
+            || hint.new_root == [0; 32]
+            || hint.ttl_secs == 0
+            || hint.ttl_secs > MAX_WATCH_TTL_SECS
+        {
+            return Err(DistributedKqlError::InvalidWatchSubscription);
+        }
+        let Some(watch) = self.watch_leases.get_mut(hint.selector_cid.as_bytes()) else {
+            return Ok(None);
+        };
+        if now_unix_s >= watch.expires_at_unix_s {
+            self.watch_leases.remove(hint.selector_cid.as_bytes());
+            return Ok(None);
+        }
+        if watch.last_observed_root == Some(hint.new_root) {
+            return Ok(None);
+        }
+        watch.last_observed_root = Some(hint.new_root);
+        let scheduled = ScheduledSelectorDeltaSync {
+            selector_cid: hint.selector_cid,
+            new_root: hint.new_root,
+            watch_expires_at_unix_s: watch.expires_at_unix_s,
+        };
+        self.scheduled_watch_syncs.push(scheduled);
+        Ok(Some(scheduled))
+    }
+
+    pub fn drain_scheduled_watch_syncs(&mut self) -> Vec<ScheduledSelectorDeltaSync> {
+        std::mem::take(&mut self.scheduled_watch_syncs)
+    }
+}
+
+fn resolve_ccid(ccid: ConceptCcid, table: Option<&ConceptLifecycleTable>) -> ConceptCcid {
+    let Some(t) = table else {
+        return ccid;
+    };
+    match t.resolve_for_authoring(ccid) {
+        AuthoringConceptResolution::Redirected { to, .. } => to,
+        _ => ccid,
+    }
+}
+
+fn expand_sfs_redirects(
+    sfs: &SemanticFrameSet,
+    table: Option<&ConceptLifecycleTable>,
+) -> SemanticFrameSet {
+    let Some(_) = table else {
+        return sfs.clone();
+    };
+    let statements = sfs
+        .statements
+        .iter()
+        .map(|stmt| {
+            let mut next = stmt.clone();
+            next.operator_or_predicate = resolve_ccid(next.operator_or_predicate, table);
+            for arg in &mut next.arguments {
+                if let TermRef::Concept(c) = arg {
+                    *c = resolve_ccid(*c, table);
+                }
+            }
+            next
+        })
+        .collect();
+    SemanticFrameSet { statements }
+}
+
+fn expand_affordance_redirects(
+    aff: &KnowledgeAffordance,
+    table: &ConceptLifecycleTable,
+) -> KnowledgeAffordance {
+    let mut next = aff.clone();
+    next.offered_roles = next
+        .offered_roles
+        .iter()
+        .map(|&r| resolve_ccid(r, Some(table)))
+        .collect();
+    for inp in &mut next.accepted_inputs {
+        inp.role = resolve_ccid(inp.role, Some(table));
+    }
+    next.semantics.preconditions = expand_sfs_redirects(&next.semantics.preconditions, Some(table));
+    next.semantics.outputs = expand_sfs_redirects(&next.semantics.outputs, Some(table));
+    next.semantics.effects = expand_sfs_redirects(&next.semantics.effects, Some(table));
+    next.semantics.properties = expand_sfs_redirects(&next.semantics.properties, Some(table));
+    next.semantics.invariants = expand_sfs_redirects(&next.semantics.invariants, Some(table));
+    next.semantics.operating_conditions =
+        expand_sfs_redirects(&next.semantics.operating_conditions, Some(table));
+    next.semantics.limits = expand_sfs_redirects(&next.semantics.limits, Some(table));
+    next
+}
+
+fn expand_target_redirects(
+    target: &LocalNeedTarget,
+    table: Option<&ConceptLifecycleTable>,
+) -> LocalNeedTarget {
+    let Some(t) = table else {
+        return target.clone();
+    };
+    let mut next = target.clone();
+    next.receptor.role = resolve_ccid(next.receptor.role, Some(t));
+    next.receptor.expected_types = next
+        .receptor
+        .expected_types
+        .iter()
+        .map(|&c| resolve_ccid(c, Some(t)))
+        .collect();
+    next.required_semantics = expand_sfs_redirects(&next.required_semantics, Some(t));
+    next.local_context = expand_sfs_redirects(&next.local_context, Some(t));
+    next
 }
 
 impl PortableArchiveRows for DistributedKqlRuntime {
@@ -770,6 +1468,53 @@ impl DurableMatchIndex {
             .commit()
             .map_err(|error| DistributedKqlError::Storage(error.to_string()))
     }
+
+    fn sfs_cursor(&self, selector: SelectorCid) -> Result<u64, DistributedKqlError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        let Ok(table) = read.open_table(SFS_CURSORS) else {
+            return Ok(0);
+        };
+        let value = table
+            .get(selector.as_bytes().as_slice())
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?
+            .map(|value| value.value().to_vec());
+        match value {
+            Some(value) => value
+                .as_slice()
+                .try_into()
+                .map(u64::from_be_bytes)
+                .map_err(|_| DistributedKqlError::CursorCorrupt),
+            None => Ok(0),
+        }
+    }
+
+    fn set_sfs_cursor(
+        &self,
+        selector: SelectorCid,
+        sequence: u64,
+    ) -> Result<(), DistributedKqlError> {
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        {
+            let mut table = write
+                .open_table(SFS_CURSORS)
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+            table
+                .insert(
+                    selector.as_bytes().as_slice(),
+                    sequence.to_be_bytes().as_slice(),
+                )
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        }
+        write
+            .commit()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))
+    }
 }
 
 fn continuation_token(selector: SelectorCid, sequence: u64) -> [u8; 32] {
@@ -820,6 +1565,20 @@ pub enum DistributedKqlError {
     PrivateNeed(ku_kql::vnext_private_need::PrivateNeedError),
     #[error("distributed KQL network runtime failed: {0}")]
     Network(#[from] VNextNetworkRuntimeError),
+    #[error("distributed KQL provider record failed: {0:?}")]
+    ProviderRecord(ProviderRecordError),
+    #[error("distributed KQL query contract failed: {0:?}")]
+    QueryContract(QueryContractError),
+    #[error("distributed KQL route packet failed: {0:?}")]
+    RoutePacket(RoutePacketError),
+    #[error("distributed KQL disclosure capsule failed: {0:?}")]
+    DisclosureCapsule(DisclosureCapsuleError),
+    #[error("distributed KQL progressive disclosure session not found")]
+    DisclosureSessionNotFound,
+    #[error("distributed KQL ephemeral disclosure session key was zeroized or absent")]
+    DisclosureSessionKeyZeroized,
+    #[error("distributed KQL selector watch subscription or hint invalid (TTL must be 1..=3600s)")]
+    InvalidWatchSubscription,
 }
 
 impl From<ku_kql::vnext_standing_need::StandingNeedError> for DistributedKqlError {

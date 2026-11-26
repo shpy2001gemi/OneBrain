@@ -1983,13 +1983,7 @@ impl PortableArchiveRows for PomvArchiveStores {
                 &row.value,
                 Some(MAX_PUBLICATIONS),
             ),
-            2 => restore_pomv_table(
-                &self.publisher.database,
-                FEED_HEADS,
-                &row.key,
-                &row.value,
-                None,
-            ),
+            2 => restore_pomv_feed_head_floor(&self.publisher.database, &row.key, &row.value),
             3 => restore_pomv_table(
                 &self.publisher.database,
                 PREPARED_PUBLIC_USE,
@@ -2200,6 +2194,44 @@ fn validate_pomv_typed_input(key: &[u8], value: &[u8]) -> Result<bool, NodeError
     }
 }
 
+fn restore_pomv_feed_head_floor(
+    database: &Database,
+    key: &[u8],
+    value: &[u8],
+) -> Result<(), NodeError> {
+    let incoming: StoredFeedHead = serde_json::from_slice(value).map_err(pomv_archive_error)?;
+    let write = database.begin_write().map_err(pomv_archive_error)?;
+    {
+        let mut table = write.open_table(FEED_HEADS).map_err(pomv_archive_error)?;
+        let existing = table
+            .get(key)
+            .map_err(pomv_archive_error)?
+            .map(|g| serde_json::from_slice::<StoredFeedHead>(g.value()))
+            .transpose()
+            .map_err(pomv_archive_error)?;
+        // NEG-P8-001: enforce `max(local_seq_floor, archive_highest_issued_seq)` so restoring
+        // an older archive onto a host with higher local sequence floor NEVER regresses sequence!
+        let merged = match existing {
+            Some(local) if local.next_sequence > incoming.next_sequence => local,
+            Some(local)
+                if local.next_sequence == incoming.next_sequence
+                    && local.last_event_cid != incoming.last_event_cid =>
+            {
+                StoredFeedHead {
+                    next_sequence: local.next_sequence.saturating_add(1),
+                    last_event_cid: incoming.last_event_cid.or(local.last_event_cid),
+                }
+            }
+            _ => incoming,
+        };
+        let encoded = serde_json::to_vec(&merged).map_err(pomv_archive_error)?;
+        table
+            .insert(key, encoded.as_slice())
+            .map_err(pomv_archive_error)?;
+    }
+    write.commit().map_err(pomv_archive_error)
+}
+
 fn restore_pomv_table(
     database: &Database,
     definition: TableDefinition<&[u8], &[u8]>,
@@ -2375,6 +2407,836 @@ pub enum DistributedPomvError {
     Network(#[from] VNextNetworkRuntimeError),
     #[error("public UseEvidence filesystem operation failed: {0}")]
     Io(#[from] std::io::Error),
+    #[error(
+        "causal evidence task_context_commitment continuity broken across Use/Outcome/Benefit"
+    )]
+    BrokenTaskContextContinuity,
+    #[error("deferred causal evidence staging capacity exceeded (<= 16_384 records / 64 MiB)")]
+    DeferredStagingCapacityExceeded,
+}
+
+// ─── Wave 6 `P4` (`M6B`) Generalized Causal Evidence Publisher & Out-of-Order Closure ─
+
+const GENERALIZED_PREPARED_EVIDENCE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_prepared_causal_evidence_m6b_v1");
+const GENERALIZED_PUBLICATIONS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_causal_evidence_publications_m6b_v1");
+const DEFERRED_EVIDENCE_STAGING: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_deferred_causal_evidence_m6b_v1");
+
+pub const MAX_DEFERRED_EVIDENCE_RECORDS: usize = 16_384;
+pub const MAX_DEFERRED_EVIDENCE_BYTES: usize = 64 * 1_048_576; // 64 MiB
+
+/// Typed causal evidence payload variants supported by the generalized 2-step
+/// `Prepare -> SingleUseConsentReceipt (TTL <= 900s) -> ExactTypedConfirm` publisher (`M6B`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CausalEvidencePublishPayload {
+    Use(UseEvidencePayload),
+    Derivation(ku_core::foundation::DerivationEvidencePayload),
+    OutcomeObservation(ku_core::foundation::OutcomeObservationPayload),
+    BenefitEvidence {
+        payload: ku_core::foundation::BenefitEvidencePayload,
+        /// Optional local verification of shared `task_context_commitment` against referenced
+        /// OutcomeObservations and Use/Derivation events before consent signing.
+        expected_task_context_commitment: [u8; 32],
+    },
+}
+
+impl CausalEvidencePublishPayload {
+    pub fn kind_and_event_type(
+        &self,
+    ) -> (
+        ku_core::foundation::ObjectKind,
+        ku_core::foundation::EventType,
+    ) {
+        match self {
+            Self::Use(_) => (USE_EVIDENCE_KIND, USE_EVIDENCE_EVENT_TYPE),
+            Self::Derivation(_) => (
+                ku_core::foundation::DERIVATION_EVIDENCE_KIND,
+                ku_core::foundation::DERIVATION_EVIDENCE_EVENT_TYPE,
+            ),
+            Self::OutcomeObservation(_) => (
+                ku_core::foundation::OUTCOME_OBSERVATION_KIND,
+                ku_core::foundation::OUTCOME_OBSERVATION_EVENT_TYPE,
+            ),
+            Self::BenefitEvidence { .. } => (
+                ku_core::foundation::BENEFIT_EVIDENCE_KIND,
+                ku_core::foundation::BENEFIT_EVIDENCE_EVENT_TYPE,
+            ),
+        }
+    }
+
+    pub fn encode_public_object(&self) -> Result<(Vec<u8>, ObjectCid), DistributedPomvError> {
+        match self {
+            Self::Use(p) => p
+                .to_knowledge_object(DisclosureClass::Public)
+                .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?
+                .encode(ResourceProfile::ObjectV1)
+                .map_err(|e| DistributedPomvError::Evidence(e.to_string())),
+            Self::Derivation(p) => p
+                .to_knowledge_object(DisclosureClass::Public)
+                .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?
+                .encode(ResourceProfile::ObjectV1)
+                .map_err(|e| DistributedPomvError::Evidence(e.to_string())),
+            Self::OutcomeObservation(p) => p
+                .to_knowledge_object(DisclosureClass::Public)
+                .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?
+                .encode(ResourceProfile::ObjectV1)
+                .map_err(|e| DistributedPomvError::Evidence(e.to_string())),
+            Self::BenefitEvidence {
+                payload,
+                expected_task_context_commitment,
+            } => {
+                if *expected_task_context_commitment == [0; 32]
+                    || payload.task_context_commitment != *expected_task_context_commitment
+                {
+                    return Err(DistributedPomvError::BrokenTaskContextContinuity);
+                }
+                payload
+                    .to_knowledge_object(DisclosureClass::Public)
+                    .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?
+                    .encode(ResourceProfile::ObjectV1)
+                    .map_err(|e| DistributedPomvError::Evidence(e.to_string()))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PrepareCausalEvidenceRequest {
+    pub payload: CausalEvidencePublishPayload,
+    pub expected_peer: NodeId,
+    pub selector: SelectorCid,
+    pub namespace: NamespaceCommitment,
+    pub idempotency_key: [u8; 32],
+    pub expires_at: u64,
+}
+
+#[derive(PartialEq, Eq)]
+pub struct PreparedCausalEvidenceIntent {
+    pub intent_cid: PublicUseIntentCid,
+    pub object_kind: u64,
+    pub event_type: u64,
+    pub canonical_payload_preview: Vec<u8>,
+    pub exact_recipient: NodeId,
+    pub selector: SelectorCid,
+    pub namespace: NamespaceCommitment,
+    pub idempotency_key: [u8; 32],
+    pub expires_at: u64,
+    receipt: SingleUseConsentReceipt,
+}
+
+impl PreparedCausalEvidenceIntent {
+    pub fn confirm(self) -> ConfirmCausalEvidenceRequest {
+        ConfirmCausalEvidenceRequest {
+            intent_cid: self.intent_cid,
+            receipt: self.receipt,
+        }
+    }
+}
+
+impl std::fmt::Debug for PreparedCausalEvidenceIntent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedCausalEvidenceIntent")
+            .field("intent_cid", &self.intent_cid)
+            .field("object_kind", &self.object_kind)
+            .field("event_type", &self.event_type)
+            .field("exact_recipient", &self.exact_recipient)
+            .field("expires_at", &self.expires_at)
+            .field("receipt", &"[REDACTED]")
+            .finish()
+    }
+}
+
+pub struct ConfirmCausalEvidenceRequest {
+    pub intent_cid: PublicUseIntentCid,
+    receipt: SingleUseConsentReceipt,
+}
+
+impl std::fmt::Debug for ConfirmCausalEvidenceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfirmCausalEvidenceRequest")
+            .field("intent_cid", &self.intent_cid)
+            .field("receipt", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct StoredPreparedCausalEvidence {
+    intent_cid: [u8; 32],
+    author_feed: [u8; 32],
+    object_kind: u64,
+    event_type: u64,
+    canonical_payload_preview: Vec<u8>,
+    exact_recipient: [u8; 32],
+    selector: [u8; 32],
+    namespace: [u8; 32],
+    idempotency_key: [u8; 32],
+    expires_at: u64,
+    receipt_commitment: [u8; 32],
+    consumed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalEvidencePublication {
+    pub publication_id: [u8; 32],
+    pub intent_cid: PublicUseIntentCid,
+    pub object_kind: u64,
+    pub event_type: u64,
+    pub author_feed: FeedId,
+    pub author_sequence: u64,
+    pub feed_bytes: Vec<u8>,
+    pub object_bytes: Vec<u8>,
+    pub object_cid: ObjectCid,
+    pub event_bytes: Vec<u8>,
+    pub event_cid: EventCid,
+    pub expected_peer: NodeId,
+    pub selector: SelectorCid,
+    pub namespace: NamespaceCommitment,
+}
+
+impl PublicUseEvidencePublisher {
+    /// Return the durable monotonic `next_sequence` floor for `feed_id`, if any.
+    pub fn next_sequence_floor(&self, feed_id: FeedId) -> Result<u64, DistributedPomvError> {
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(FEED_HEADS).map_err(storage)?;
+        let head = table
+            .get(feed_id.as_bytes().as_slice())
+            .map_err(storage)?
+            .map(|v| serde_json::from_slice::<StoredFeedHead>(v.value()))
+            .transpose()
+            .map_err(codec)?;
+        Ok(head.map(|h| h.next_sequence).unwrap_or(0))
+    }
+
+    /// Enforce `NEG-P8-001` anti-equivocation sequence floor `max(local_seq_floor, archive_seq_floor)`.
+    pub fn enforce_sequence_floor(
+        &self,
+        feed_id: FeedId,
+        minimum_next_sequence: u64,
+        anchor_event_cid: Option<EventCid>,
+    ) -> Result<u64, DistributedPomvError> {
+        let write = self.database.begin_write().map_err(storage)?;
+        let effective = {
+            let mut heads = write.open_table(FEED_HEADS).map_err(storage)?;
+            let current = heads
+                .get(feed_id.as_bytes().as_slice())
+                .map_err(storage)?
+                .map(|v| serde_json::from_slice::<StoredFeedHead>(v.value()))
+                .transpose()
+                .map_err(codec)?;
+            let next_head = match current {
+                Some(existing) if existing.next_sequence >= minimum_next_sequence => existing,
+                Some(existing) => StoredFeedHead {
+                    next_sequence: minimum_next_sequence,
+                    last_event_cid: anchor_event_cid
+                        .map(EventCid::into_bytes)
+                        .or(existing.last_event_cid),
+                },
+                None if minimum_next_sequence > 0 => StoredFeedHead {
+                    next_sequence: minimum_next_sequence,
+                    last_event_cid: Some(
+                        anchor_event_cid
+                            .map(EventCid::into_bytes)
+                            .unwrap_or([0xFF; 32]),
+                    ),
+                },
+                None => {
+                    return Ok(0);
+                }
+            };
+            let seq = next_head.next_sequence;
+            let encoded = serde_json::to_vec(&next_head).map_err(codec)?;
+            heads
+                .insert(feed_id.as_bytes().as_slice(), encoded.as_slice())
+                .map_err(storage)?;
+            seq
+        };
+        write.commit().map_err(storage)?;
+        Ok(effective)
+    }
+
+    /// Generalized `Prepare` (`TTL <= 900s`) for `UseEvidence`, `DerivationEvidence`,
+    /// `OutcomeObservation`, and `BenefitEvidence` (`M6B`).
+    pub fn prepare_causal_evidence(
+        &self,
+        request: &PrepareCausalEvidenceRequest,
+        author: &ku_core::foundation::ValidatedFeedInception,
+    ) -> Result<PreparedCausalEvidenceIntent, DistributedPomvError> {
+        let now = self.consent_clock.now_unix_seconds()?;
+        if request.idempotency_key == [0; 32]
+            || request.expected_peer.as_bytes() == &[0; 32]
+            || request.selector.as_bytes() == &[0; 32]
+            || request.namespace.as_bytes() == &[0; 32]
+        {
+            return Err(DistributedPomvError::InvalidPublishRequest);
+        }
+        if request.expires_at <= now {
+            return Err(DistributedPomvError::ConsentExpired);
+        }
+        if request.expires_at - now > MAX_PUBLIC_USE_CONSENT_TTL_SECONDS {
+            return Err(DistributedPomvError::ConsentExpiryTooFar);
+        }
+
+        let (kind, evt_type) = request.payload.kind_and_event_type();
+        let (object_bytes, object_cid) = request.payload.encode_public_object()?;
+        let exact_target = ObjectReference::new(kind.0, object_cid.into_bytes());
+        let intent_cid = public_use_intent_cid(
+            author.feed_id,
+            &object_bytes,
+            &exact_target,
+            request.expected_peer,
+            request.selector,
+            request.namespace,
+            DisclosureClass::Public,
+            request.idempotency_key,
+            request.expires_at,
+        );
+        let receipt = generate_single_use_receipt()?;
+        let receipt_commitment = consent_receipt_commitment(intent_cid, receipt);
+        let stored = StoredPreparedCausalEvidence {
+            intent_cid,
+            author_feed: *author.feed_id.as_bytes(),
+            object_kind: kind.0,
+            event_type: evt_type.0,
+            canonical_payload_preview: object_bytes.clone(),
+            exact_recipient: *request.expected_peer.as_bytes(),
+            selector: *request.selector.as_bytes(),
+            namespace: *request.namespace.as_bytes(),
+            idempotency_key: request.idempotency_key,
+            expires_at: request.expires_at,
+            receipt_commitment,
+            consumed: false,
+        };
+        let encoded = serde_json::to_vec(&stored).map_err(codec)?;
+        let write = self.database.begin_write().map_err(storage)?;
+        {
+            let mut tbl = write
+                .open_table(GENERALIZED_PREPARED_EVIDENCE)
+                .map_err(storage)?;
+            tbl.insert(intent_cid.as_slice(), encoded.as_slice())
+                .map_err(storage)?;
+        }
+        write.commit().map_err(storage)?;
+
+        Ok(PreparedCausalEvidenceIntent {
+            intent_cid: PublicUseIntentCid::from_bytes(intent_cid),
+            object_kind: kind.0,
+            event_type: evt_type.0,
+            canonical_payload_preview: object_bytes,
+            exact_recipient: request.expected_peer,
+            selector: request.selector,
+            namespace: request.namespace,
+            idempotency_key: request.idempotency_key,
+            expires_at: request.expires_at,
+            receipt,
+        })
+    }
+
+    /// Generalized `Confirm` (`SingleUseConsentReceipt` + shared feed sequence monotonicity
+    /// across `FEED_HEADS`) producing signed `(FeedInception, Object, Event)` bytes.
+    pub fn publish_confirmed_causal_evidence(
+        &self,
+        request: &ConfirmCausalEvidenceRequest,
+        author: &ku_core::foundation::ValidatedFeedInception,
+        signer: &dyn FeedEventSigner,
+    ) -> Result<(CausalEvidencePublication, PublicUsePublishOutcome), DistributedPomvError> {
+        let now = self.consent_clock.now_unix_seconds()?;
+        let proven_signer = ProvenFeedEventSigner::prove_for_public_key(
+            signer,
+            author.signed.inception.feed_public_key,
+        )
+        .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+
+        let write = self.database.begin_write().map_err(storage)?;
+        let result = {
+            let mut tbl = write
+                .open_table(GENERALIZED_PREPARED_EVIDENCE)
+                .map_err(storage)?;
+            let bytes = tbl
+                .get(request.intent_cid.as_bytes().as_slice())
+                .map_err(storage)?
+                .map(|g| g.value().to_vec())
+                .ok_or(DistributedPomvError::ConsentIntentNotFound)?;
+            let mut prepared: StoredPreparedCausalEvidence =
+                serde_json::from_slice(&bytes).map_err(codec)?;
+            if prepared.author_feed != *author.feed_id.as_bytes() {
+                return Err(DistributedPomvError::ConsentIntentMismatch);
+            }
+            if now >= prepared.expires_at {
+                return Err(DistributedPomvError::ConsentExpired);
+            }
+            if !receipt_commitments_match(
+                consent_receipt_commitment(request.intent_cid.into_bytes(), request.receipt),
+                prepared.receipt_commitment,
+            ) {
+                return Err(DistributedPomvError::ConsentReceiptInvalid);
+            }
+            if prepared.consumed {
+                return Err(DistributedPomvError::ConsentAlreadyConfirmed);
+            }
+
+            let obj_kind = ku_core::foundation::ObjectKind(prepared.object_kind);
+            let evt_type = ku_core::foundation::EventType(prepared.event_type);
+            let object = decode_knowledge_object(
+                &prepared.canonical_payload_preview,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(obj_kind, 1)],
+                &[],
+            )
+            .map_err(|_| DistributedPomvError::CorruptPreparedConsent)?;
+            let object_cid = object.cid();
+
+            let mut pubs = write
+                .open_table(GENERALIZED_PUBLICATIONS)
+                .map_err(storage)?;
+            let pub_key = publication_key(author.feed_id, prepared.idempotency_key);
+            let mut heads = write.open_table(FEED_HEADS).map_err(storage)?;
+            let head = heads
+                .get(author.feed_id.as_bytes().as_slice())
+                .map_err(storage)?
+                .map(|v| serde_json::from_slice::<StoredFeedHead>(v.value()))
+                .transpose()
+                .map_err(codec)?
+                .unwrap_or(StoredFeedHead {
+                    next_sequence: 0,
+                    last_event_cid: None,
+                });
+
+            let mut event = KnowledgeEventEnvelope::new(
+                evt_type,
+                author.feed_id,
+                head.next_sequence,
+                DisclosureClass::Public,
+                prepared.idempotency_key,
+            );
+            event.payload_refs = vec![ObjectReference::new(0, object_cid.into_bytes())];
+            event.causal_parents = head
+                .last_event_cid
+                .map(EventCid::from_bytes)
+                .into_iter()
+                .collect();
+            let (event_bytes, event_cid) = event
+                .sign_with_proven_signer(author, &proven_signer)
+                .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?
+                .encode()
+                .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+
+            let pub_id = publication_id(
+                prepared.intent_cid,
+                author.feed_id,
+                prepared.idempotency_key,
+                event_cid,
+                NodeId::from_bytes(prepared.exact_recipient),
+                SelectorCid::from_bytes(prepared.selector),
+                NamespaceCommitment::from_bytes(prepared.namespace),
+            );
+            pubs.insert(pub_key.as_slice(), event_bytes.as_slice())
+                .map_err(storage)?;
+
+            let next_seq = head
+                .next_sequence
+                .checked_add(1)
+                .ok_or(DistributedPomvError::SequenceExhausted)?;
+            let updated_head = StoredFeedHead {
+                next_sequence: next_seq,
+                last_event_cid: Some(event_cid.into_bytes()),
+            };
+            let encoded_head = serde_json::to_vec(&updated_head).map_err(codec)?;
+            heads
+                .insert(
+                    author.feed_id.as_bytes().as_slice(),
+                    encoded_head.as_slice(),
+                )
+                .map_err(storage)?;
+
+            prepared.consumed = true;
+            let encoded_prep = serde_json::to_vec(&prepared).map_err(codec)?;
+            tbl.insert(prepared.intent_cid.as_slice(), encoded_prep.as_slice())
+                .map_err(storage)?;
+
+            CausalEvidencePublication {
+                publication_id: pub_id,
+                intent_cid: PublicUseIntentCid::from_bytes(prepared.intent_cid),
+                object_kind: prepared.object_kind,
+                event_type: prepared.event_type,
+                author_feed: author.feed_id,
+                author_sequence: head.next_sequence,
+                feed_bytes: author.original_bytes().to_vec(),
+                object_bytes: prepared.canonical_payload_preview,
+                object_cid,
+                event_bytes,
+                event_cid,
+                expected_peer: NodeId::from_bytes(prepared.exact_recipient),
+                selector: SelectorCid::from_bytes(prepared.selector),
+                namespace: NamespaceCommitment::from_bytes(prepared.namespace),
+            }
+        };
+        write.commit().map_err(storage)?;
+        Ok((result, PublicUsePublishOutcome::Stored))
+    }
+}
+
+/// Disposition of an ingested causal evidence event in `CausalEvidenceClosureEngine` (`M6B`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CausalIngestDisposition {
+    AppliedReady,
+    DeferredMissingDependency,
+    ExactReplayDeduped,
+    EquivocatedExcluded,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StagedRawEvidence {
+    event_cid: [u8; 32],
+    author_feed: [u8; 32],
+    author_sequence: u64,
+    object_kind: u64,
+    event_type: u64,
+    object_bytes: Vec<u8>,
+    event_bytes: Vec<u8>,
+}
+
+/// Bounded `DeferredEvidenceStaging` (`<= 16_384` records / `64 MiB`) + reverse-dependency
+/// topological wakeup (`Use/Derivation -> OutcomeObservation -> BenefitEvidence`), `EventCid`
+/// idempotent dedup, `EquivocatedExcluded` fork handling, `BenefitClosureReducer`, and 4D
+/// `CorrelationEvidence` grouping (`M6B`).
+pub struct CausalEvidenceClosureEngine {
+    db: Option<Database>,
+    feeds: BTreeMap<FeedId, ku_core::foundation::ValidatedFeedInception>,
+    ku_authors: BTreeMap<(u64, [u8; 32]), FeedId>,
+    seen_event_cids: BTreeSet<[u8; 32]>,
+    author_slot_events: BTreeMap<(FeedId, u64), [u8; 32]>,
+    equivocated_slots: BTreeSet<(FeedId, u64)>,
+    staged: BTreeMap<[u8; 32], StagedRawEvidence>,
+    staged_bytes: usize,
+    present_exercises: BTreeSet<[u8; 32]>,
+    present_outcomes: BTreeSet<[u8; 32]>,
+    closure_reducer: ku_core::foundation::BenefitClosureReducer,
+}
+
+impl Default for CausalEvidenceClosureEngine {
+    fn default() -> Self {
+        Self::new_in_memory()
+    }
+}
+
+impl CausalEvidenceClosureEngine {
+    pub fn new_in_memory() -> Self {
+        Self {
+            db: None,
+            feeds: BTreeMap::new(),
+            ku_authors: BTreeMap::new(),
+            seen_event_cids: BTreeSet::new(),
+            author_slot_events: BTreeMap::new(),
+            equivocated_slots: BTreeSet::new(),
+            staged: BTreeMap::new(),
+            staged_bytes: 0,
+            present_exercises: BTreeSet::new(),
+            present_outcomes: BTreeSet::new(),
+            closure_reducer: ku_core::foundation::BenefitClosureReducer::default(),
+        }
+    }
+
+    /// Open durable `DeferredEvidenceStaging` inside `<data_dir>/vnext_distributed_pomv.redb`
+    /// (or a dedicated staging file when requested).
+    pub fn open_durable(db_path: &Path) -> Result<Self, DistributedPomvError> {
+        let db = Database::create(db_path).map_err(storage)?;
+        let write = db.begin_write().map_err(storage)?;
+        {
+            write
+                .open_table(DEFERRED_EVIDENCE_STAGING)
+                .map_err(storage)?;
+        }
+        write.commit().map_err(storage)?;
+        let mut engine = Self::new_in_memory();
+        let read = db.begin_read().map_err(storage)?;
+        let tbl = read
+            .open_table(DEFERRED_EVIDENCE_STAGING)
+            .map_err(storage)?;
+        for entry in tbl.iter().map_err(storage)? {
+            let (k, v) = entry.map_err(storage)?;
+            let cid: [u8; 32] = k
+                .value()
+                .try_into()
+                .map_err(|_| DistributedPomvError::IdentityIndexCorrupt)?;
+            let rec: StagedRawEvidence = serde_json::from_slice(v.value()).map_err(codec)?;
+            engine.staged_bytes = engine
+                .staged_bytes
+                .saturating_add(rec.object_bytes.len() + rec.event_bytes.len());
+            engine.staged.insert(cid, rec);
+        }
+        drop(tbl);
+        drop(read);
+        engine.db = Some(db);
+        Ok(engine)
+    }
+
+    pub const fn changes_obt_or_wallet_state(&self) -> bool {
+        false
+    }
+
+    pub fn staged_count(&self) -> usize {
+        self.staged.len()
+    }
+
+    pub fn staged_bytes(&self) -> usize {
+        self.staged_bytes
+    }
+
+    pub fn register_feed(&mut self, inception: ku_core::foundation::ValidatedFeedInception) {
+        self.feeds.insert(inception.feed_id, inception.clone());
+        self.closure_reducer.register_feed(inception);
+    }
+
+    pub fn register_ku_author(&mut self, ku_ref: ObjectReference, author_feed: FeedId) {
+        self.ku_authors
+            .insert((ku_ref.reference_kind, ku_ref.cid), author_feed);
+        self.closure_reducer.register_ku_author(ku_ref, author_feed);
+    }
+
+    /// Ingest any signed `Use` (`13/2`), `Derivation` (`14/3`), `OutcomeObservation` (`19/5`),
+    /// or `BenefitEvidence` (`20/6`) artifact in arbitrary arrival order!
+    ///
+    /// Missing causal dependencies (`Benefit` before `Outcome`/`Use`, or `Outcome` before
+    /// `FeedInception`) park in bounded `DeferredEvidenceStaging` (`<= 16_384` / `64 MiB`)
+    /// and wake up automatically in reverse-dependency topological order once dependencies arrive.
+    pub fn ingest_evidence_artifact(
+        &mut self,
+        object_kind: u64,
+        event_type: u64,
+        object_bytes: &[u8],
+        event_bytes: &[u8],
+    ) -> Result<(CausalIngestDisposition, usize), DistributedPomvError> {
+        let event_cid = EventCid::compute(ReservedDomain::Event, event_bytes)
+            .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+        let cid_bytes = event_cid.into_bytes();
+        if self.seen_event_cids.contains(&cid_bytes) || self.staged.contains_key(&cid_bytes) {
+            return Ok((CausalIngestDisposition::ExactReplayDeduped, 0));
+        }
+        let author_feed = event_author_feed(event_bytes)
+            .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+
+        // Peek sequence if feed is known to detect `(author_feed, author_sequence)` equivocation forks!
+        if let Some(feed) = self.feeds.get(&author_feed) {
+            let evt = decode_knowledge_event(
+                event_bytes,
+                feed,
+                &[ku_core::foundation::EventType(event_type)],
+            )
+            .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+            let slot = (author_feed, evt.signed.event.author_sequence);
+            if self.equivocated_slots.contains(&slot) {
+                return Ok((CausalIngestDisposition::EquivocatedExcluded, 0));
+            }
+            if let Some(&existing_cid) = self.author_slot_events.get(&slot) {
+                if existing_cid != cid_bytes {
+                    self.equivocated_slots.insert(slot);
+                    return Ok((CausalIngestDisposition::EquivocatedExcluded, 0));
+                }
+            } else {
+                self.author_slot_events.insert(slot, cid_bytes);
+            }
+        }
+
+        let raw = StagedRawEvidence {
+            event_cid: cid_bytes,
+            author_feed: *author_feed.as_bytes(),
+            author_sequence: 0,
+            object_kind,
+            event_type,
+            object_bytes: object_bytes.to_vec(),
+            event_bytes: event_bytes.to_vec(),
+        };
+
+        if self.try_apply_ready(&raw)? {
+            self.seen_event_cids.insert(cid_bytes);
+            let woken = self.drain_ready_topological()?;
+            Ok((CausalIngestDisposition::AppliedReady, woken))
+        } else {
+            let add_bytes = raw.object_bytes.len() + raw.event_bytes.len();
+            if self.staged.len() >= MAX_DEFERRED_EVIDENCE_RECORDS
+                || self.staged_bytes.saturating_add(add_bytes) > MAX_DEFERRED_EVIDENCE_BYTES
+            {
+                return Err(DistributedPomvError::DeferredStagingCapacityExceeded);
+            }
+            if let Some(db) = &self.db {
+                let encoded = serde_json::to_vec(&raw).map_err(codec)?;
+                let write = db.begin_write().map_err(storage)?;
+                {
+                    let mut tbl = write
+                        .open_table(DEFERRED_EVIDENCE_STAGING)
+                        .map_err(storage)?;
+                    tbl.insert(cid_bytes.as_slice(), encoded.as_slice())
+                        .map_err(storage)?;
+                }
+                write.commit().map_err(storage)?;
+            }
+            self.staged_bytes = self.staged_bytes.saturating_add(add_bytes);
+            self.staged.insert(cid_bytes, raw);
+            Ok((CausalIngestDisposition::DeferredMissingDependency, 0))
+        }
+    }
+
+    /// Trigger topological wakeup after new `FeedInception`s or `KU` authors are registered.
+    pub fn wakeup_deferred(&mut self) -> Result<usize, DistributedPomvError> {
+        self.drain_ready_topological()
+    }
+
+    fn drain_ready_topological(&mut self) -> Result<usize, DistributedPomvError> {
+        let mut total_woken = 0usize;
+        loop {
+            // Order staged candidates in topological dependency order:
+            // Tier 0: Use (13) / Derivation (14) -> Tier 1: OutcomeObservation (19) -> Tier 2: BenefitEvidence (20).
+            let mut candidates: Vec<([u8; 32], u8)> = self
+                .staged
+                .iter()
+                .map(|(cid, rec)| {
+                    let tier = match rec.object_kind {
+                        k if k == USE_EVIDENCE_KIND.0
+                            || k == ku_core::foundation::DERIVATION_EVIDENCE_KIND.0 =>
+                        {
+                            0
+                        }
+                        k if k == ku_core::foundation::OUTCOME_OBSERVATION_KIND.0 => 1,
+                        _ => 2,
+                    };
+                    (*cid, tier)
+                })
+                .collect();
+            candidates.sort_by_key(|(cid, tier)| (*tier, *cid));
+
+            let mut progressed = false;
+            for (cid, _) in candidates {
+                let Some(rec) = self.staged.get(&cid).cloned() else {
+                    continue;
+                };
+                if self.try_apply_ready(&rec)? {
+                    let removed_bytes = rec.object_bytes.len() + rec.event_bytes.len();
+                    self.staged.remove(&cid);
+                    self.staged_bytes = self.staged_bytes.saturating_sub(removed_bytes);
+                    if let Some(db) = &self.db {
+                        let write = db.begin_write().map_err(storage)?;
+                        {
+                            let mut tbl = write
+                                .open_table(DEFERRED_EVIDENCE_STAGING)
+                                .map_err(storage)?;
+                            tbl.remove(cid.as_slice()).map_err(storage)?;
+                        }
+                        write.commit().map_err(storage)?;
+                    }
+                    self.seen_event_cids.insert(cid);
+                    total_woken += 1;
+                    progressed = true;
+                }
+            }
+            if !progressed {
+                break;
+            }
+        }
+        Ok(total_woken)
+    }
+
+    fn try_apply_ready(&mut self, raw: &StagedRawEvidence) -> Result<bool, DistributedPomvError> {
+        let feed_id = FeedId::from_bytes(raw.author_feed);
+        let Some(feed) = self.feeds.get(&feed_id) else {
+            return Ok(false);
+        };
+        let obj_kind = ku_core::foundation::ObjectKind(raw.object_kind);
+        let evt_type = ku_core::foundation::EventType(raw.event_type);
+        let object = decode_knowledge_object(
+            &raw.object_bytes,
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(obj_kind, 1)],
+            &[],
+        )
+        .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+        let event = decode_knowledge_event(&raw.event_bytes, feed, &[evt_type])
+            .map_err(|e| DistributedPomvError::Evidence(e.to_string()))?;
+
+        let slot = (feed_id, event.signed.event.author_sequence);
+        if self.equivocated_slots.contains(&slot) {
+            return Ok(true);
+        }
+
+        for parent in &event.signed.event.causal_parents {
+            if !self.seen_event_cids.contains(parent.as_bytes()) {
+                return Ok(false);
+            }
+        }
+
+        if obj_kind == USE_EVIDENCE_KIND {
+            let bound = ValidatedUseEvidenceEvent::bind(&event, &object)
+                .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?;
+            self.present_exercises
+                .insert(bound.event_cid().into_bytes());
+            self.closure_reducer
+                .record_exercise(ExerciseEvidence::Use(bound));
+            Ok(true)
+        } else if obj_kind == ku_core::foundation::DERIVATION_EVIDENCE_KIND {
+            let bound =
+                ku_core::foundation::ValidatedDerivationEvidenceEvent::bind(&event, &object)
+                    .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?;
+            self.present_exercises
+                .insert(bound.event_cid().into_bytes());
+            self.closure_reducer
+                .record_exercise(ExerciseEvidence::Derivation(bound));
+            Ok(true)
+        } else if obj_kind == ku_core::foundation::OUTCOME_OBSERVATION_KIND {
+            let bound =
+                ku_core::foundation::ValidatedOutcomeObservationEvent::bind(&event, &object)
+                    .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?;
+            self.present_outcomes
+                .insert(bound.payload_object_cid().into_bytes());
+            self.closure_reducer.record_outcome(bound);
+            Ok(true)
+        } else if obj_kind == ku_core::foundation::BENEFIT_EVIDENCE_KIND {
+            let bound = ku_core::foundation::ValidatedBenefitEvidenceEvent::bind(&event, &object)
+                .map_err(|e| DistributedPomvError::Evidence(format!("{e:?}")))?;
+            // Park in DeferredEvidenceStaging until every referenced OutcomeObservation AND
+            // Use/Derivation event AND KU subject author has arrived!
+            let all_outcomes_ready = bound.payload().outcome_observations.iter().all(|oref| {
+                (oref.reference_kind == 0
+                    || oref.reference_kind == ku_core::foundation::OUTCOME_OBSERVATION_KIND.0)
+                    && self.present_outcomes.contains(&oref.cid)
+            });
+            let all_uses_ready = bound
+                .payload()
+                .use_events
+                .iter()
+                .all(|ucid| self.present_exercises.contains(ucid.as_bytes()));
+            let all_kus_ready = bound.payload().knowledge_subjects.iter().all(|kref| {
+                self.ku_authors
+                    .contains_key(&(kref.reference_kind, kref.cid))
+            });
+            if !all_outcomes_ready || !all_uses_ready || !all_kus_ready {
+                return Ok(false);
+            }
+            self.closure_reducer.record_benefit(bound);
+            Ok(true)
+        } else {
+            Err(DistributedPomvError::InvalidPublishRequest)
+        }
+    }
+
+    pub fn evaluate_benefit_closure(
+        &self,
+        case_id: ku_core::foundation::OutcomeCaseId,
+        key_state: &ku_core::foundation::KeyStateReducer,
+    ) -> ku_core::foundation::BenefitClosureView {
+        self.closure_reducer.evaluate_case(case_id, key_state)
+    }
+
+    /// Group 4D correlation attestations (`group_attestations_by_4d_correlation`).
+    pub fn group_by_4d_correlation<T: ku_core::foundation::Has4dCorrelation>(
+        items: &[T],
+    ) -> Result<
+        ku_core::foundation::CorroborationGroupSummary,
+        ku_core::foundation::FidelityAssessmentError,
+    > {
+        ku_core::foundation::group_attestations_by_4d_correlation(items)
+    }
 }
 
 #[cfg(test)]

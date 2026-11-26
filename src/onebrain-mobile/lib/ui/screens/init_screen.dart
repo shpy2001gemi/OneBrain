@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
+import '../../domain/wave7_workspace_controller.dart';
 import '../../l10n/app_localizations.dart';
 import '../../platform/mobile_host_gateway.dart';
 import '../shared/obm_action_card.dart';
@@ -396,6 +397,33 @@ class _InitScreenState extends ConsumerState<InitScreen> {
                 : ObmStatusTone.information,
             statusLabel: _shortDigest(progress.sourcePlanDigest),
           ),
+        SizedBox(height: context.spacing.md),
+        ObmButton(
+          key: const Key('init_activate_registry_button'),
+          label: strings.wave7ActivateRegistryAction,
+          variant: ObmButtonVariant.tonal,
+          onPressed: _busy
+              ? null
+              : () async {
+                  await ref
+                      .read(wave7WorkspaceProvider.notifier)
+                      .activateRegistrySlot(
+                        operationId: plan.operationId,
+                        transferNonce:
+                            progress?.transferNonce ?? 'nonce_local_v1',
+                      );
+                  if (context.mounted) {
+                    GoRouter.maybeOf(context)?.go('/onboarding/readiness');
+                  }
+                },
+        ),
+        SizedBox(height: context.spacing.sm),
+        ObmButton(
+          label: strings.wave7SourcePlanAction,
+          variant: ObmButtonVariant.outline,
+          onPressed: () =>
+              GoRouter.maybeOf(context)?.push('/init/registry/plan'),
+        ),
       ],
     );
   }

@@ -37,6 +37,45 @@ pub trait RuntimePathService: Send + Sync {
     fn private_draft_database_path(&self) -> PathBuf;
     fn private_media_staging_database_path(&self) -> PathBuf;
     fn private_media_staging_root(&self) -> PathBuf;
+
+    fn data_root(&self) -> PathBuf {
+        self.bootstrap_database_path()
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    }
+
+    fn private_ku_vault_database_path(&self) -> PathBuf {
+        self.data_root().join("private-ku-vault.redb")
+    }
+
+    fn private_ku_journal_database_path(&self) -> PathBuf {
+        self.data_root().join("private-ku-journal.redb")
+    }
+
+    fn private_fidelity_database_path(&self) -> PathBuf {
+        self.data_root().join("private-fidelity-portfolio.redb")
+    }
+
+    fn private_composition_database_path(&self) -> PathBuf {
+        self.data_root().join("private-composition.redb")
+    }
+
+    fn private_knowledge_meta_database_path(&self) -> PathBuf {
+        self.data_root().join("private-knowledge-meta.redb")
+    }
+
+    fn private_ops_database_path(&self) -> PathBuf {
+        self.data_root().join("private-ops.redb")
+    }
+
+    fn backup_staging_root(&self) -> PathBuf {
+        self.data_root().join("backup-staging")
+    }
+
+    fn model_releases_root(&self) -> PathBuf {
+        self.data_root().join("models").join("releases")
+    }
 }
 
 pub trait BootstrapStorageService: Send + Sync {

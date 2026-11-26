@@ -27,6 +27,7 @@ import org.onebrain.onebrain_mobile.generated.HostRawDraftReceipt
 import org.onebrain.onebrain_mobile.generated.HostRegistryInitAvailability
 import org.onebrain.onebrain_mobile.generated.HostRegistryInitPlan
 import org.onebrain.onebrain_mobile.generated.HostRegistryArtifactRole
+import org.onebrain.onebrain_mobile.generated.HostRegistryActivationReceipt
 import org.onebrain.onebrain_mobile.generated.HostRegistryImportProgress
 import org.onebrain.onebrain_mobile.generated.HostRegistryNetworkPolicy
 import org.onebrain.onebrain_mobile.generated.HostRegistryTrustMode
@@ -478,6 +479,76 @@ private class AndroidMobileHost(
                     callback = callback,
                 ),
             )
+        }
+    }
+
+    override fun activateRegistryRelease(
+        operationId: String,
+        transferNonce: String,
+        callback: (Result<HostRegistryActivationReceipt>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        val (status, readiness) =
+                            RustMobileBridge.activateRegistryRelease(
+                                dataRoot = dataRoot,
+                                securityMaterial = securityMaterial,
+                                operationId = operationId,
+                                transferNonce = transferNonce,
+                            )
+                        check(status == 0 || status == 1) {
+                            "Registry activation rejected with code $status"
+                        }
+                        HostRegistryActivationReceipt(
+                            releaseId = operationId,
+                            readinessState = readiness,
+                            previousReleaseId = null,
+                            compensatedRollback = status == 1,
+                            healthProbesChecked = 64,
+                        )
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_ACTIVATION_FAILED",
+                                message = it.message ?: "Registry release could not be activated",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun rollbackRegistryRelease(callback: (Result<Boolean>) -> Unit) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge.rollbackRegistryRelease(dataRoot, securityMaterial)
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_ROLLBACK_FAILED",
+                                message = it.message ?: "Registry slot rollback failed",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
         }
     }
 

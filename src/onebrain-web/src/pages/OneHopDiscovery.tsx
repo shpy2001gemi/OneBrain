@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Archive, Play, Radar, RefreshCw, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Archive, Cpu, Play, Radar, RefreshCw, ShieldAlert } from 'lucide-react';
 import { api, VNextApiError } from '../api/client';
+import { p10Api, type CompiledNeedIrView } from '../api/p10Client';
 import type {
   MatchPage,
   NeedPage,
@@ -9,6 +10,14 @@ import type {
   VNextBudget,
   VNextMeta,
 } from '../api/types';
+import {
+  COVERAGE_LOCAL_STORE_ONLY,
+  PROVENANCE_PRIVATE_LOCAL_ONLY,
+  PROVENANCE_PUBLIC_UNASSESSED,
+  USABLE_OFFLINE_BADGE,
+  formatCoverageBadge,
+  formatNeedCompilerBadge,
+} from '../utils/epistemicBadges';
 
 const DEFAULT_BUDGET: VNextBudget = {
   max_scan_records: 4096,
@@ -31,6 +40,7 @@ function explainError(reason: unknown): string {
 export function OneHopDiscovery() {
   const [query, setQuery] = useState('FIND (k:KU) SCOPE LOCAL LIMIT 20');
   const [prepared, setPrepared] = useState<PreparedNeed | null>(null);
+  const [compiledNeed, setCompiledNeed] = useState<CompiledNeedIrView | null>(null);
   const [prepareKey, setPrepareKey] = useState('');
   const [needs, setNeeds] = useState<NeedPage | null>(null);
   const [selected, setSelected] = useState<NeedView | null>(null);
@@ -55,8 +65,23 @@ export function OneHopDiscovery() {
   };
 
   useEffect(() => {
-    refreshNeeds();
+    void refreshNeeds();
   }, []);
+
+  const compileNeed = async () => {
+    if (!query.trim()) return;
+    setBusy('compile');
+    setError('');
+    try {
+      const result = await p10Api.compileNeedIr({ local_query: query.trim() });
+      setCompiledNeed(result.data);
+    } catch (reason) {
+      setCompiledNeed(null);
+      setError(explainError(reason));
+    } finally {
+      setBusy('');
+    }
+  };
 
   const prepare = async () => {
     if (!query.trim()) return;
@@ -149,12 +174,33 @@ export function OneHopDiscovery() {
     }
   };
 
+  const observedPeerIds = new Set(
+    matches?.items.flatMap(m => m.responder_scope.node_ids) ?? [],
+  );
+  const coverageBadge = formatCoverageBadge({
+    coverage: meta?.coverage ?? 'local_only',
+    reachablePeers: observedPeerIds.size,
+  });
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <div className="glass-card" style={{ borderColor: 'rgba(99,102,241,0.45)' }}>
-        <h2 style={{ fontSize: '1rem', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Radar size={18} /> One-hop discovery
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ fontSize: '1rem', display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Radar size={18} /> One-hop discovery
+          </h2>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span className="badge badge-green" style={{ textTransform: 'none' }}>
+              {USABLE_OFFLINE_BADGE}
+            </span>
+            <span className="badge badge-cyan" style={{ textTransform: 'none' }}>
+              {PROVENANCE_PRIVATE_LOCAL_ONLY}
+            </span>
+            <span className="badge badge-violet" style={{ textTransform: 'none' }}>
+              {coverageBadge}
+            </span>
+          </div>
+        </div>
         <p style={{ color: 'var(--ob-text-tertiary)', fontSize: '0.82rem', margin: '6px 0 14px' }}>
           Creates a private, bounded StandingNeed over authenticated direct paths. Results are partial
           proposals and are never executable or automatically adopted.
@@ -167,10 +213,35 @@ export function OneHopDiscovery() {
           aria-label="One-hop KQL query"
           style={{ width: '100%', resize: 'vertical' }}
         />
-        <button className="btn btn-primary" onClick={prepare} disabled={!!busy} style={{ marginTop: 10 }}>
-          {busy === 'prepare' ? <span className="spinner" /> : <><ShieldAlert size={15} /> Prepare private Need</>}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <button className="btn btn-primary" onClick={() => void prepare()} disabled={!!busy}>
+            {busy === 'prepare' ? <span className="spinner" /> : <><ShieldAlert size={15} /> Prepare private Need</>}
+          </button>
+          <button className="btn" onClick={() => void compileNeed()} disabled={!!busy}>
+            {busy === 'compile' ? <span className="spinner" /> : <><Cpu size={15} /> Compile NeedIR (KQL-CMP-001)</>}
+          </button>
+        </div>
       </div>
+
+      {compiledNeed && (
+        <div className="glass-card" aria-label="Compiled NeedIR preview">
+          <h3>
+            Deterministic FIND → NeedIR Preview{' '}
+            <span className="badge badge-cyan" style={{ textTransform: 'none', marginLeft: 6 }}>
+              {formatNeedCompilerBadge({
+                compiled: compiledNeed.compiled,
+                compilerProfile: compiledNeed.compiler_profile,
+                limitations: compiledNeed.limitations,
+              })}
+            </span>
+          </h3>
+          <Detail label="Compiler profile / Registry root" value={`${compiledNeed.compiler_profile} / ${compiledNeed.registry_release_root}`} />
+          <Detail label="ReceptorDefinition CID" value={compiledNeed.receptor_definition_cid} />
+          <Detail label="QueryDefinition CID" value={compiledNeed.query_definition_cid} />
+          <Detail label="Allow-listed Selector CID" value={`${compiledNeed.selector_cid} (${compiledNeed.selector_policy})`} />
+          <Detail label="Raw query zeroized" value={`${compiledNeed.raw_query_zeroized} · ${PROVENANCE_PRIVATE_LOCAL_ONLY} · ${COVERAGE_LOCAL_STORE_ONLY}`} />
+        </div>
+      )}
 
       {error && (
         <div className="glass-card" style={{ color: 'var(--ob-error)', borderColor: 'rgba(239,68,68,.4)' }}>
@@ -181,13 +252,21 @@ export function OneHopDiscovery() {
       {prepared && (
         <div className="glass-card">
           <h3>Prepared locally — no peer request sent yet</h3>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+            <span className="badge badge-cyan" style={{ textTransform: 'none' }}>
+              {PROVENANCE_PRIVATE_LOCAL_ONLY}
+            </span>
+            <span className="badge badge-violet" style={{ textTransform: 'none' }}>
+              {formatNeedCompilerBadge({ limitations: prepared.limitations })}
+            </span>
+          </div>
           <Detail label="Intent CID" value={prepared.intent_cid} />
           <Detail label="Private query definition" value={prepared.query_definition_cid} />
           <Detail label="Selector" value={prepared.selector_cid} />
           <Detail label="Responder scope" value={`${prepared.scope.kind}; max_hops=${prepared.scope.max_hops}`} />
           <Detail label="Expiry" value={new Date(prepared.expires_at * 1000).toLocaleString()} />
           <Limitations values={prepared.limitations} />
-          <button className="btn btn-primary" disabled={!!busy} onClick={activate} style={{ marginTop: 12 }}>
+          <button className="btn btn-primary" disabled={!!busy} onClick={() => void activate()} style={{ marginTop: 12 }}>
             <Play size={15} /> Activate exact prepared Need
           </button>
         </div>
@@ -196,7 +275,7 @@ export function OneHopDiscovery() {
       <div className="glass-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3>Private StandingNeeds on this node</h3>
-          <button className="btn btn-ghost" onClick={refreshNeeds} disabled={!!busy}>
+          <button className="btn btn-ghost" onClick={() => void refreshNeeds()} disabled={!!busy}>
             <RefreshCw size={14} /> Refresh
           </button>
         </div>
@@ -210,7 +289,7 @@ export function OneHopDiscovery() {
             <button
               key={need.standing_need_id}
               className="btn btn-ghost"
-              onClick={() => loadMatches(need)}
+              onClick={() => void loadMatches(need)}
               style={{ justifyContent: 'space-between', textAlign: 'left' }}
             >
               <span className="mono">{need.standing_need_id.slice(0, 18)}…</span>
@@ -230,13 +309,13 @@ export function OneHopDiscovery() {
           <Detail label="State / revision" value={`${selected.state} / ${selected.revision}`} />
           <Limitations values={selected.limitations} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-            <button className="btn btn-primary" onClick={scan} disabled={!!busy || selected.state === 'retired'}>
+            <button className="btn btn-primary" onClick={() => void scan()} disabled={!!busy || selected.state === 'retired'}>
               <Radar size={15} /> Bounded scan
             </button>
-            <button className="btn btn-ghost" onClick={() => loadMatches()} disabled={!!busy}>
+            <button className="btn btn-ghost" onClick={() => void loadMatches()} disabled={!!busy}>
               <RefreshCw size={15} /> Refresh proposals
             </button>
-            <button className="btn btn-ghost" onClick={retire} disabled={!!busy || selected.state === 'retired'}>
+            <button className="btn btn-ghost" onClick={() => void retire()} disabled={!!busy || selected.state === 'retired'}>
               <Archive size={15} /> Retire
             </button>
           </div>
@@ -261,9 +340,14 @@ export function OneHopDiscovery() {
                 borderRadius: 10,
                 background: 'rgba(245,158,11,.06)',
               }}>
-                <span className="badge" style={{ color: 'var(--ob-warning)' }}>
-                  quarantined proposal
-                </span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span className="badge" style={{ color: 'var(--ob-warning)' }}>
+                    quarantined proposal
+                  </span>
+                  <span className="badge badge-amber" style={{ textTransform: 'none' }}>
+                    {PROVENANCE_PUBLIC_UNASSESSED}
+                  </span>
+                </div>
                 <Detail label="Proposal / candidate" value={`${item.proposal_cid} / ${item.candidate_cid}`} />
                 <Detail
                   label="Responder scope"
@@ -283,7 +367,7 @@ export function OneHopDiscovery() {
           {matches.continuation && (
             <button
               className="btn btn-ghost"
-              onClick={() => loadMatches(selected, matches.continuation || undefined)}
+              onClick={() => void loadMatches(selected, matches.continuation || undefined)}
               disabled={!!busy}
             >
               Load next bounded page

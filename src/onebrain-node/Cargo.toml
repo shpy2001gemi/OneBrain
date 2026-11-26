@@ -76,6 +76,7 @@ ollama-host = ["ku-ai/ollama", "ku-encoder/ollama-http"]
 legacy = ["ollama-host", "ku-core/legacy", "ku-encoder/legacy", "ku-net/legacy", "ku-mediator/legacy"]
 vnext-network-runtime = [
     "ku-core/persist",
+    "ku-kql/experimental",
     "ku-net/persist",
     "ku-net/quic",
     "dep:rand",
@@ -123,6 +124,8 @@ vnext-sim-harness = ["ku-kql/experimental"]
 
 [dependencies]
 ku-core = { path = "../ku-core", features = ["legacy-read"] }
+onebrain-core = { path = "../onebrain-core" }
+onebrain-obt = { path = "../onebrain-obt" }
 ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
 onebrain-blob-store = { path = "../onebrain-blob-store" }

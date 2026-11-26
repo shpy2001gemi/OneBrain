@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
 import '../../l10n/app_localizations.dart';
@@ -67,7 +68,13 @@ class MyMediaScreen extends ConsumerWidget {
                     children: [
                       for (var index = 0; index < entries.length; index++) ...[
                         if (index > 0) SizedBox(height: context.spacing.md),
-                        _mediaCard(strings, entries[index]),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => GoRouter.maybeOf(
+                            context,
+                          )?.push('/library/media/${entries[index].mediaRef}'),
+                          child: _mediaCard(strings, entries[index]),
+                        ),
                       ],
                     ],
                   ),

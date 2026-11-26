@@ -1,0 +1,23 @@
+[package]
+name = "onebrain-glasses"
+version = "0.1.0"
+edition = "2021"
+description = "Paired OneBrain AR/Smart Glasses companion HUD client with <=40ms doff-lock and zero at-rest secrets (P10)"
+license = "MIT"
+
+[dependencies]
+base64 = "0.22"
+blake3 = "1"
+chacha20poly1305 = "0.11"
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "zeroize"] }
+ed25519-dalek = "2"
+getrandom = "0.3"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "1"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"

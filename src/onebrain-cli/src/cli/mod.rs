@@ -16,6 +16,7 @@ pub(crate) mod ku;
 mod network;
 #[cfg(feature = "vnext-outbound-first")]
 pub(crate) mod obp;
+pub(crate) mod p10;
 mod social;
 mod tags;
 #[cfg(test)]

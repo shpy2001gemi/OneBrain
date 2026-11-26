@@ -846,4 +846,188 @@ class AppLocalizationsVi extends AppLocalizations {
   @override
   String get initLocalImportError =>
       'Artifact đã chọn bị hủy, không đọc được, quá ngắn, quá dài hoặc không khớp ledger chunk đã ký. Các byte bền vững đã xác minh vẫn được giữ để tiếp tục.';
+
+  @override
+  String get wave7ReadyOfflineTitle => 'Sẵn sàng ngoại tuyến (ReadyOffline)';
+
+  @override
+  String get wave7ReadyOfflineBody =>
+      'Slot Concept Registry đã xác minh đang hoạt động theo cơ chế đọc theo trang. Encode KU riêng tư, tìm kiếm ngữ nghĩa, KQL cục bộ chỉ đọc và backup mã hóa đã mở khóa ngoại tuyến.';
+
+  @override
+  String get wave7ActivateRegistryAction =>
+      'Xác minh toàn bộ artifact & kích hoạt slot';
+
+  @override
+  String get wave7RollbackRegistryAction => 'Quay lui về slot trước (N-1)';
+
+  @override
+  String get wave7GcRegistryAction => 'Thu hồi các slot Registry đã nghỉ';
+
+  @override
+  String get wave7SourcePlanAction => 'Kế hoạch đa nguồn & chính sách';
+
+  @override
+  String get wave7ReadinessOnboardingTitle =>
+      'Tóm tắt trạng thái sẵn sàng ngoại tuyến';
+
+  @override
+  String get wave7ReadinessOnboardingBody =>
+      'Xem các khả năng cục bộ đang hoạt động và các ranh giới còn khóa trước khi vào node.';
+
+  @override
+  String get wave7EnterNodeAction => 'Vào node OneBrain';
+
+  @override
+  String get wave7OperationsCenterTitle => 'Trung tâm tác vụ & truyền tải';
+
+  @override
+  String get wave7OperationDetailTitle => 'Biên nhận tác vụ';
+
+  @override
+  String get wave7RegistrySettingsActiveBody =>
+      'Slot thế hệ đang hoạt động đã qua REGISTRY_HEALTH_V1. Trình đọc theo trang và quay lui N-1 hoàn toàn cục bộ.';
+
+  @override
+  String get wave7OpenRegistrySettingsAction => 'Quản lý slot Registry';
+
+  @override
+  String get wave7EncodeFromDraftAction => 'Encode KU chuẩn riêng tư';
+
+  @override
+  String get wave7EncodeTitle => 'Encode KU chuẩn riêng tư';
+
+  @override
+  String get wave7EncodeGateBody =>
+      'Encode KU chuẩn yêu cầu trạng thái ReadyOffline với bản Concept Registry khỏe mạnh. Hãy lưu raw draft trước hoặc hoàn tất Init.';
+
+  @override
+  String get wave7EncodePreviewTitle =>
+      'Xem trước bản encode & kiểm tra vòng đời';
+
+  @override
+  String get wave7SavePrivateKuAction => 'Lưu KU LOCAL_ONLY bất biến';
+
+  @override
+  String get wave7MyKuTitle => 'KU riêng tư của tôi';
+
+  @override
+  String get wave7SearchTitle => 'Tìm kiếm ngữ nghĩa';
+
+  @override
+  String get wave7KqlTitle => 'KQL cục bộ chỉ đọc';
+
+  @override
+  String get wave7KqlHint => 'FIND (k:KU) WHERE gene_type = \"Fact\"';
+
+  @override
+  String get wave7RunKqlAction => 'Chạy truy vấn cục bộ chỉ đọc';
+
+  @override
+  String get wave7ConceptsBrowserTitle => 'Trình duyệt Concept Registry';
+
+  @override
+  String get wave7NeighborhoodTitle => 'Lân cận cục bộ 2D';
+
+  @override
+  String get wave7KuDetailTitle => 'Chi tiết KU riêng tư';
+
+  @override
+  String get wave7KuRevisionAction => 'Tạo phiên bản bất biến mới';
+
+  @override
+  String get wave7KuOrganizeAction => 'Thẻ & bộ sưu tập riêng tư';
+
+  @override
+  String get wave7KuWorkflowAction => 'Kiểm tra quy trình 6 bước';
+
+  @override
+  String get wave7KuLineageAction => 'Dòng dõi phiên bản & nhánh';
+
+  @override
+  String get wave7KuAlternateAction => 'Các bản encode thay thế';
+
+  @override
+  String get wave7KuFidelityTitle => 'Danh mục độ trung thực encode cục bộ';
+
+  @override
+  String get wave7KuFidelityDisclaimer =>
+      'SELF_ATTESTED chỉ ghi nhận EncodingAttempt của tác giả cục bộ. Trạng thái mang tính tương đối theo frontier, không khẳng định chân lý mệnh đề và không công bố lên mạng.';
+
+  @override
+  String get wave7BackupCreateAction => 'Tạo bản sao lưu mã hóa OBARV002';
+
+  @override
+  String get wave7RestoreVerifyAction =>
+      'Xác minh & khôi phục theo giai đoạn OBARV002';
+
+  @override
+  String get wave7ScopedExportAction => 'Xuất gói riêng tư đã duyệt';
+
+  @override
+  String get wave7StorageCleanupTitle => 'Dọn bộ nhớ đệm dẫn xuất & staging';
+
+  @override
+  String get wave7RunGcAction =>
+      'Thu hồi cache dẫn xuất (giữ nguyên OwnedOriginal)';
+
+  @override
+  String get wave7AssistantLocalHelperLabel => 'Trợ lý cục bộ tất định LLM-0';
+
+  @override
+  String get wave7AssistantNoLlmChip => 'Chưa bật LLM · chế độ tất định';
+
+  @override
+  String get wave7AssistantSendAction => 'Hỏi trợ lý cục bộ';
+
+  @override
+  String get wave7ToolConsentTitle => 'Duyệt đề xuất công cụ bền vững';
+
+  @override
+  String get wave7ToolApproveAction => 'Cho phép thực thi có giới hạn';
+
+  @override
+  String get wave7ToolDenyAction => 'Từ chối đề xuất';
+
+  @override
+  String get wave7CloudDisclosureTitle => 'Cổng xác nhận tiết lộ lên cloud';
+
+  @override
+  String get wave7ModelsTitle => 'Danh mục model có chữ ký';
+
+  @override
+  String get wave7ActivateModelAction => 'Xác minh & kích hoạt model đã ký';
+
+  @override
+  String get wave7RollbackModelAction => 'Tắt / quay lui model';
+
+  @override
+  String get wave7MediaViewerTitle =>
+      'Trình xem media riêng tư theo dải đã xác minh';
+
+  @override
+  String get wave7MediaInfoTitle => 'Manifest mảnh logic & gói vật lý';
+
+  @override
+  String get wave7ActivityInboxTitle => 'Hộp thư hoạt động & phê duyệt';
+
+  @override
+  String get wave7NotificationsSettingsTitle => 'Kênh thông báo & giờ yên lặng';
+
+  @override
+  String get wave7BackgroundPolicyTitle =>
+      'ActivationArbiter duy nhất & chính sách năng lượng';
+
+  @override
+  String get wave7DiagnosticsTitle => 'Xuất chẩn đoán đã ẩn dữ liệu nhạy cảm';
+
+  @override
+  String get wave7AdvancedGatesTitle => 'Cổng tính năng & di trú lược đồ';
+
+  @override
+  String get wave7NetworkedBetaNotice =>
+      'MOB-GATE-NETWORKED-BETA mặc định tắt trong bản dựng này. Đối sánh OBP thụ động chỉ chạy cục bộ ở chế độ cách ly; đồng bộ P2P, mạng blind fidelity và công bố công khai đều vắng mặt.';
+
+  @override
+  String get wave7AboutTitle => 'Giới thiệu node tự chủ này';
 }

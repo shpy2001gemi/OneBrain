@@ -18,13 +18,14 @@ use std::{
 #[cfg(target_os = "android")]
 use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
-    ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    OnboardingCursor, RegistryChunkRecord, RegistryChunkSourceTarget, RegistryChunkState,
-    RegistryChunkWriteProgress, RegistryChunkWriteSession, RegistryChunkWriteStart,
-    RegistryInitPlan, RegistryLandingProgress, RegistryNetworkPolicy, RegistryOperationState,
-    RegistrySourceKind, RegistryTransferPlatform, RegistryTransferScheduleRecord,
-    RegistryTransferScheduleState, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
-    SecuritySessionState, REGISTRY_NATIVE_BLOCK_MAX_BYTES,
+    ActivationPhase, ActivationReceiptStatus, AppLockPolicy, DerivedRegistryReadiness,
+    MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot, OnboardingCursor,
+    RegistryChunkRecord, RegistryChunkSourceTarget, RegistryChunkState, RegistryChunkWriteProgress,
+    RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryInitPlan, RegistryLandingProgress,
+    RegistryNetworkPolicy, RegistryOperationState, RegistrySourceKind, RegistryTransferPlatform,
+    RegistryTransferScheduleRecord, RegistryTransferScheduleState, ResourceBudgets,
+    RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
+    REGISTRY_NATIVE_BLOCK_MAX_BYTES,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
@@ -1468,6 +1469,45 @@ pub extern "C" fn ob_mobile_runtime_set_onboarding_cursor(cursor_code: u32) -> u
     set_onboarding_cursor(cursor)
 }
 
+/// Return the derived Concept Registry readiness code (`MOB-05C`):
+/// `0 = BootstrapOnly`, `1 = Provisioning`, `2 = ReadyOffline`,
+/// `3 = ReadyOffline(UpdateHealthPending)`, `4 = RegistryDegraded`.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_registry_readiness_code() -> u32 {
+    registry_readiness_code()
+}
+
+/// Complete whole-artifact verification, A/B slot swap, and `REGISTRY_HEALTH_V1`
+/// activation (`MOB-05C`).
+///
+/// # Safety
+/// Both pointers must reference their declared readable UTF-8 byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_activate_registry_release_utf8(
+    operation_id: *const u8,
+    operation_id_len: usize,
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+) -> u32 {
+    let Some(operation_id) = (unsafe { parse_bounded_utf8(operation_id, operation_id_len, 128) })
+    else {
+        return OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT;
+    };
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT;
+    };
+    activate_registry_release(operation_id, transfer_nonce)
+}
+
+/// Roll back the active Concept Registry slot to the retained non-revoked `N-1`
+/// generation (`MOB-05C` / `MOB-DAT-003`).
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_rollback_registry_release() -> u32 {
+    rollback_registry_release()
+}
+
 fn open_runtime(data_root: PathBuf) -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let mut guard = match runtime.lock() {
@@ -2260,6 +2300,54 @@ fn set_onboarding_cursor(cursor: OnboardingCursor) -> u32 {
     }
 }
 
+fn registry_readiness_code() -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return 4,
+    };
+    let Some(facade) = guard.as_ref() else {
+        return 0;
+    };
+    match facade.derived_registry_readiness() {
+        DerivedRegistryReadiness::BootstrapOnly => 0,
+        DerivedRegistryReadiness::Provisioning { .. } => 1,
+        DerivedRegistryReadiness::ReadyOffline => 2,
+        DerivedRegistryReadiness::ReadyOfflineUpdateHealthPending { .. } => 3,
+        DerivedRegistryReadiness::RegistryDegraded { .. } => 4,
+    }
+}
+
+fn activate_registry_release(operation_id: &str, transfer_nonce: &str) -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_mut() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.activate_registry_release(operation_id, transfer_nonce) {
+        Ok(receipt) if receipt.status == ActivationReceiptStatus::Passed => OB_MOBILE_RUNTIME_OK,
+        _ => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
+fn rollback_registry_release() -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_mut() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.rollback_registry_release() {
+        Ok(_) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
 const fn bool_byte(value: bool) -> u8 {
     if value {
         1
@@ -2389,7 +2477,7 @@ mod android {
     };
 
     use super::{
-        abort_media_stage, adopt_registry_transfer, append_media_stage,
+        abort_media_stage, activate_registry_release, adopt_registry_transfer, append_media_stage,
         append_registry_chunk_write, begin_registry_chunk_write, checkpoint_registry_chunk_write,
         confirm_registry_init, defer_registry_init, encode_owned_media, enqueue_shared_text,
         finish_media_stage, finish_owned_media_import, finish_registry_chunk_write,
@@ -2401,8 +2489,9 @@ mod android {
         prepare_registry_init, prepare_registry_local_import_schedule,
         prepare_registry_transfer_schedule, record_registry_transfer_missing,
         recover_registry_chunk_ledger, registry_landing_progress, registry_network_policy,
-        registry_source_kind, registry_transfer_platform, registry_transfer_schedule_for_channel,
-        runtime_snapshot, save_raw_text_draft, start_media_stage, suspend_registry_chunk_write,
+        registry_readiness_code, registry_source_kind, registry_transfer_platform,
+        registry_transfer_schedule_for_channel, rollback_registry_release, runtime_snapshot,
+        save_raw_text_draft, start_media_stage, suspend_registry_chunk_write,
         ObMobileRegistryChunkSourceTarget, ObMobileRegistryChunkWriteReceipt,
         ObMobileRegistryLandingProgress, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule,
         CORE_VERSION, OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK,
@@ -3330,6 +3419,47 @@ mod android {
     )]
     pub fn native_runtime_onboarding_cursor(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
         runtime_snapshot().onboarding_cursor as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRegistryReadinessCode"
+    )]
+    pub fn native_runtime_registry_readiness_code(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+    ) -> jint {
+        registry_readiness_code() as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeActivateRegistryRelease"
+    )]
+    pub fn native_runtime_activate_registry_release<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        operation_id: JString<'caller>,
+        transfer_nonce: JString<'caller>,
+    ) -> jint {
+        let op = unowned_env
+            .with_env(|env| operation_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        activate_registry_release(&op, &nonce) as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRollbackRegistryRelease"
+    )]
+    pub fn native_runtime_rollback_registry_release(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+    ) -> jint {
+        rollback_registry_release() as jint
     }
 
     macro_rules! boolean_runtime_getter {

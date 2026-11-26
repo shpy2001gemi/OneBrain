@@ -169,33 +169,38 @@ All ten OneBrain pillars (`P1`–`P10`) and their mutual interactions/firewalls 
 
 ## Code ↔ Documentation Cross-Reference
 
-### Workspace Crates (21 Rust crates + Web & Mobile)
+### Workspace Crates (25 Rust crates + Web, Mobile & Extension)
 
 | Crate / Surface | Path | Description |
 |-------|------|-------------|
-| `ku-core` | `src/ku-core/` | Canonical vNext foundation (identities, CBOR, semantic frames, Vault, Concept Registry) + `legacy` Core DNA, PoMV, OBT, OBKG |
-| `ku-kql` | `src/ku-kql/` | `vnext_semantic_index` KU search, local read-only text KQL parser/executor, private/standing need persistence, + `experimental` vNext discovery |
-| `ku-net` | `src/ku-net/` | Authenticated QUIC sessions, 5-lane inventory & reconciliation (`feature-gated`) + `legacy` SWIM/DHT/gossip |
-| `ku-ai` | `src/ku-ai/` | Local AI backend policies and feature-gated Ollama HTTP adapter |
-| `ku-encoder` | `src/ku-encoder/` | Shared KU extraction framework, semantic selection v1/v2 (`KU-SEM-001`), simple review-claim lowering (`ARCH-07`), + `legacy` `AiEncoder` |
-| `ku-mediator` | `src/ku-mediator/` | User intent detection, retrieval, `/ku` routing, and AI synthesis |
-| `onebrain-protocol` | `src/onebrain-protocol/` | Shared P2P wire types and canonical codecs |
-| `onebrain-relay` | `src/onebrain-relay/` | Permissionless outbound-first QUIC/TLS-443 relay service (`ARCH-01`) |
-| `onebrain-node` | `src/onebrain-node/` | Host-agnostic shared runtime façade (`OneBrainNode`, Base runtime, `/ku` workspace, OBP orchestration; `ARCH-09`) |
-| `onebrain-cli` | `src/onebrain-cli/` | Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`) |
-| `onebrain-api` | `src/onebrain-api/` | Local REST + private WebSocket API server and `ku_local_web` host example |
-| `onebrain-desktop` | `src/onebrain-desktop/` | Tauri 2.x Desktop application |
-| `onebrain-mobile-core` | `src/onebrain-mobile-core/` | Autonomous Rust mobile runtime/bootstrap/storage profile (`BootstrapOnly/Limited`) |
+| `ku-core` | `src/ku-core/` | Canonical vNext foundation (identities, CBOR, semantic frames, `ConceptLifecycleTable`, `ScopedConceptCcid`, `PersonalMesh`, Vault) + `legacy` Core DNA, PoMV, OBT, OBKG |
+| `onebrain-core` | `src/onebrain-core/` | `ARCH-10` mobile-safe shared synchronous engine (`tokio`-free, `std::net`-free: KU store, Receptor/Affordance/Assembly/Mapping composition, Fidelity portfolio) |
+| `ku-kql` | `src/ku-kql/` | Deterministic `vnext_compiler` (`FIND → KnowledgeNeedIr`), `vnext_semantic_index`, local read-only text KQL, private/standing need persistence, + `experimental` `OBKG-002` & multipath discovery |
+| `ku-net` | `src/ku-net/` | Authenticated QUIC sessions, 5-lane inventory, `RIBLT-1` fast diff, E2EE `obp/mailbox/1`, & chunk streams (`feature-gated`) + `legacy` SWIM/DHT/gossip |
+| `ku-ai` | `src/ku-ai/` | Local AI backend policies, `vnext_kge_recall`, `FedRQuarantineValidator`, `DreamConsolidatorV1`, and feature-gated Ollama HTTP adapter |
+| `ku-encoder` | `src/ku-encoder/` | Shared KU extraction framework, semantic selection v1/v2 (`KU-SEM-001`), `D-011` `review_lowering_v2`, simple review-claim lowering (`ARCH-07`), + `legacy` `AiEncoder` |
+| `ku-mediator` | `src/ku-mediator/` | 4-tier `PrivateVault` Personal AI Mediator (`vnext_pam`), intent detection, `/ku` routing, and RAG exposure firewall |
+| `onebrain-obt` | `src/onebrain-obt/` | Isolated vNext `P5` OBT economy (`u128` integer math, `RewardEvidenceNoticeV2` inbound firewall, `ScopedNullifier`, `D-014` work + `M7` benefit tracks, Shadow Mode default) |
+| `onebrain-protocol` | `src/onebrain-protocol/` | Shared P2P wire types, `RIBLT-1`/mailbox/chunk codecs, and multi-pillar wire envelopes (`pillar_wire`) |
+| `onebrain-relay` | `src/onebrain-relay/` | Permissionless outbound-first QUIC/TLS-443 relay & durable E2EE `obp/mailbox/1` store (`ARCH-01`) |
+| `onebrain-node` | `src/onebrain-node/` | Host-agnostic shared runtime façade (`OneBrainNode`, Base runtime, `/ku` workspace, `P1..P8, P10` vNext runtime orchestration; `ARCH-09`) |
+| `onebrain-cli` | `src/onebrain-cli/` | Full-node CLI (`start`, `ku`, `obp`, `need`, `pomv`, `vnext`, `mesh`, `surfaces`, `obt`, `obkg`) |
+| `onebrain-api` | `src/onebrain-api/` | Local REST + private WebSocket API server (`/api/vnext/ku/*`, `/api/vnext/mesh/*`, `/api/vnext/surfaces/*`, `/api/vnext/obt/*`, `/api/vnext/obkg/*`) |
+| `onebrain-desktop` | `src/onebrain-desktop/` | Tauri 2.x Desktop application with Personal Mesh, surface token, OBT Shadow Mode, and OBKG snapshot IPC commands |
+| `onebrain-mobile-core` | `src/onebrain-mobile-core/` | Autonomous Rust mobile runtime consuming `onebrain-core` (`ARCH-10`, `MOB-01..09` software-complete; `BootstrapOnly/Limited`) |
 | `onebrain-mobile-bridge` | `src/onebrain-mobile-bridge/` | Narrow C ABI/JNI bridge for Flutter Kotlin/Swift NativeHosts |
-| `onebrain-archive` | `src/onebrain-archive/` | Shared encrypted Base `OBARV002` archive container and verified spool (desktop & mobile `MOB-03`) |
+| `onebrain-bot` | `src/onebrain-bot/` | `P10` DMZ `BotPrincipal` adapter (`obc_surface1_bot`, zero owner `PrivateVault` access, quarantined inbound submissions) |
+| `onebrain-glasses` | `src/onebrain-glasses/` | `P10` companion HUD adapter (`obp/companion-hud/1`, ephemeral M0 RAM zeroization, `<= 40 ms` doff-lock, `SomaticImmediate/1` abort) |
+| `onebrain-archive` | `src/onebrain-archive/` | Shared encrypted Base `OBARV002` archive container (`0x0001..0x000F`, desktop & mobile `MOB-03`) |
 | `onebrain-blob-store` | `src/onebrain-blob-store/` | Persistent hybrid redb + filesystem Base blob storage (`TX-BLOB-001`, extracted in `ARCH-11`) |
 | `onebrain-legacy-ku-store` | `src/onebrain-legacy-ku-store/` | Preserved legacy Core DNA `KuStorage` + OBKG `GraphStorage` (`ARCH-11`) |
 | `onebrain-base-contract` | `src/onebrain-base-contract/` | Generated product-neutral Base v1 semantic contract (Rust, TypeScript, Dart) |
 | `onebrain-base-abi` | `src/onebrain-base-abi/` | Stable C ABI projection of the Base v1 façade |
 | `onebrain-seed` | `src/onebrain-seed/` | Explicit legacy TCP/JSON compatibility daemon (not a vNext relay) |
 | `ku-demo` | `src/ku-demo/` | Multi-node simulation demo |
-| `onebrain-web` *(TS/React)* | `src/onebrain-web/` | React + Vite + TypeScript Web UI (`/ku` workspace, vNext views, dashboard) |
-| `onebrain-mobile` *(Flutter)* | `src/onebrain-mobile/` | Autonomous Android/iOS Flutter app governed by `docs/design/mobile/mobile_build_contract_v1.json` |
+| `onebrain-web` *(TS/React)* | `src/onebrain-web/` | React + Vite + TypeScript Web UI (`/ku` workspace, Personal Mesh Devices, OBT Shadow Mode Wallet, OBKG 5-plane Explorer, vNext views) |
+| `onebrain-mobile` *(Flutter)* | `src/onebrain-mobile/` | Autonomous Android/iOS Flutter app governed by `docs/design/mobile/mobile_build_contract_v1.json` (`108` evidence rows, `190` IDs) |
+| `onebrain-extension` *(TS/MV3)* | `src/onebrain-extension/` | Sanitized WebExtension capture client (`obc_surface1_ext`, secret-input stripping, Step-2 confirm prohibited) |
 
 ### P1: KU Core Modules
 

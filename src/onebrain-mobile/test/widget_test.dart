@@ -478,6 +478,17 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   );
 
   @override
+  Future<MobileRegistryActivationReceipt> activateRegistryRelease({
+    required String operationId,
+    required String transferNonce,
+  }) => throw UnsupportedError(
+    'Registry activation is unavailable in this fake',
+  );
+
+  @override
+  Future<bool> rollbackRegistryRelease() async => false;
+
+  @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
 
   @override

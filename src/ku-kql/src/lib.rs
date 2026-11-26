@@ -22,9 +22,12 @@ pub mod parser;
 pub mod read_only;
 #[cfg(feature = "experimental")]
 pub mod vnext_assembly_search;
+pub mod vnext_compiler;
 pub mod vnext_disclosure;
 #[cfg(feature = "experimental")]
 pub mod vnext_disclosure_capsule;
+#[cfg(feature = "experimental")]
+pub mod vnext_discovery_pipeline;
 #[cfg(feature = "experimental")]
 pub mod vnext_exploration;
 pub mod vnext_matcher;
@@ -47,3 +50,7 @@ pub mod vnext_semantic_index;
 pub mod vnext_standing_need;
 #[cfg(feature = "experimental")]
 pub mod vnext_structural_signature;
+
+pub use vnext_compiler::*;
+#[cfg(feature = "experimental")]
+pub use vnext_discovery_pipeline::*;

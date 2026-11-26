@@ -2796,8 +2796,10 @@ dependencies = [
  "chacha20poly1305",
  "ciborium",
  "crc32fast",
+ "curve25519-dalek",
  "ed25519-dalek",
  "fs2",
+ "hex",
  "indexmap 2.14.0",
  "memmap2",
  "rand 0.8.6",
@@ -2805,6 +2807,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
+ "sha2",
  "tempfile",
  "unicode-normalization",
  "zeroize",
@@ -2849,13 +2852,16 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
+ "ciborium",
  "ed25519-dalek",
+ "hex",
  "ku-core",
  "nom",
  "redb",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -2865,6 +2871,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "blake3",
+ "ciborium",
  "ku-ai",
  "ku-core",
  "ku-encoder",
@@ -2873,6 +2880,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -3600,6 +3608,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-bot"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "hex",
+ "onebrain-base-contract",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "onebrain-cli"
 version = "0.1.0"
 dependencies = [
@@ -3617,6 +3639,28 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "onebrain-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "ciborium",
+ "ed25519-dalek",
+ "hex",
+ "ku-core",
+ "ku-kql",
+ "onebrain-archive",
+ "onebrain-base-contract",
+ "redb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "unicode-normalization",
  "zeroize",
 ]
 
@@ -3661,6 +3705,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-glasses"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "getrandom 0.3.4",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
 name = "onebrain-legacy-ku-store"
 version = "0.1.0"
 dependencies = [
@@ -3693,6 +3756,7 @@ dependencies = [
  "ku-core",
  "ku-kql",
  "onebrain-archive",
+ "onebrain-core",
  "redb",
  "serde",
  "serde_json",
@@ -3724,7 +3788,9 @@ dependencies = [
  "onebrain-archive",
  "onebrain-base-contract",
  "onebrain-blob-store",
+ "onebrain-core",
  "onebrain-legacy-ku-store",
+ "onebrain-obt",
  "onebrain-protocol",
  "onebrain-relay",
  "rand 0.8.6",
@@ -3744,14 +3810,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-obt"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ciborium",
+ "ed25519-dalek",
+ "hex",
+ "ku-core",
+ "redb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "zeroize",
+]
+
+[[package]]
 name = "onebrain-protocol"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "chacha20poly1305",
+ "ciborium",
+ "curve25519-dalek",
+ "ed25519-dalek",
  "ku-core",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

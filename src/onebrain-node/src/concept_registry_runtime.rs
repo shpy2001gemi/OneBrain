@@ -235,7 +235,8 @@ impl RegistryArtifactError {
                 IndexedRegistryError::InvalidHeader(_)
                 | IndexedRegistryError::ArtifactMismatch(_)
                 | IndexedRegistryError::InvalidOffset(_)
-                | IndexedRegistryError::InvalidUtf8,
+                | IndexedRegistryError::InvalidUtf8
+                | IndexedRegistryError::Lifecycle(_),
             ) => ConceptRegistryFailureKind::Corrupt,
             Self::Index(IndexedRegistryError::TooManyMatches(_))
             | Self::ScalableIndexRequired(_) => ConceptRegistryFailureKind::ResourceLimit,
@@ -350,6 +351,19 @@ impl ConceptRegistryReaderLease {
         ku_core::concept_registry::ConceptLookupError,
     > {
         self.generation.registry.describe_checked(ccid)
+    }
+
+    /// Optional Concept Lifecycle Table bound to this leased generation (`P1` §2.1).
+    pub fn lifecycle_table(&self) -> Option<&ku_core::concept_lifecycle::ConceptLifecycleTable> {
+        self.generation.registry.lifecycle_table()
+    }
+
+    /// Authoring-time concept resolution enforcing lifecycle rules (`P1` §2.1.3).
+    pub fn resolve_for_authoring(
+        &self,
+        ccid: ku_core::foundation::ConceptCcid,
+    ) -> ku_core::concept_lifecycle::AuthoringConceptResolution {
+        self.generation.registry.resolve_for_authoring(ccid)
     }
 }
 
@@ -526,6 +540,7 @@ pub(crate) mod tests {
             sources,
             label_index: None,
             ccid_index: None,
+            lifecycle_blake3: None,
         };
         fs::write(
             manifest_path(path),

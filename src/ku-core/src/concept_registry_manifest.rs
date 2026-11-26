@@ -43,6 +43,8 @@ pub struct ConceptRegistryManifest {
     pub label_index: Option<ConceptRegistryIndexManifest>,
     #[serde(default)]
     pub ccid_index: Option<ConceptRegistryIndexManifest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_blake3: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -434,6 +436,17 @@ fn validate_manifest_shape(
             ));
         }
     }
+    if let Some(lifecycle_blake3) = &manifest.lifecycle_blake3 {
+        if lifecycle_blake3.len() != 64
+            || !lifecycle_blake3
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err(ConceptRegistryManifestError::InvalidField(
+                "lifecycle_blake3",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -482,6 +495,7 @@ mod tests {
                 .collect(),
             label_index: None,
             ccid_index: None,
+            lifecycle_blake3: None,
         }
     }
 

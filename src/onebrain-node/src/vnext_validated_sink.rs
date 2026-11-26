@@ -4,16 +4,25 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use ku_core::foundation::schema_registry::{EVENT_TYPES_V1, OBJECT_KINDS_V1};
+use ku_core::foundation::scoped_concept::{
+    verify_scoped_concept_dependencies, ScopedDependencyStatus, SCOPED_CONCEPT_EXTENSION_KEY,
+};
+use ku_core::foundation::supersession::{
+    KnowledgeSupersessionPayload, SupersessionApplyOutcome, SupersessionError,
+    SupersessionLineageReducer, SupersessionLineageView, ValidatedKnowledgeSupersessionEvent,
+    KNOWLEDGE_SUPERSESSION_EVENT_TYPE, KNOWLEDGE_SUPERSESSION_KIND, SUPERSESSION_PROFILE_MAJOR,
+};
 use ku_core::foundation::{
     authority_event_descriptor, decode_actor_delegation, decode_actor_revocation,
     decode_actor_root_delegation, decode_feed_inception, decode_knowledge_event,
     decode_knowledge_object, event_author_feed, validate_successor_structure, AcceptedRecordEntry,
-    AtomicVerifiedBackend, AuthorityEventDescriptor, EventCid, EventType, FeedAuthorityDecision,
-    FeedId, FeedProjection, KeyStateApplyOutcome, KeyStateReducer, KnowledgeAffordance,
-    KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics, PortableVerifiedSnapshot,
-    PutVerifiedOutcome, QuarantineRecord, ReservedDomain, ResourceProfile, StoredRecordKind,
-    UseEvidencePayload, ValidatedFeedStore, ValidatedStore, VerifiedStoreSnapshotPort,
-    KNOWLEDGE_AFFORDANCE_KIND, USE_EVIDENCE_KIND,
+    ActorId, AtomicVerifiedBackend, AuthorityEventDescriptor, EventCid, EventType,
+    FeedAuthorityDecision, FeedId, FeedProjection, KeyStateApplyOutcome, KeyStateReducer,
+    KnowledgeAffordance, KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics,
+    PortableVerifiedSnapshot, PutVerifiedOutcome, QuarantineRecord, ReservedDomain,
+    ResourceProfile, SemanticFrameSet, StoredRecordKind, UseEvidencePayload, ValidatedFeedStore,
+    ValidatedStore, VerifiedStoreSnapshotPort, KNOWLEDGE_AFFORDANCE_KIND,
+    SEMANTIC_KERNEL_OBJECT_KIND, USE_EVIDENCE_KIND,
 };
 use ku_net::vnext_reconciliation::{PayloadSinkOutcome, ValidateThenAcceptSink};
 use onebrain_protocol::ReconcileManifestKind;
@@ -25,6 +34,7 @@ pub struct VNextValidatedSink<B> {
     store: ValidatedStore<B>,
     known_object_kinds: Vec<KnownObjectKind>,
     known_event_types: Vec<EventType>,
+    supersession_reducer: SupersessionLineageReducer,
 }
 
 /// Cloneable handle used by concurrent authenticated sessions while retaining
@@ -163,6 +173,28 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
             .feed_authority_at(feed_id, authority_frontier)
     }
+
+    pub fn register_supersession_object_author(
+        &self,
+        object_cid: ObjectCid,
+        author: ActorId,
+    ) -> Result<(), String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .register_supersession_object_author(object_cid, author)
+    }
+
+    pub fn supersession_lineage(
+        &self,
+        predecessor: ObjectCid,
+    ) -> Result<SupersessionLineageView, String> {
+        Ok(self
+            .0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .supersession_lineage(predecessor))
+    }
 }
 
 impl<B: AtomicVerifiedBackend> ValidateThenAcceptSink for SharedVNextValidatedSink<B> {
@@ -181,17 +213,48 @@ impl<B: AtomicVerifiedBackend> ValidateThenAcceptSink for SharedVNextValidatedSi
 
 impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
     pub fn new(backend: B) -> Self {
+        let mut known_object_kinds: Vec<KnownObjectKind> = OBJECT_KINDS_V1
+            .iter()
+            .map(|entry| KnownObjectKind::new(ObjectKind(entry.id), 1))
+            .collect();
+        let supersession_kind =
+            KnownObjectKind::new(KNOWLEDGE_SUPERSESSION_KIND, SUPERSESSION_PROFILE_MAJOR);
+        if !known_object_kinds.contains(&supersession_kind) {
+            known_object_kinds.push(supersession_kind);
+        }
+
+        let mut known_event_types: Vec<EventType> = EVENT_TYPES_V1
+            .iter()
+            .map(|entry| EventType(entry.id))
+            .collect();
+        if !known_event_types.contains(&KNOWLEDGE_SUPERSESSION_EVENT_TYPE) {
+            known_event_types.push(KNOWLEDGE_SUPERSESSION_EVENT_TYPE);
+        }
+
         Self {
             store: ValidatedStore::new(backend),
-            known_object_kinds: OBJECT_KINDS_V1
-                .iter()
-                .map(|entry| KnownObjectKind::new(ObjectKind(entry.id), 1))
-                .collect(),
-            known_event_types: EVENT_TYPES_V1
-                .iter()
-                .map(|entry| EventType(entry.id))
-                .collect(),
+            known_object_kinds,
+            known_event_types,
+            supersession_reducer: SupersessionLineageReducer::new(),
         }
+    }
+
+    pub fn register_supersession_object_author(
+        &mut self,
+        object_cid: ObjectCid,
+        author: ActorId,
+    ) -> Result<(), String> {
+        self.supersession_reducer
+            .register_object_author(object_cid, author)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn supersession_lineage(&self, predecessor: ObjectCid) -> SupersessionLineageView {
+        self.supersession_reducer.lineage_for(predecessor)
+    }
+
+    pub fn supersession_reducer(&self) -> &SupersessionLineageReducer {
+        &self.supersession_reducer
     }
 
     pub fn store(&self) -> &ValidatedStore<B> {
@@ -693,6 +756,67 @@ impl<B: AtomicVerifiedBackend> ValidateThenAcceptSink for VNextValidatedSink<B> 
                         .map(Self::outcome)
                         .map_err(|error| error.to_string());
                 }
+                if let ObjectSemantics::Known(envelope) = validated.semantics() {
+                    if envelope.kind == SEMANTIC_KERNEL_OBJECT_KIND
+                        && envelope
+                            .extensions
+                            .iter()
+                            .any(|(key, _)| *key == SCOPED_CONCEPT_EXTENSION_KEY)
+                    {
+                        let semantic =
+                            match SemanticFrameSet::from_canonical_value(&envelope.payload) {
+                                Ok(sfs) => sfs,
+                                Err(_) => {
+                                    return self
+                                        .store
+                                        .quarantine_object(
+                                            claimed_cid,
+                                            canonical_bytes,
+                                            "SEMANTIC_KERNEL_PAYLOAD_INVALID",
+                                        )
+                                        .map(Self::outcome)
+                                        .map_err(|error| error.to_string());
+                                }
+                            };
+                        let available: Vec<ObjectCid> = self
+                            .store
+                            .accepted_entries(StoredRecordKind::Object)
+                            .map_err(|error| error.to_string())?
+                            .into_iter()
+                            .map(|entry| ObjectCid::from_bytes(entry.claimed_cid))
+                            .collect();
+                        match verify_scoped_concept_dependencies(envelope, &semantic, &available) {
+                            Ok(ScopedDependencyStatus::Satisfied) => {}
+                            Ok(ScopedDependencyStatus::DeferredMissingDependency { .. }) => {
+                                return Ok(PayloadSinkOutcome::DeferredMissingDependency);
+                            }
+                            Err(_) => {
+                                return self
+                                    .store
+                                    .quarantine_object(
+                                        claimed_cid,
+                                        canonical_bytes,
+                                        "SCOPED_CONCEPT_DEPENDENCY_INVALID",
+                                    )
+                                    .map(Self::outcome)
+                                    .map_err(|error| error.to_string());
+                            }
+                        }
+                    }
+                    if envelope.kind == KNOWLEDGE_SUPERSESSION_KIND
+                        && KnowledgeSupersessionPayload::from_object(&validated).is_err()
+                    {
+                        return self
+                            .store
+                            .quarantine_object(
+                                claimed_cid,
+                                canonical_bytes,
+                                "SUPERSESSION_TYPED_PAYLOAD_INVALID",
+                            )
+                            .map(Self::outcome)
+                            .map_err(|error| error.to_string());
+                    }
+                }
                 if matches!(
                     validated.semantics(),
                     ObjectSemantics::Known(envelope)
@@ -789,6 +913,66 @@ impl<B: AtomicVerifiedBackend> ValidateThenAcceptSink for VNextValidatedSink<B> 
                         .is_none()
                     {
                         return Ok(PayloadSinkOutcome::DeferredMissingDependency);
+                    }
+                }
+                if validated.signed.event.event_type == KNOWLEDGE_SUPERSESSION_EVENT_TYPE {
+                    let Some(payload_ref) = validated.signed.event.payload_refs.first() else {
+                        return Ok(PayloadSinkOutcome::RejectedInvalid);
+                    };
+                    let payload_cid = ObjectCid::from_bytes(payload_ref.cid);
+                    let Some(payload_bytes) = self
+                        .store
+                        .get_object(payload_cid)
+                        .map_err(|error| error.to_string())?
+                    else {
+                        return Ok(PayloadSinkOutcome::DeferredMissingDependency);
+                    };
+                    let payload_object = match decode_knowledge_object(
+                        &payload_bytes,
+                        ResourceProfile::ObjectV1,
+                        &self.known_object_kinds,
+                        &[],
+                    ) {
+                        Ok(obj) => obj,
+                        Err(_) => return Ok(PayloadSinkOutcome::RejectedInvalid),
+                    };
+                    let bound = match ValidatedKnowledgeSupersessionEvent::bind(
+                        &validated,
+                        &payload_object,
+                    ) {
+                        Ok(bound) => bound,
+                        Err(_) => return Ok(PayloadSinkOutcome::RejectedInvalid),
+                    };
+                    let verifying_author = authors
+                        .iter()
+                        .find(|branch| {
+                            decode_knowledge_event(canonical_bytes, branch, &self.known_event_types)
+                                .is_ok()
+                        })
+                        .unwrap_or(author);
+                    let key_state = match verifying_author.signed.inception.actor_delegation_ref {
+                        Some(delegation_bytes) => {
+                            let frontier = EventCid::from_bytes(delegation_bytes);
+                            self.authority_reducer_at(frontier)?
+                                .unwrap_or_else(|| KeyStateReducer::new(frontier))
+                        }
+                        None => KeyStateReducer::new(claimed_cid),
+                    };
+                    match self
+                        .supersession_reducer
+                        .apply_event(bound, verifying_author, &key_state)
+                    {
+                        Ok(
+                            SupersessionApplyOutcome::Accepted
+                            | SupersessionApplyOutcome::ExactReplay
+                            | SupersessionApplyOutcome::DeferredUnknownPredecessor
+                            | SupersessionApplyOutcome::DeferredUnresolvedAuthority,
+                        ) => {}
+                        Ok(SupersessionApplyOutcome::QuarantinedRevoked)
+                        | Err(SupersessionError::ThirdPartySupersessionForbidden { .. })
+                        | Err(_) => {
+                            return Ok(PayloadSinkOutcome::RejectedInvalid);
+                        }
                     }
                 }
                 self.store.put_validated_event(claimed_cid, &validated)

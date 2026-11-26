@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
 import '../../l10n/app_localizations.dart';
@@ -136,6 +137,15 @@ class _TextCaptureScreenState extends ConsumerState<TextCaptureScreen> {
               tone: ObmStatusTone.ready,
               icon: ObmSymbol.checkCircle,
               statusLabel: strings.statusPrivate,
+            ),
+            SizedBox(height: context.spacing.sm),
+            ObmButton(
+              key: const Key('continue_to_encode_button'),
+              label: strings.wave7EncodeFromDraftAction,
+              variant: ObmButtonVariant.tonal,
+              onPressed: () => GoRouter.maybeOf(
+                context,
+              )?.push('/capture/operations/${receipt.draftRef}/encode'),
             ),
           ],
         ],

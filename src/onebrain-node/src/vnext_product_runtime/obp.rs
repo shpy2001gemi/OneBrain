@@ -717,6 +717,7 @@ impl VNextProductServices {
         use crate::vnext_outbox::OutboundIntentState::*;
         let state = match i.state {
             Pending => "pending",
+            PendingMailboxPickup => "pending_mailbox_pickup",
             Acknowledged => "acknowledged",
             DeadLetter => "dead_letter",
             RetryExhausted => "retry_exhausted",

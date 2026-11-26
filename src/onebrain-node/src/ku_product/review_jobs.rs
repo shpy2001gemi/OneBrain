@@ -161,6 +161,17 @@ impl KuStore {
         window: usize,
         statement: usize,
     ) -> Result<(String, serde_json::Value), BaseServiceError> {
+        let (source, _profile, claim) =
+            self.review_claim_with_profile(principal, id, window, statement)?;
+        Ok((source, claim))
+    }
+    pub(super) fn review_claim_with_profile(
+        &self,
+        principal: [u8; 32],
+        id: [u8; 32],
+        window: usize,
+        statement: usize,
+    ) -> Result<(String, Option<String>, serde_json::Value), BaseServiceError> {
         let record = self.read_review(principal, id)?;
         if record.job.active.is_some()
             || matches!(
@@ -170,15 +181,18 @@ impl KuStore {
         {
             return Err(conflict());
         }
-        let claim = record
+        let revision = record
             .job
             .windows
             .get(window)
             .and_then(|w| w.revisions.last())
-            .and_then(|r| r.draft["statements"].get(statement))
+            .ok_or_else(not_found)?;
+        let profile = revision.draft["profile"].as_str().map(str::to_owned);
+        let claim = revision.draft["statements"]
+            .get(statement)
             .cloned()
             .ok_or_else(not_found)?;
-        Ok((record.source, claim))
+        Ok((record.source, profile, claim))
     }
     pub(crate) fn review_start(
         &self,

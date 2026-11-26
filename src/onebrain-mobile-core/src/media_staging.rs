@@ -18,6 +18,13 @@ use crate::MobileCoreError;
 const MEDIA_STAGES: TableDefinition<&str, &[u8]> = TableDefinition::new("private_media_stages");
 const OWNED_MEDIA: TableDefinition<&str, &[u8]> = TableDefinition::new("private_owned_media");
 const OWNED_HOLDS: TableDefinition<&str, u8> = TableDefinition::new("private_owned_media_holds");
+const MEDIA_MANIFESTS: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("private_owned_media_manifests");
+const MEDIA_PINS: TableDefinition<&str, u8> = TableDefinition::new("private_owned_media_pins");
+const DERIVED_CACHE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("private_media_derived_cache");
+const MANIFEST_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-manifest:1\0";
+const CACHE_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-derived-cache:1\0";
 const METADATA_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-stage-metadata:1\0";
 const OWNED_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-owned-media-metadata:1\0";
 const CHUNK_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-stage-chunk:1\0";
@@ -127,10 +134,61 @@ pub struct OwnedMediaSummary {
     pub import_state: &'static str,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PieceLeaf {
+    pub piece_index: u32,
+    pub byte_length: u32,
+    pub plaintext_blake3: String,
+    pub pack_file_offset: u64,
+    pub ciphertext_length: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SignedMediaManifest {
+    pub manifest_version: u8,
+    pub media_ref: String,
+    pub source_ref: String,
+    pub local_content_cid: String,
+    pub distribution_root: String,
+    pub manifest_body_cid: String,
+    pub piece_size_bytes: u32,
+    pub total_bytes: u64,
+    pub mime_type: String,
+    pub media_class: String,
+    pub pieces: Vec<PieceLeaf>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MediaVerifiedRangeView {
+    pub media_ref: String,
+    pub offset: u64,
+    pub bytes: Vec<u8>,
+    pub total_bytes: u64,
+    pub verified_piece_indices: Vec<u32>,
+    pub distribution_root: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DerivedCacheRecord {
+    pub cache_key: String,
+    pub media_ref: String,
+    pub byte_length: u64,
+    pub created_at_monotonic_ms: u64,
+    pub deleting_phase: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DerivedCacheGcReport {
+    pub evicted_cache_keys: Vec<String>,
+    pub reclaimed_bytes: u64,
+    pub owned_originals_preserved: u64,
+}
+
 pub struct MediaStagingStore {
     database: Database,
     staging_root: PathBuf,
     active_root: PathBuf,
+    cache_root: PathBuf,
     cipher: XChaCha20Poly1305,
     local_reference_key: Zeroizing<[u8; 32]>,
 }
@@ -152,22 +210,34 @@ impl MediaStagingStore {
             })?
             .join("objects");
         create_dir_all(&active_root)?;
+        let cache_root = root
+            .parent()
+            .ok_or_else(|| {
+                MobileCoreError::Storage("private media staging root has no parent".into())
+            })?
+            .join("derived-cache");
+        create_dir_all(&cache_root)?;
         let database = Database::create(database_path)?;
         let write = database.begin_write()?;
         {
             write.open_table(MEDIA_STAGES)?;
             write.open_table(OWNED_MEDIA)?;
             write.open_table(OWNED_HOLDS)?;
+            write.open_table(MEDIA_MANIFESTS)?;
+            write.open_table(MEDIA_PINS)?;
+            write.open_table(DERIVED_CACHE)?;
         }
         write.commit()?;
         let store = Self {
             database,
             staging_root: root.to_path_buf(),
             active_root,
+            cache_root,
             cipher: XChaCha20Poly1305::new((&*key.encryption).into()),
             local_reference_key: key.local_reference,
         };
         store.recover_operations()?;
+        store.recover_derived_cache_deletions()?;
         Ok(store)
     }
 
@@ -459,6 +529,387 @@ impl MediaStagingStore {
         self.count_state(MediaStageState::StagedVerified)
     }
 
+    pub fn inspect_media_manifest(
+        &self,
+        media_ref: &str,
+    ) -> Result<Option<SignedMediaManifest>, MobileCoreError> {
+        validate_media_ref(media_ref)?;
+        {
+            let read = self.database.begin_read()?;
+            let manifests = read.open_table(MEDIA_MANIFESTS)?;
+            if let Some(sealed) = manifests.get(media_ref)? {
+                let plain = self.open_envelope(sealed.value(), &manifest_aad(media_ref))?;
+                let parsed: SignedMediaManifest = serde_json::from_slice(&plain)?;
+                return Ok(Some(parsed));
+            }
+        }
+        let Some(owned) = self.read_owned_record(media_ref)? else {
+            return Ok(None);
+        };
+        let computed = self.compute_signed_manifest_from_pack(&owned)?;
+        let sealed =
+            self.seal_envelope(&serde_json::to_vec(&computed)?, &manifest_aad(media_ref))?;
+        let write = self.database.begin_write()?;
+        {
+            let mut manifests = write.open_table(MEDIA_MANIFESTS)?;
+            manifests.insert(media_ref, sealed.as_slice())?;
+        }
+        write.commit()?;
+        Ok(Some(computed))
+    }
+
+    /// Progressive verified-range read (`MOB-MED-002`): seeks only to overlapping
+    /// 256 KiB physical pack pieces, verifies AEAD + Merkle `PieceLeaf` BLAKE3 before
+    /// exposing bytes, and never loads the entire asset when reading a sub-range.
+    pub fn read_verified_range(
+        &self,
+        media_ref: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<MediaVerifiedRangeView, MobileCoreError> {
+        let bounded_len = max_bytes.clamp(1, 2 * 1024 * 1024);
+        let manifest = self.inspect_media_manifest(media_ref)?.ok_or_else(|| {
+            MobileCoreError::InvalidArgument("unknown OwnedOriginal media_ref".into())
+        })?;
+        if offset >= manifest.total_bytes {
+            return Err(MobileCoreError::InvalidArgument(
+                "requested media byte offset is past EOF".into(),
+            ));
+        }
+        let end_exclusive = manifest
+            .total_bytes
+            .min(offset.saturating_add(bounded_len as u64));
+        let mut pack = fs::File::open(self.active_path(media_ref)).map_err(|error| {
+            storage_error(
+                "cannot open OwnedOriginal encrypted pack for range read",
+                error,
+            )
+        })?;
+
+        let mut out_bytes = Vec::with_capacity((end_exclusive - offset) as usize);
+        let mut verified_piece_indices = Vec::new();
+        let mut piece_logical_start = 0u64;
+
+        for piece in &manifest.pieces {
+            let piece_logical_end =
+                piece_logical_start.saturating_add(u64::from(piece.byte_length));
+            if piece_logical_end <= offset {
+                piece_logical_start = piece_logical_end;
+                continue;
+            }
+            if piece_logical_start >= end_exclusive {
+                break;
+            }
+            pack.seek(SeekFrom::Start(piece.pack_file_offset))
+                .map_err(|error| storage_error("cannot seek physical media pack", error))?;
+            let mut len_bytes = [0u8; 4];
+            pack.read_exact(&mut len_bytes)
+                .map_err(|error| storage_error("cannot read piece length", error))?;
+            let stored_cipher_len = u32::from_le_bytes(len_bytes);
+            if stored_cipher_len != piece.ciphertext_length {
+                return Err(MobileCoreError::Security(
+                    "physical media pack piece length mismatch".into(),
+                ));
+            }
+            let mut nonce_bytes = [0u8; NONCE_BYTES];
+            pack.read_exact(&mut nonce_bytes)
+                .map_err(|error| storage_error("cannot read piece nonce", error))?;
+            let mut ciphertext = vec![0u8; stored_cipher_len as usize];
+            pack.read_exact(&mut ciphertext)
+                .map_err(|error| storage_error("cannot read piece ciphertext", error))?;
+            let plaintext = Zeroizing::new(
+                self.cipher
+                    .decrypt(
+                        &XNonce::from(nonce_bytes),
+                        Payload {
+                            msg: &ciphertext,
+                            aad: &chunk_aad(&manifest.source_ref, u64::from(piece.piece_index)),
+                        },
+                    )
+                    .map_err(|_| {
+                        MobileCoreError::Security("media piece AEAD verification failed".into())
+                    })?,
+            );
+            let piece_hash = blake3::hash(&plaintext).to_hex().to_string();
+            if piece_hash != piece.plaintext_blake3 || plaintext.len() != piece.byte_length as usize
+            {
+                return Err(MobileCoreError::Security(
+                    "media piece BLAKE3 leaf verification failed".into(),
+                ));
+            }
+            let slice_start = offset.saturating_sub(piece_logical_start) as usize;
+            let slice_end =
+                (end_exclusive - piece_logical_start).min(u64::from(piece.byte_length)) as usize;
+            out_bytes.extend_from_slice(&plaintext[slice_start..slice_end]);
+            verified_piece_indices.push(piece.piece_index);
+            piece_logical_start = piece_logical_end;
+        }
+
+        Ok(MediaVerifiedRangeView {
+            media_ref: media_ref.to_owned(),
+            offset,
+            bytes: out_bytes,
+            total_bytes: manifest.total_bytes,
+            verified_piece_indices,
+            distribution_root: manifest.distribution_root,
+        })
+    }
+
+    pub fn set_media_pinned(&self, media_ref: &str, pinned: bool) -> Result<bool, MobileCoreError> {
+        validate_media_ref(media_ref)?;
+        if self.read_owned_record(media_ref)?.is_none() {
+            return Err(MobileCoreError::InvalidArgument(
+                "cannot pin unknown OwnedOriginal media_ref".into(),
+            ));
+        }
+        let write = self.database.begin_write()?;
+        {
+            let mut pins = write.open_table(MEDIA_PINS)?;
+            if pinned {
+                pins.insert(media_ref, 1)?;
+            } else {
+                let _ = pins.remove(media_ref)?;
+            }
+        }
+        write.commit()?;
+        Ok(pinned)
+    }
+
+    pub fn is_media_pinned(&self, media_ref: &str) -> Result<bool, MobileCoreError> {
+        validate_media_ref(media_ref)?;
+        let read = self.database.begin_read()?;
+        let pins = read.open_table(MEDIA_PINS)?;
+        Ok(pins.get(media_ref)?.is_some())
+    }
+
+    pub fn put_derived_cache(
+        &self,
+        cache_key: &str,
+        media_ref: &str,
+        derived_bytes: &[u8],
+        now_monotonic_ms: u64,
+    ) -> Result<DerivedCacheRecord, MobileCoreError> {
+        validate_media_ref(media_ref)?;
+        if cache_key.is_empty()
+            || cache_key.len() > 96
+            || !cache_key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+        {
+            return Err(MobileCoreError::InvalidArgument(
+                "derived cache_key is invalid".into(),
+            ));
+        }
+        if derived_bytes.is_empty() || derived_bytes.len() > 4 * 1024 * 1024 {
+            return Err(MobileCoreError::InvalidArgument(
+                "derived cache item must be 1..=4194304 bytes".into(),
+            ));
+        }
+        let sealed_file = self.seal_envelope(derived_bytes, &cache_aad(cache_key))?;
+        let file_path = self.cache_path(cache_key);
+        fs::write(&file_path, &sealed_file)
+            .map_err(|error| storage_error("cannot write derived cache file", error))?;
+
+        let record = DerivedCacheRecord {
+            cache_key: cache_key.to_owned(),
+            media_ref: media_ref.to_owned(),
+            byte_length: sealed_file.len() as u64,
+            created_at_monotonic_ms: now_monotonic_ms,
+            deleting_phase: false,
+        };
+        let sealed_meta =
+            self.seal_envelope(&serde_json::to_vec(&record)?, &cache_aad(cache_key))?;
+        let write = self.database.begin_write()?;
+        {
+            let mut table = write.open_table(DERIVED_CACHE)?;
+            table.insert(cache_key, sealed_meta.as_slice())?;
+        }
+        write.commit()?;
+        Ok(record)
+    }
+
+    /// Two-phase recoverable derived-cache GC (`MOB-MED-007`): reclaims ONLY
+    /// `DerivedCache` thumbnails/previews, NEVER evicting `OwnedOriginal` packs or holds!
+    pub fn gc_derived_cache(
+        &self,
+        target_reclaim_bytes: u64,
+    ) -> Result<DerivedCacheGcReport, MobileCoreError> {
+        let mut candidates = Vec::new();
+        {
+            let read = self.database.begin_read()?;
+            let table = read.open_table(DERIVED_CACHE)?;
+            for entry in table.iter()? {
+                let (key, value) = entry?;
+                let plain = self.open_envelope(value.value(), &cache_aad(key.value()))?;
+                let record: DerivedCacheRecord = serde_json::from_slice(&plain)?;
+                candidates.push(record);
+            }
+        }
+        candidates.sort_by_key(|rec| rec.created_at_monotonic_ms);
+
+        let mut evicted = Vec::new();
+        let mut reclaimed = 0u64;
+        for mut candidate in candidates {
+            if reclaimed >= target_reclaim_bytes {
+                break;
+            }
+            // Phase 1: mark deleting in redb before unlinking file
+            candidate.deleting_phase = true;
+            let phase1 = self.seal_envelope(
+                &serde_json::to_vec(&candidate)?,
+                &cache_aad(&candidate.cache_key),
+            )?;
+            {
+                let write = self.database.begin_write()?;
+                {
+                    let mut table = write.open_table(DERIVED_CACHE)?;
+                    table.insert(candidate.cache_key.as_str(), phase1.as_slice())?;
+                }
+                write.commit()?;
+            }
+            // Phase 2: remove derived file and commit removal
+            remove_file_if_present(&self.cache_path(&candidate.cache_key))?;
+            {
+                let write = self.database.begin_write()?;
+                {
+                    let mut table = write.open_table(DERIVED_CACHE)?;
+                    let _ = table.remove(candidate.cache_key.as_str())?;
+                }
+                write.commit()?;
+            }
+            reclaimed = reclaimed.saturating_add(candidate.byte_length);
+            evicted.push(candidate.cache_key);
+        }
+
+        let owned_originals_preserved = self.owned_media_count()?;
+        Ok(DerivedCacheGcReport {
+            evicted_cache_keys: evicted,
+            reclaimed_bytes: reclaimed,
+            owned_originals_preserved,
+        })
+    }
+
+    fn recover_derived_cache_deletions(&self) -> Result<(), MobileCoreError> {
+        let mut pending = Vec::new();
+        {
+            let read = self.database.begin_read()?;
+            let table = read.open_table(DERIVED_CACHE)?;
+            for entry in table.iter()? {
+                let (key, value) = entry?;
+                let plain = self.open_envelope(value.value(), &cache_aad(key.value()))?;
+                let record: DerivedCacheRecord = serde_json::from_slice(&plain)?;
+                if record.deleting_phase || !self.cache_path(&record.cache_key).is_file() {
+                    pending.push(record.cache_key);
+                }
+            }
+        }
+        for key in pending {
+            remove_file_if_present(&self.cache_path(&key))?;
+            let write = self.database.begin_write()?;
+            {
+                let mut table = write.open_table(DERIVED_CACHE)?;
+                let _ = table.remove(key.as_str())?;
+            }
+            write.commit()?;
+        }
+        Ok(())
+    }
+
+    fn compute_signed_manifest_from_pack(
+        &self,
+        owned: &OwnedMediaRecord,
+    ) -> Result<SignedMediaManifest, MobileCoreError> {
+        let path = self.active_path(&owned.media_ref);
+        let mut file = fs::File::open(&path)
+            .map_err(|error| storage_error("cannot open OwnedOriginal pack for manifest", error))?;
+        let file_len = file
+            .metadata()
+            .map_err(|error| storage_error("cannot stat OwnedOriginal pack", error))?
+            .len();
+        let mut magic = [0u8; FILE_MAGIC.len()];
+        file.read_exact(&mut magic)
+            .map_err(|error| storage_error("cannot read pack magic", error))?;
+        if &magic != FILE_MAGIC {
+            return Err(MobileCoreError::Security(
+                "OwnedOriginal pack magic is invalid".into(),
+            ));
+        }
+
+        let mut pieces = Vec::new();
+        let mut whole_hasher = blake3::Hasher::new();
+        let mut merkle_hasher = blake3::Hasher::new();
+        merkle_hasher.update(b"onebrain:mobile:media-distribution-root:1\0");
+        let mut piece_index = 0u32;
+
+        loop {
+            let pos = file
+                .stream_position()
+                .map_err(|error| storage_error("cannot inspect pack position", error))?;
+            if pos >= file_len {
+                break;
+            }
+            let mut len_bytes = [0u8; 4];
+            file.read_exact(&mut len_bytes)
+                .map_err(|error| storage_error("cannot read pack chunk len", error))?;
+            let ciphertext_length = u32::from_le_bytes(len_bytes);
+            let mut nonce_bytes = [0u8; NONCE_BYTES];
+            file.read_exact(&mut nonce_bytes)
+                .map_err(|error| storage_error("cannot read pack chunk nonce", error))?;
+            let mut ciphertext = vec![0u8; ciphertext_length as usize];
+            file.read_exact(&mut ciphertext)
+                .map_err(|error| storage_error("cannot read pack ciphertext", error))?;
+            let plaintext = Zeroizing::new(
+                self.cipher
+                    .decrypt(
+                        &XNonce::from(nonce_bytes),
+                        Payload {
+                            msg: &ciphertext,
+                            aad: &chunk_aad(&owned.source_ref, u64::from(piece_index)),
+                        },
+                    )
+                    .map_err(|_| {
+                        MobileCoreError::Security("OwnedOriginal piece decryption failed".into())
+                    })?,
+            );
+            whole_hasher.update(&plaintext);
+            let piece_digest = blake3::hash(&plaintext);
+            merkle_hasher.update(&piece_index.to_le_bytes());
+            merkle_hasher.update(&(plaintext.len() as u32).to_le_bytes());
+            merkle_hasher.update(piece_digest.as_bytes());
+            pieces.push(PieceLeaf {
+                piece_index,
+                byte_length: plaintext.len() as u32,
+                plaintext_blake3: piece_digest.to_hex().to_string(),
+                pack_file_offset: pos,
+                ciphertext_length,
+            });
+            piece_index = piece_index.saturating_add(1);
+        }
+
+        let local_content_cid = whole_hasher.finalize().to_hex().to_string();
+        let distribution_root = merkle_hasher.finalize().to_hex().to_string();
+        let mut body_hasher = blake3::Hasher::new();
+        body_hasher.update(b"onebrain:mobile:media-manifest-body:1\0");
+        body_hasher.update(local_content_cid.as_bytes());
+        body_hasher.update(distribution_root.as_bytes());
+        body_hasher.update(&owned.content_bytes.to_le_bytes());
+        let manifest_body_cid = body_hasher.finalize().to_hex().to_string();
+
+        Ok(SignedMediaManifest {
+            manifest_version: 1,
+            media_ref: owned.media_ref.clone(),
+            source_ref: owned.source_ref.clone(),
+            local_content_cid,
+            distribution_root,
+            manifest_body_cid,
+            piece_size_bytes: MAX_CHUNK_BYTES as u32,
+            total_bytes: owned.content_bytes,
+            mime_type: owned.mime_type.clone(),
+            media_class: owned.media_class.clone(),
+            pieces,
+        })
+    }
+
     fn receiving_count(&self) -> Result<usize, MobileCoreError> {
         Ok(usize::try_from(self.count_state(MediaStageState::Receiving)?).unwrap_or(usize::MAX))
     }
@@ -607,19 +1058,30 @@ impl MediaStagingStore {
                 "OwnedOriginal activation lost its encrypted pack".into(),
             ));
         }
-        let owned = OwnedMediaRecord {
-            format_version: FORMAT_VERSION,
-            media_ref: media_ref.clone(),
-            source_ref: record.source_ref.clone(),
-            media_class: record.requested_class.clone(),
-            mime_type: record.detected_mime_type.clone().ok_or_else(|| {
-                MobileCoreError::Security("OwnedOriginal operation lost its MIME binding".into())
-            })?,
-            content_bytes: record.committed_plaintext_bytes,
-            verified_bytes: record.committed_plaintext_bytes,
-            encrypted_pack_root: encrypted_pack_root.clone(),
-            created_at_monotonic_ms: record.created_at_monotonic_ms,
+        let existing_owned = self.read_owned_record(&media_ref)?;
+        let owned = match existing_owned {
+            Some(existing) => existing,
+            None => OwnedMediaRecord {
+                format_version: FORMAT_VERSION,
+                media_ref: media_ref.clone(),
+                source_ref: record.source_ref.clone(),
+                media_class: record.requested_class.clone(),
+                mime_type: record.detected_mime_type.clone().ok_or_else(|| {
+                    MobileCoreError::Security(
+                        "OwnedOriginal operation lost its MIME binding".into(),
+                    )
+                })?,
+                content_bytes: record.committed_plaintext_bytes,
+                verified_bytes: record.committed_plaintext_bytes,
+                encrypted_pack_root: encrypted_pack_root.clone(),
+                created_at_monotonic_ms: record.created_at_monotonic_ms,
+            },
         };
+        let manifest = self.compute_signed_manifest_from_pack(&owned)?;
+        let sealed_manifest = self.seal_envelope(
+            &serde_json::to_vec(&manifest)?,
+            &manifest_aad(&owned.media_ref),
+        )?;
         let sealed_owned = self.seal_owned_record(&owned)?;
         record.state = MediaStageState::ReferenceCommitted;
         let sealed_stage = self.seal_metadata(&record.source_ref, &serde_json::to_vec(record)?)?;
@@ -630,6 +1092,8 @@ impl MediaStagingStore {
             if catalog.get(media_ref.as_str())?.is_none() {
                 catalog.insert(media_ref.as_str(), sealed_owned.as_slice())?;
             }
+            let mut manifests = write.open_table(MEDIA_MANIFESTS)?;
+            manifests.insert(media_ref.as_str(), sealed_manifest.as_slice())?;
             let mut holds = write.open_table(OWNED_HOLDS)?;
             holds.insert(encrypted_pack_root.as_str(), 1)?;
             let mut stages = write.open_table(MEDIA_STAGES)?;
@@ -894,6 +1358,10 @@ impl MediaStagingStore {
     fn active_path(&self, media_ref: &str) -> PathBuf {
         self.active_root.join(format!("{media_ref}.obmpack"))
     }
+
+    fn cache_path(&self, cache_key: &str) -> PathBuf {
+        self.cache_root.join(format!("{cache_key}.obmcache"))
+    }
 }
 
 fn receipt_from_record(record: &MediaStageRecord) -> Result<MediaStageReceipt, MobileCoreError> {
@@ -1031,6 +1499,20 @@ fn owned_aad(media_ref: &str) -> Vec<u8> {
     let mut aad = Vec::with_capacity(OWNED_AAD_CONTEXT.len() + media_ref.len());
     aad.extend_from_slice(OWNED_AAD_CONTEXT);
     aad.extend_from_slice(media_ref.as_bytes());
+    aad
+}
+
+fn manifest_aad(media_ref: &str) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(MANIFEST_AAD_CONTEXT.len() + media_ref.len());
+    aad.extend_from_slice(MANIFEST_AAD_CONTEXT);
+    aad.extend_from_slice(media_ref.as_bytes());
+    aad
+}
+
+fn cache_aad(cache_key: &str) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(CACHE_AAD_CONTEXT.len() + cache_key.len());
+    aad.extend_from_slice(CACHE_AAD_CONTEXT);
+    aad.extend_from_slice(cache_key.as_bytes());
     aad
 }
 

@@ -21,6 +21,7 @@ pub mod blob_store;
 pub mod ccid; // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
 #[cfg(feature = "legacy-read")]
 pub mod concept_dict; // ★ v6 NEW: ConceptDict for name ↔ ID lookup
+pub mod concept_lifecycle;
 pub mod concept_registry; // ★ v7 NEW: Offline concept name → CCID lookup (200MB registry)
 pub mod concept_registry_manifest;
 pub mod concept_registry_release;
@@ -176,6 +177,12 @@ pub use core_dna::{
 
 // ★ v7 NEW: Re-export CCID and Concept Registry
 pub use ccid::{ccid, ccid_from_wikidata, Ccid};
+pub use concept_lifecycle::{
+    AuthoringConceptResolution, ConceptLifecycleError, ConceptLifecycleRecord,
+    ConceptLifecycleTable, ConceptRedirect, ConceptRetire, ConceptRetireReason, ConceptSplit,
+    CONCEPT_LIFECYCLE_PROFILE_MAJOR, CONCEPT_LIFECYCLE_PROFILE_MINOR, MAX_REDIRECT_HOPS,
+    MAX_SPLIT_BRANCHES, MIN_SPLIT_BRANCHES,
+};
 pub use concept_registry::{
     AddResult, CollisionRecord, ConceptCategory, ConceptLookup, ConceptRegistry, ResolveResult,
     ResolvedConcept,
@@ -191,12 +198,14 @@ pub use concept_registry_manifest::{
 pub use concept_registry_release::package_concept_registry_release_with_capacity_for_drill;
 pub use concept_registry_release::{
     activate_concept_registry_release, concept_registry_release_capacity,
-    latest_concept_registry_state, package_concept_registry_release,
+    concept_registry_release_capacity_v2, latest_concept_registry_state,
+    package_concept_registry_release, package_concept_registry_release_v2,
     parse_concept_registry_verifying_key, resolve_active_concept_registry_release,
     rollback_concept_registry_release, verify_concept_registry_release,
     ActiveConceptRegistryRelease, ConceptRegistryReleaseArtifact, ConceptRegistryReleaseCapacity,
     ConceptRegistryReleaseError, ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
     ConceptRegistryReleaseStamp, ConceptRegistryReleaseState, CONCEPT_REGISTRY_RELEASE_PROFILE,
+    CONCEPT_REGISTRY_RELEASE_PROFILE_V2, RELEASE_LIFECYCLE_FILE,
 };
 pub use indexed_concept_registry::{IndexedConceptRegistry, IndexedRegistryError};
 

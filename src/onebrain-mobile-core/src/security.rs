@@ -5,6 +5,9 @@ use ku_core::foundation::{PrivateVault, RedbVerifiedBackend, VaultKey};
 use zeroize::Zeroizing;
 
 use crate::{
+    ai_tools::{AiJournalKey, ToolOrchestrator},
+    knowledge::MobileKnowledgeEngine,
+    obp_reunion::{PassiveObpReunionEngine, ReunionVaultKey},
     InstallationAuthorityRecord, MediaStageReceipt, MediaStagingKey, MediaStagingStore,
     MobileCoreError, OwnedMediaSummary, PrivateDraftKey, PrivateDraftStore, RawDraftReceipt,
     ShareSpoolSummary,
@@ -178,6 +181,9 @@ pub struct SecureIdentitySession {
     private_vault: Option<PrivateVault<RedbVerifiedBackend>>,
     private_drafts: Option<PrivateDraftStore>,
     private_media_staging: Option<MediaStagingStore>,
+    knowledge_engine: Option<MobileKnowledgeEngine>,
+    tool_orchestrator: Option<ToolOrchestrator>,
+    reunion_engine: Option<PassiveObpReunionEngine>,
 }
 
 impl SecureIdentitySession {
@@ -208,6 +214,26 @@ impl SecureIdentitySession {
         vault_key.copy_from_slice(material.range(VAULT_RANGE));
         let private_draft_key = PrivateDraftKey::derive(&vault_key);
         let private_media_staging_key = MediaStagingKey::derive(&vault_key);
+        let data_root = private_vault_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        let knowledge_engine = MobileKnowledgeEngine::open(
+            &data_root.join("private-ku-vault.redb"),
+            &data_root.join("private-ku-journal.redb"),
+            &data_root.join("private-fidelity-portfolio.redb"),
+            &data_root.join("private-composition.redb"),
+            &data_root.join("private-knowledge-meta.redb"),
+            &vault_key,
+        )?;
+        let tool_orchestrator = ToolOrchestrator::open(
+            &data_root.join("private-ai-journal.redb"),
+            &data_root.join("models").join("releases"),
+            AiJournalKey::derive(&vault_key),
+        )?;
+        let reunion_engine = PassiveObpReunionEngine::open(
+            &data_root.join("private-reunion.redb"),
+            ReunionVaultKey::derive(&vault_key),
+        )?;
         let backend = RedbVerifiedBackend::open(private_vault_path).map_err(|error| {
             MobileCoreError::Security(format!("cannot open encrypted private vault: {error}"))
         })?;
@@ -227,6 +253,9 @@ impl SecureIdentitySession {
             private_vault: Some(private_vault),
             private_drafts: Some(private_drafts),
             private_media_staging: Some(private_media_staging),
+            knowledge_engine: Some(knowledge_engine),
+            tool_orchestrator: Some(tool_orchestrator),
+            reunion_engine: Some(reunion_engine),
         })
     }
 
@@ -469,12 +498,82 @@ impl SecureIdentitySession {
     }
 
     pub fn lock(&mut self) {
+        self.knowledge_engine = None;
+        self.tool_orchestrator = None;
+        self.reunion_engine = None;
         self.private_vault = None;
         self.private_drafts = None;
         self.private_media_staging = None;
         self.material = None;
         self.state = SecuritySessionState::Locked;
         self.authorized_at_monotonic_ms = 0;
+    }
+
+    pub fn drafts_store(&self) -> Result<&PrivateDraftStore, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts.as_ref().ok_or(MobileCoreError::Locked)
+    }
+
+    pub fn media_store(&self) -> Result<&MediaStagingStore, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)
+    }
+
+    pub fn knowledge_engine(&self) -> Result<&MobileKnowledgeEngine, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.knowledge_engine
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)
+    }
+
+    pub fn knowledge_engine_mut(&mut self) -> Result<&mut MobileKnowledgeEngine, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.knowledge_engine
+            .as_mut()
+            .ok_or(MobileCoreError::Locked)
+    }
+
+    pub fn knowledge_and_drafts_mut(
+        &mut self,
+    ) -> Result<(&mut MobileKnowledgeEngine, &PrivateDraftStore), MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        let drafts = self
+            .private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        let knowledge = self
+            .knowledge_engine
+            .as_mut()
+            .ok_or(MobileCoreError::Locked)?;
+        Ok((knowledge, drafts))
+    }
+
+    pub fn tool_orchestrator(&self) -> Result<&ToolOrchestrator, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.tool_orchestrator
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)
+    }
+
+    pub fn reunion_engine(&self) -> Result<&PassiveObpReunionEngine, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.reunion_engine.as_ref().ok_or(MobileCoreError::Locked)
     }
 }
 

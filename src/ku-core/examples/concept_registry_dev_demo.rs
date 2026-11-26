@@ -287,6 +287,7 @@ fn write_dev_obr(obr_path: &Path) -> Result<(), Box<dyn Error>> {
             .collect(),
         label_index: Some(label_index),
         ccid_index: Some(ccid_index),
+        lifecycle_blake3: None,
     };
     fs::write(manifest_path(obr_path), serde_json::to_vec(&manifest)?)?;
     Ok(())

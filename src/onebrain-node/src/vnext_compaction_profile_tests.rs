@@ -37,6 +37,7 @@ fn u64_at(value: &Value, key: &str) -> u64 {
 fn state_name(state: OutboundIntentState) -> &'static str {
     match state {
         OutboundIntentState::Pending => "pending",
+        OutboundIntentState::PendingMailboxPickup => "pending_mailbox_pickup",
         OutboundIntentState::Acknowledged => "acknowledged",
         OutboundIntentState::DeadLetter => "dead_letter",
         OutboundIntentState::RetryExhausted => "retry_exhausted",

@@ -3,13 +3,37 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use ku_core::concept_lifecycle::{AuthoringConceptResolution, ConceptLifecycleTable};
 use ku_core::foundation::{
     AffordanceSemantics, ComparisonOperator, ConceptCcid, ConstraintExpression, DimensionVector,
     KnowledgeAffordance, LiteralValue, Modality, ObjectCid, QuantityLiteral, ReceptorDefinition,
     SemanticFrameSet, StatementFrame, TermRef, TypedConstraint,
 };
 
+use crate::vnext_query::KnowledgeNeedIr;
+
 pub const SEMANTIC_INDEX_REDUCER_VERSION: u64 = 1;
+
+/// Multi-facet semantic index lookup specification supporting optional `ConceptLifecycleTable`
+/// equivalence-class expansion (`P1` §2.1.2 / `P3` §3.2).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SemanticIndexQuery {
+    pub roles: Vec<ConceptCcid>,
+    pub predicates: Vec<ConceptCcid>,
+    pub concepts: Vec<ConceptCcid>,
+    pub units: Vec<ConceptCcid>,
+    pub dimensions: Vec<DimensionVector>,
+}
+
+/// Candidate CIDs returned by [`RebuildableSemanticIndex::query_with_lifecycle`], recording
+/// whether any `ConceptRedirect` equivalence-class expansion was applied without mutating
+/// stored KU bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SemanticLifecycleQueryResult {
+    pub candidate_cids: Vec<ObjectCid>,
+    pub lifecycle_redirect_applied: bool,
+    pub expanded_equivalents: BTreeMap<ConceptCcid, BTreeSet<ConceptCcid>>,
+}
 
 #[derive(Clone, Copy)]
 pub enum SemanticIndexSource<'a> {
@@ -171,6 +195,150 @@ impl RebuildableSemanticIndex {
 
     pub fn clear_derived(&mut self) {
         *self = Self::default();
+    }
+
+    /// Expand postings across `ConceptRedirect` equivalence classes (`P1` §2.1.2) without
+    /// rewriting stored KU bytes. Concept splits and retirements are never auto-expanded.
+    pub fn query_with_lifecycle(
+        &self,
+        query: &SemanticIndexQuery,
+        lifecycle: Option<&ConceptLifecycleTable>,
+    ) -> SemanticLifecycleQueryResult {
+        let classes = lifecycle.map(ConceptLifecycleTable::equivalence_classes);
+        let mut redirect_applied = false;
+        let mut expanded_equivalents: BTreeMap<ConceptCcid, BTreeSet<ConceptCcid>> =
+            BTreeMap::new();
+        let mut facet_sets: Vec<BTreeSet<[u8; 32]>> = Vec::new();
+
+        let mut expand_ccid = |ccid: ConceptCcid,
+                               map: &BTreeMap<[u8; 16], BTreeSet<[u8; 32]>>,
+                               also_map: Option<&BTreeMap<[u8; 16], BTreeSet<[u8; 32]>>>|
+         -> BTreeSet<[u8; 32]> {
+            let mut members = BTreeSet::from([ccid]);
+            if let (Some(table), Some(eq_map)) = (lifecycle, classes.as_ref()) {
+                let canonical = match table.resolve_for_authoring(ccid) {
+                    AuthoringConceptResolution::Redirected { to, .. } => {
+                        redirect_applied = true;
+                        Some(to)
+                    }
+                    AuthoringConceptResolution::Canonical(c) => Some(c),
+                    AuthoringConceptResolution::NeedsSplitDisambiguation { .. }
+                    | AuthoringConceptResolution::Retired { .. } => None,
+                };
+                if let Some(canon) = canonical {
+                    if let Some(equiv) = eq_map.get(&canon) {
+                        members.extend(equiv.iter().copied());
+                    }
+                }
+            }
+            if members.len() > 1 {
+                expanded_equivalents.insert(ccid, members.clone());
+            }
+
+            let mut union = BTreeSet::new();
+            for member in &members {
+                let mut member_hits = BTreeSet::new();
+                if let Some(hits) = map.get(member.as_bytes()) {
+                    member_hits.extend(hits.iter().copied());
+                }
+                if let Some(extra) = also_map.and_then(|m| m.get(member.as_bytes())) {
+                    member_hits.extend(extra.iter().copied());
+                }
+                if *member != ccid && !member_hits.is_empty() {
+                    redirect_applied = true;
+                }
+                union.extend(member_hits);
+            }
+            union
+        };
+
+        for &role in &query.roles {
+            // Virtual SFS KUs expose their statement predicates as offered roles.
+            facet_sets.push(expand_ccid(
+                role,
+                &self.affordance_roles,
+                Some(&self.predicates),
+            ));
+        }
+        for &pred in &query.predicates {
+            facet_sets.push(expand_ccid(pred, &self.predicates, None));
+        }
+        for &concept in &query.concepts {
+            facet_sets.push(expand_ccid(concept, &self.concepts, None));
+        }
+        for &unit in &query.units {
+            facet_sets.push(expand_ccid(unit, &self.units, None));
+        }
+        for &dim in &query.dimensions {
+            let hits = self
+                .dimensions
+                .get(&dim.exponents())
+                .cloned()
+                .unwrap_or_default();
+            facet_sets.push(hits);
+        }
+
+        let intersected = match facet_sets
+            .into_iter()
+            .reduce(|acc, next| acc.intersection(&next).copied().collect())
+        {
+            Some(set) => set.into_iter().map(ObjectCid::from_bytes).collect(),
+            None => Vec::new(),
+        };
+
+        SemanticLifecycleQueryResult {
+            candidate_cids: intersected,
+            lifecycle_redirect_applied: redirect_applied,
+            expanded_equivalents,
+        }
+    }
+
+    /// Build a Phase-1 candidate recall query directly from a compiled [`KnowledgeNeedIr`].
+    pub fn recall_for_need_with_lifecycle(
+        &self,
+        need: &KnowledgeNeedIr,
+        lifecycle: Option<&ConceptLifecycleTable>,
+    ) -> SemanticLifecycleQueryResult {
+        let mut query = SemanticIndexQuery::default();
+        for stmt in &need.goal.statements {
+            query.predicates.push(stmt.operator_or_predicate);
+            for arg in &stmt.arguments {
+                match arg {
+                    TermRef::Concept(c) => query.concepts.push(*c),
+                    TermRef::Literal(LiteralValue::Quantity(q)) => {
+                        query.dimensions.push(q.source_unit.dimension);
+                    }
+                    _ => {}
+                }
+            }
+            for c in &stmt.constraints {
+                match &c.expression {
+                    ConstraintExpression::Compare { left, right, .. } => {
+                        for t in [left, right] {
+                            if let TermRef::Literal(LiteralValue::Quantity(q)) = t {
+                                query.dimensions.push(q.source_unit.dimension);
+                            }
+                        }
+                    }
+                    ConstraintExpression::Dimension { expected, .. } => {
+                        query.dimensions.push(*expected);
+                    }
+                    ConstraintExpression::Range { lower, .. } => {
+                        query.dimensions.push(lower.source_unit.dimension);
+                    }
+                }
+            }
+        }
+        if query.predicates.is_empty() {
+            query.roles.extend(need.desired_roles.iter().copied());
+        }
+        query.predicates.sort();
+        query.predicates.dedup();
+        query.concepts.sort();
+        query.concepts.dedup();
+        query.dimensions.sort();
+        query.dimensions.dedup();
+        self.query_with_lifecycle(&query, lifecycle)
     }
 
     fn projection_root(&self) -> [u8; 32] {
@@ -665,5 +833,88 @@ mod tests {
                 .snapshot()
                 .source_root
         );
+    }
+
+    #[test]
+    fn lifecycle_redirect_query_expands_historical_ku_without_mutating_stored_bytes() {
+        use ku_core::concept_lifecycle::{
+            ConceptLifecycleRecord, ConceptLifecycleTable, ConceptRedirect, ConceptSplit,
+        };
+
+        let deprecated_concept = concept(70);
+        let canonical_concept = concept(71);
+        let split_parent = concept(80);
+        let split_branch_a = concept(81);
+        let split_branch_b = concept(82);
+
+        let historical_ku = SemanticFrameSet {
+            statements: vec![StatementFrame {
+                statement_id: StatementId(0),
+                operator_or_predicate: concept(30),
+                arguments: vec![TermRef::Concept(deprecated_concept)],
+                constraints: Vec::new(),
+                qualifiers: StatementQualifiers::default(),
+            }],
+        };
+        let original_bytes = historical_ku.canonical_bytes().unwrap();
+        let ku_cid = ObjectCid::from_bytes([77; 32]);
+        let index = RebuildableSemanticIndex::rebuild(&[SemanticIndexSource::KnowledgeUnit {
+            cid: ku_cid,
+            semantic: &historical_ku,
+        }]);
+        let snap_before = index.snapshot();
+
+        // Without lifecycle table, querying canonical_concept misses historical_ku.
+        let without = index.query_with_lifecycle(
+            &SemanticIndexQuery {
+                predicates: vec![concept(30)],
+                concepts: vec![canonical_concept],
+                ..SemanticIndexQuery::default()
+            },
+            None,
+        );
+        assert!(without.candidate_cids.is_empty());
+        assert!(!without.lifecycle_redirect_applied);
+
+        // With lifecycle redirect 70 -> 71, querying 71 finds historical_ku without rewriting it!
+        let lifecycle = ConceptLifecycleTable::from_records(vec![
+            ConceptLifecycleRecord::Redirect(ConceptRedirect {
+                deprecated_ccid: deprecated_concept,
+                canonical_ccid: canonical_concept,
+                since_release_seq: 2,
+                provenance_ref: "wd:Q70->wd:Q71".to_string(),
+            }),
+            ConceptLifecycleRecord::Split(ConceptSplit {
+                parent_ccid: split_parent,
+                branch_ccids: vec![split_branch_a, split_branch_b],
+                disambiguation_role_ccid: concept(99),
+                since_release_seq: 3,
+            }),
+        ])
+        .unwrap();
+
+        let with_redirect = index.query_with_lifecycle(
+            &SemanticIndexQuery {
+                predicates: vec![concept(30)],
+                concepts: vec![canonical_concept],
+                ..SemanticIndexQuery::default()
+            },
+            Some(&lifecycle),
+        );
+        assert_eq!(with_redirect.candidate_cids, vec![ku_cid]);
+        assert!(with_redirect.lifecycle_redirect_applied);
+        assert_eq!(index.snapshot(), snap_before);
+        assert_eq!(historical_ku.canonical_bytes().unwrap(), original_bytes);
+
+        // Split concepts are intentionally excluded from automatic equivalence expansion.
+        let split_res = index.query_with_lifecycle(
+            &SemanticIndexQuery {
+                concepts: vec![split_parent],
+                ..SemanticIndexQuery::default()
+            },
+            Some(&lifecycle),
+        );
+        assert!(split_res.candidate_cids.is_empty());
+        assert!(!split_res.lifecycle_redirect_applied);
     }
 }

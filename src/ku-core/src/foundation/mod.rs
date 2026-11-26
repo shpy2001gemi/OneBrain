@@ -37,15 +37,18 @@ pub mod object;
 pub mod observation;
 pub mod operational_compaction;
 pub mod outcome_evidence;
+pub mod personal_mesh;
 pub mod provider;
 pub mod receptor;
 pub mod resolution;
 pub mod revocation;
 pub mod schema_registry;
+pub mod scoped_concept;
 pub mod semantic;
 pub mod semantic_content;
 pub mod source_text;
 pub mod storage;
+pub mod supersession;
 pub mod use_evidence;
 pub mod vault;
 
@@ -54,8 +57,9 @@ pub use actor_root::{
     ActorRootDelegationError, SignedActorRootDelegation, ValidatedActorRootDelegation,
 };
 pub use affordance::{
-    AcceptedInput, AffordanceError, AffordanceOrigin, AffordanceSemantics, KnowledgeAffordance,
-    KNOWLEDGE_AFFORDANCE_KIND,
+    project_virtual_sfs_affordance, AcceptedInput, AffordanceError, AffordanceOrigin,
+    AffordanceSemantics, KnowledgeAffordance, KNOWLEDGE_AFFORDANCE_KIND,
+    VIRTUAL_SFS_AFFORDANCE_PROFILE,
 };
 pub use assembly::{
     AssemblyError, AssemblyLineageId, FrontierAssemblyManifest, PlacementId, ReceptorPlacement,
@@ -148,8 +152,10 @@ pub use fidelity::{
     FIDELITY_POLICY_KIND, FIDELITY_PROFILE_MAJOR, FIDELITY_PROFILE_MINOR,
 };
 pub use fidelity_assessment::{
-    FidelityAssessment, FidelityAssessmentError, FidelityAssessmentReducer,
-    FidelityAssessmentStatus, FidelityEvidenceCoverage, FidelityRecordOutcome, LegacyEncodingClaim,
+    group_attestations_by_4d_correlation, CausalStakeholderRole, CorroborationGroupEntry,
+    CorroborationGroupSummary, CorroborationTuple4d, FidelityAssessment, FidelityAssessmentError,
+    FidelityAssessmentReducer, FidelityAssessmentStatus, FidelityEvidenceCoverage,
+    FidelityRecordOutcome, Has4dCorrelation, LegacyEncodingClaim, CORROBORATION_DIMENSIONS_4D,
 };
 pub use identity::{ActorId, CrdtDot, DeviceId, FeedId, FullWidthClock, NodeId, TypedIdentity};
 pub use inventory::{
@@ -205,16 +211,29 @@ pub use observation::{
     SOURCE_ARTIFACT_KIND,
 };
 pub use operational_compaction::{
-    CompactionFenceError, OperationalCompactionPermit, OperationalCompactionSwitch,
+    compute_tombstone_merkle_root, prove_tombstone_inclusion, CompactionFenceError,
+    OperationalCompactionPermit, OperationalCompactionSwitch, TombstoneEpochAccumulatorV1,
+    TombstoneEpochError, TombstoneMerkleProof, TOMBSTONE_EPOCH_BLOOM_BITS,
+    TOMBSTONE_EPOCH_BLOOM_BYTES, TOMBSTONE_EPOCH_BLOOM_HASHES,
 };
 pub use outcome_evidence::{
-    AffectedPrincipal, AffectedScope, AssessedOutcomeObservation, AttributionStatus,
-    BenefitEvidencePayload, EvidenceLimitation, OutcomeAuthority, OutcomeBranchRecord,
-    OutcomeBranchView, OutcomeCaseId, OutcomeEvidenceError, OutcomeEvidenceReducer,
-    OutcomeObservationPayload, OutcomeRecordResult, OutcomeValence, ValidatedBenefitEvidenceEvent,
-    ValidatedOutcomeObservationEvent, BENEFIT_EVIDENCE_EVENT_TYPE, BENEFIT_EVIDENCE_KIND,
-    MAX_OUTCOME_LIMITATIONS, MAX_OUTCOME_REFERENCES, OUTCOME_EVIDENCE_MAJOR,
+    AffectedPrincipal, AffectedScope, AssessedBenefitBranch, AssessedOutcomeBranch,
+    AssessedOutcomeObservation, AttributionStatus, BenefitClosureReducer, BenefitClosureState,
+    BenefitClosureView, BenefitEvidencePayload, EvidenceLimitation, OutcomeAuthority,
+    OutcomeBranchRecord, OutcomeBranchView, OutcomeCaseId, OutcomeEvidenceError,
+    OutcomeEvidenceReducer, OutcomeObservationPayload, OutcomeRecordResult, OutcomeValence,
+    ValidatedBenefitEvidenceEvent, ValidatedOutcomeObservationEvent, BENEFIT_EVIDENCE_EVENT_TYPE,
+    BENEFIT_EVIDENCE_KIND, MAX_OUTCOME_LIMITATIONS, MAX_OUTCOME_REFERENCES, OUTCOME_EVIDENCE_MAJOR,
     OUTCOME_EVIDENCE_MINOR, OUTCOME_OBSERVATION_EVENT_TYPE, OUTCOME_OBSERVATION_KIND,
+};
+pub use personal_mesh::{
+    hkdf_expand_sha256, hkdf_extract_sha256, x25519_public_from_secret,
+    EncryptedPersonalMeshRecord, PersonalMeshEpochDek, PersonalMeshEpochState, PersonalMeshError,
+    PersonalMeshMemberBindingV1, PersonalMeshPrincipals, PersonalMeshRecordClass,
+    Spake2PlusAwaitingConfirmation, Spake2PlusEstablished, Spake2PlusParticipant, Spake2PlusRole,
+    Spake2PlusRound1Message, Spake2PlusRound2Confirmation, Spake2PlusSharedSecret,
+    WrappedPersonalMeshEpochDek, PERSONAL_MESH_BINDING_DOMAIN, PERSONAL_MESH_EPOCH_WRAP_INFO,
+    PERSONAL_MESH_RECORD_AAD_DOMAIN, PERSONAL_MESH_SPAKE2_DOMAIN,
 };
 pub use provider::{
     decode_provider_lease, decode_provider_retire, LeaseObservationOutcome, LeaseObservationStore,
@@ -242,6 +261,13 @@ pub use revocation::{
     RevocationFreshnessEvaluator, RevocationFreshnessProfile, RevocationRisk,
     TaskSpecificDtnProfile, TASK_SPECIFIC_DTN_PROFILE, TERRESTRIAL_INTERACTIVE_PROFILE,
 };
+pub use scoped_concept::{
+    attach_scoped_concept_bindings, build_concept_equivalence_mapping,
+    decode_scoped_concept_extension, derive_scoped_concept_ccid, encode_scoped_concept_extension,
+    verify_scoped_concept_dependencies, ConceptDefinitionFrame, ConceptOrigin, ScopedConceptError,
+    ScopedDependencyStatus, DEFINES_SCOPED_CONCEPT_CCID, DEFINES_SCOPED_CONCEPT_DOMAIN,
+    SCOPED_CCID_DOMAIN, SCOPED_CONCEPT_EXTENSION_KEY,
+};
 pub use semantic::{
     ComparisonOperator, ConceptCcid, ConstraintEvaluation, ConstraintExpression, DimensionVector,
     ExactRatio, LiteralValue, Modality, QuantityLiteral, ReceptorSlotId, SemanticError,
@@ -258,6 +284,12 @@ pub use storage::{
     AcceptedRecordEntry, AtomicVerifiedBackend, InMemoryVerifiedBackend, PortableVerifiedSnapshot,
     PutVerifiedOutcome, QuarantineRecord, StoredRecordKind, ValidatedStore,
     ValidatedStoreRestorePort, VerifiedStoreError, VerifiedStoreSnapshotPort,
+};
+pub use supersession::{
+    KnowledgeSupersessionPayload, RevisionRelation, SupersessionApplyOutcome, SupersessionBranch,
+    SupersessionError, SupersessionLineageReducer, SupersessionLineageView,
+    ValidatedKnowledgeSupersessionEvent, KNOWLEDGE_SUPERSESSION_EVENT_TYPE,
+    KNOWLEDGE_SUPERSESSION_KIND, SUPERSESSION_PROFILE_MAJOR, SUPERSESSION_PROFILE_MINOR,
 };
 pub use use_evidence::{
     AssessedExerciseEvidence, DerivationEvidencePayload, DerivationInput, ExerciseAuthority,

@@ -96,6 +96,11 @@ pub use verifier::{EncodingVerifier, VerificationResult};
 pub use builder::KuBuilder;
 #[cfg(feature = "legacy")]
 pub use concept_resolver::{ConceptResolver, ResolutionWarning, ResolutionWarningType};
+pub use extraction::review_lowering_v2::{
+    commitment_v2 as review_lowering_v2_commitment, lower_claim_v2, lower_draft_v2, LoweredDraftV2,
+    LoweringBlockerV2, DISJUNCTION_EXCLUSIVE_XOR_CCID, DISJUNCTION_INCLUSIVE_OR_CCID,
+    LOWERING_SCHEMA_V2, QUALIFIER_APPROXIMATION_CCID, QUALIFIER_FREQUENCY_CCID,
+};
 #[cfg(feature = "legacy")]
 pub use extractor::SpoExtractor;
 #[cfg(feature = "legacy")]

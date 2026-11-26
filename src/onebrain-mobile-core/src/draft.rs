@@ -395,6 +395,71 @@ impl PrivateDraftStore {
         }))
     }
 
+    pub fn read_decrypted_text(
+        &self,
+        draft_ref: &str,
+    ) -> Result<Option<(RawDraftReceipt, Zeroizing<String>)>, MobileCoreError> {
+        validate_draft_ref(draft_ref)?;
+        let read = self.database.begin_read()?;
+        let table = read.open_table(RAW_DRAFTS)?;
+        let Some(sealed) = table.get(draft_ref)? else {
+            return Ok(None);
+        };
+        let plaintext =
+            Zeroizing::new(self.open_sealed(DRAFT_AAD_CONTEXT, draft_ref, sealed.value())?);
+        let mut record: RawDraftRecord = serde_json::from_slice(&plaintext)?;
+        if record.format_version != DRAFT_FORMAT_VERSION || record.draft_ref != draft_ref {
+            record.content_utf8.fill(0);
+            return Err(MobileCoreError::Security(
+                "private raw draft binding is invalid".into(),
+            ));
+        }
+        let content_bytes = u64::try_from(record.content_utf8.len()).unwrap_or(u64::MAX);
+        let text = String::from_utf8(std::mem::take(&mut record.content_utf8)).map_err(|_| {
+            MobileCoreError::Security("decrypted raw draft is not valid UTF-8".into())
+        })?;
+        let receipt = RawDraftReceipt {
+            draft_ref: record.draft_ref,
+            content_language: record.content_language,
+            content_bytes,
+            saved_at_monotonic_ms: record.saved_at_monotonic_ms,
+            total_drafts: table.len()?,
+        };
+        Ok(Some((receipt, Zeroizing::new(text))))
+    }
+
+    pub fn list_recent(&self, limit: usize) -> Result<Vec<RawDraftReceipt>, MobileCoreError> {
+        let bounded = limit.clamp(1, 100);
+        let read = self.database.begin_read()?;
+        let table = read.open_table(RAW_DRAFTS)?;
+        let total = table.len()?;
+        let mut items = Vec::new();
+        for entry in table.iter()? {
+            let (key, sealed) = entry?;
+            let draft_ref = key.value();
+            let plaintext =
+                Zeroizing::new(self.open_sealed(DRAFT_AAD_CONTEXT, draft_ref, sealed.value())?);
+            let mut record: RawDraftRecord = serde_json::from_slice(&plaintext)?;
+            let content_bytes = u64::try_from(record.content_utf8.len()).unwrap_or(u64::MAX);
+            record.content_utf8.fill(0);
+            items.push(RawDraftReceipt {
+                draft_ref: record.draft_ref,
+                content_language: record.content_language,
+                content_bytes,
+                saved_at_monotonic_ms: record.saved_at_monotonic_ms,
+                total_drafts: total,
+            });
+        }
+        items.sort_by(|left, right| {
+            right
+                .saved_at_monotonic_ms
+                .cmp(&left.saved_at_monotonic_ms)
+                .then_with(|| left.draft_ref.cmp(&right.draft_ref))
+        });
+        items.truncate(bounded);
+        Ok(items)
+    }
+
     #[cfg(test)]
     fn read_text_for_test(&self, draft_ref: &str) -> Result<Vec<u8>, MobileCoreError> {
         let read = self.database.begin_read()?;

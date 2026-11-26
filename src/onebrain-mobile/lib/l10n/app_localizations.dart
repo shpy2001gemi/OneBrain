@@ -1535,6 +1535,348 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The selected artifact was cancelled, unreadable, too short, too long or did not match the signed chunk ledger. Verified durable bytes were kept for resume.'**
   String get initLocalImportError;
+
+  /// No description provided for @wave7ReadyOfflineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready offline'**
+  String get wave7ReadyOfflineTitle;
+
+  /// No description provided for @wave7ReadyOfflineBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Verified Concept Registry slot is active and demand-paged. Private KU encoding, semantic search, read-only local KQL and encrypted backup are unlocked offline.'**
+  String get wave7ReadyOfflineBody;
+
+  /// No description provided for @wave7ActivateRegistryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify whole artifacts & activate slot'**
+  String get wave7ActivateRegistryAction;
+
+  /// No description provided for @wave7RollbackRegistryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Roll back to previous slot (N-1)'**
+  String get wave7RollbackRegistryAction;
+
+  /// No description provided for @wave7GcRegistryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reclaim retired Registry slots'**
+  String get wave7GcRegistryAction;
+
+  /// No description provided for @wave7SourcePlanAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Multi-source plan & policy'**
+  String get wave7SourcePlanAction;
+
+  /// No description provided for @wave7ReadinessOnboardingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline readiness summary'**
+  String get wave7ReadinessOnboardingTitle;
+
+  /// No description provided for @wave7ReadinessOnboardingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Review active local capabilities and gated boundaries before entering your node.'**
+  String get wave7ReadinessOnboardingBody;
+
+  /// No description provided for @wave7EnterNodeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter OneBrain node'**
+  String get wave7EnterNodeAction;
+
+  /// No description provided for @wave7OperationsCenterTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Operations & transfers'**
+  String get wave7OperationsCenterTitle;
+
+  /// No description provided for @wave7OperationDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation receipt'**
+  String get wave7OperationDetailTitle;
+
+  /// No description provided for @wave7RegistrySettingsActiveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Active generation slot verified by REGISTRY_HEALTH_V1. Demand-paged reader and N-1 rollback remain local.'**
+  String get wave7RegistrySettingsActiveBody;
+
+  /// No description provided for @wave7OpenRegistrySettingsAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage Registry slots'**
+  String get wave7OpenRegistrySettingsAction;
+
+  /// No description provided for @wave7EncodeFromDraftAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Encode canonical private KU'**
+  String get wave7EncodeFromDraftAction;
+
+  /// No description provided for @wave7EncodeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Canonical private KU encoding'**
+  String get wave7EncodeTitle;
+
+  /// No description provided for @wave7EncodeGateBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Canonical KU encoding requires ReadyOffline with a healthy Concept Registry release. Save raw drafts now or complete Init first.'**
+  String get wave7EncodeGateBody;
+
+  /// No description provided for @wave7EncodePreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Encoding preview & lifecycle check'**
+  String get wave7EncodePreviewTitle;
+
+  /// No description provided for @wave7SavePrivateKuAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save immutable LOCAL_ONLY KU'**
+  String get wave7SavePrivateKuAction;
+
+  /// No description provided for @wave7MyKuTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'My private KU'**
+  String get wave7MyKuTitle;
+
+  /// No description provided for @wave7SearchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Semantic search'**
+  String get wave7SearchTitle;
+
+  /// No description provided for @wave7KqlTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Read-only local KQL'**
+  String get wave7KqlTitle;
+
+  /// No description provided for @wave7KqlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'FIND (k:KU) WHERE gene_type = \"Fact\"'**
+  String get wave7KqlHint;
+
+  /// No description provided for @wave7RunKqlAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Run local read-only query'**
+  String get wave7RunKqlAction;
+
+  /// No description provided for @wave7ConceptsBrowserTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Concept Registry browser'**
+  String get wave7ConceptsBrowserTitle;
+
+  /// No description provided for @wave7NeighborhoodTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local 2D neighborhood'**
+  String get wave7NeighborhoodTitle;
+
+  /// No description provided for @wave7KuDetailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Private KU detail'**
+  String get wave7KuDetailTitle;
+
+  /// No description provided for @wave7KuRevisionAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Create new immutable revision'**
+  String get wave7KuRevisionAction;
+
+  /// No description provided for @wave7KuOrganizeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Private tags & collections'**
+  String get wave7KuOrganizeAction;
+
+  /// No description provided for @wave7KuWorkflowAction.
+  ///
+  /// In en, this message translates to:
+  /// **'6-stage workflow inspection'**
+  String get wave7KuWorkflowAction;
+
+  /// No description provided for @wave7KuLineageAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Revision & branch lineage'**
+  String get wave7KuLineageAction;
+
+  /// No description provided for @wave7KuAlternateAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Alternate encodings'**
+  String get wave7KuAlternateAction;
+
+  /// No description provided for @wave7KuFidelityTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local encoding-fidelity portfolio'**
+  String get wave7KuFidelityTitle;
+
+  /// No description provided for @wave7KuFidelityDisclaimer.
+  ///
+  /// In en, this message translates to:
+  /// **'SELF_ATTESTED records a local publisher EncodingAttempt only. It is frontier-relative, never establishes proposition truth, and never publishes to any network.'**
+  String get wave7KuFidelityDisclaimer;
+
+  /// No description provided for @wave7BackupCreateAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Create OBARV002 encrypted backup'**
+  String get wave7BackupCreateAction;
+
+  /// No description provided for @wave7RestoreVerifyAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify & stage OBARV002 restore'**
+  String get wave7RestoreVerifyAction;
+
+  /// No description provided for @wave7ScopedExportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Export reviewed private bundle'**
+  String get wave7ScopedExportAction;
+
+  /// No description provided for @wave7StorageCleanupTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Derived cache & staging cleanup'**
+  String get wave7StorageCleanupTitle;
+
+  /// No description provided for @wave7RunGcAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reclaim derived caches (keep OwnedOriginal)'**
+  String get wave7RunGcAction;
+
+  /// No description provided for @wave7AssistantLocalHelperLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'LLM-0 deterministic local helper'**
+  String get wave7AssistantLocalHelperLabel;
+
+  /// No description provided for @wave7AssistantNoLlmChip.
+  ///
+  /// In en, this message translates to:
+  /// **'No LLM active · deterministic mode'**
+  String get wave7AssistantNoLlmChip;
+
+  /// No description provided for @wave7AssistantSendAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask local helper'**
+  String get wave7AssistantSendAction;
+
+  /// No description provided for @wave7ToolConsentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Durable tool proposal review'**
+  String get wave7ToolConsentTitle;
+
+  /// No description provided for @wave7ToolApproveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Authorize bounded execution'**
+  String get wave7ToolApproveAction;
+
+  /// No description provided for @wave7ToolDenyAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny proposal'**
+  String get wave7ToolDenyAction;
+
+  /// No description provided for @wave7CloudDisclosureTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud disclosure gate'**
+  String get wave7CloudDisclosureTitle;
+
+  /// No description provided for @wave7ModelsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed model catalog'**
+  String get wave7ModelsTitle;
+
+  /// No description provided for @wave7ActivateModelAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify & activate signed model'**
+  String get wave7ActivateModelAction;
+
+  /// No description provided for @wave7RollbackModelAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Deactivate / roll back model'**
+  String get wave7RollbackModelAction;
+
+  /// No description provided for @wave7MediaViewerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Verified-range private media viewer'**
+  String get wave7MediaViewerTitle;
+
+  /// No description provided for @wave7MediaInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Logical piece & pack manifest'**
+  String get wave7MediaInfoTitle;
+
+  /// No description provided for @wave7ActivityInboxTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity & approvals inbox'**
+  String get wave7ActivityInboxTitle;
+
+  /// No description provided for @wave7NotificationsSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification channels & quiet hours'**
+  String get wave7NotificationsSettingsTitle;
+
+  /// No description provided for @wave7BackgroundPolicyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Single ActivationArbiter & energy policy'**
+  String get wave7BackgroundPolicyTitle;
+
+  /// No description provided for @wave7DiagnosticsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Redacted diagnostics export'**
+  String get wave7DiagnosticsTitle;
+
+  /// No description provided for @wave7AdvancedGatesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Feature gates & schema migrations'**
+  String get wave7AdvancedGatesTitle;
+
+  /// No description provided for @wave7NetworkedBetaNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'MOB-GATE-NETWORKED-BETA is disabled by default in this build. Passive OBP reunion matching stays local-only and quarantined; P2P sync, blind fidelity network, and public publication routes are absent.'**
+  String get wave7NetworkedBetaNotice;
+
+  /// No description provided for @wave7AboutTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'About this autonomous node'**
+  String get wave7AboutTitle;
 }
 
 class _AppLocalizationsDelegate

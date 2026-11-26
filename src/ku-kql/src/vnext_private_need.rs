@@ -528,6 +528,62 @@ impl LocalNeedCipher {
         *hasher.finalize().as_bytes()
     }
 
+    fn capsule_storage_key(&self, session_id: [u8; 32]) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new_keyed(&self.index_key);
+        hasher.update(b"onebrain:vnext:private-need-capsule-index:1\0");
+        hasher.update(&session_id);
+        *hasher.finalize().as_bytes()
+    }
+
+    fn seal_capsule(
+        &self,
+        capsule_storage_key: [u8; 32],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, PrivateNeedError> {
+        let aad = private_capsule_aad(capsule_storage_key);
+        let mut nonce_hasher = blake3::Hasher::new_keyed(&self.nonce_key);
+        nonce_hasher.update(&aad);
+        nonce_hasher.update(blake3::hash(plaintext).as_bytes());
+        let digest = nonce_hasher.finalize();
+        let nonce =
+            XNonce::try_from(&digest.as_bytes()[..24]).map_err(|_| PrivateNeedError::Crypto)?;
+        let ciphertext = self
+            .aead
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| PrivateNeedError::Crypto)?;
+        let mut sealed = Vec::with_capacity(25 + ciphertext.len());
+        sealed.push(1);
+        sealed.extend_from_slice(&nonce);
+        sealed.extend_from_slice(&ciphertext);
+        Ok(sealed)
+    }
+
+    fn open_capsule(
+        &self,
+        capsule_storage_key: [u8; 32],
+        sealed: &[u8],
+    ) -> Result<Vec<u8>, PrivateNeedError> {
+        if sealed.len() < 41 || sealed[0] != 1 {
+            return Err(PrivateNeedError::Crypto);
+        }
+        let nonce = XNonce::try_from(&sealed[1..25]).map_err(|_| PrivateNeedError::Crypto)?;
+        self.aead
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: &sealed[25..],
+                    aad: &private_capsule_aad(capsule_storage_key),
+                },
+            )
+            .map_err(|_| PrivateNeedError::Crypto)
+    }
+
     fn seal(&self, storage_key: [u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, PrivateNeedError> {
         let aad = private_need_aad(storage_key);
         let mut nonce_hasher = blake3::Hasher::new_keyed(&self.nonce_key);
@@ -586,6 +642,13 @@ fn private_need_aad(storage_key: [u8; 32]) -> Vec<u8> {
 }
 
 #[cfg(feature = "storage")]
+fn private_capsule_aad(storage_key: [u8; 32]) -> Vec<u8> {
+    let mut aad = b"onebrain:vnext:private-need-capsule-vault:1\0".to_vec();
+    aad.extend_from_slice(&storage_key);
+    aad
+}
+
+#[cfg(feature = "storage")]
 mod persistent {
     use std::path::Path;
 
@@ -595,6 +658,8 @@ mod persistent {
 
     const PRIVATE_NEEDS: TableDefinition<&[u8], &[u8]> =
         TableDefinition::new("vnext_private_need_vault_v1");
+    const DISCLOSURE_CAPSULES: TableDefinition<&[u8], &[u8]> =
+        TableDefinition::new("vnext_disclosure_capsules_v1");
 
     pub struct RedbPrivateNeedVault {
         database: Database,
@@ -611,6 +676,9 @@ mod persistent {
             {
                 write
                     .open_table(PRIVATE_NEEDS)
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+                write
+                    .open_table(DISCLOSURE_CAPSULES)
                     .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
             }
             write
@@ -916,6 +984,121 @@ mod persistent {
                 .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
             Ok(next)
         }
+
+        /// Encrypt and persist raw progressive disclosure session state bytes under a
+        /// keyed index in the Private Vault Redb store.
+        pub fn put_capsule_snapshot_bytes(
+            &self,
+            session_id: [u8; 32],
+            canonical_bytes: &[u8],
+        ) -> Result<(), PrivateNeedError> {
+            if session_id == [0; 32] || canonical_bytes.is_empty() {
+                return Err(PrivateNeedError::InvalidField);
+            }
+            if canonical_bytes.len() > MAX_PRIVATE_NEED_PLAINTEXT_BYTES {
+                return Err(PrivateNeedError::Limit);
+            }
+            let storage_key = self.cipher.capsule_storage_key(session_id);
+            let sealed = self.cipher.seal_capsule(storage_key, canonical_bytes)?;
+            let write = self
+                .database
+                .begin_write()
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            {
+                let mut table = write
+                    .open_table(DISCLOSURE_CAPSULES)
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+                if table
+                    .get(storage_key.as_slice())
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?
+                    .is_none()
+                    && table
+                        .len()
+                        .map_err(|error| PrivateNeedError::Storage(error.to_string()))?
+                        >= MAX_STANDING_NEEDS as u64
+                {
+                    return Err(PrivateNeedError::Limit);
+                }
+                table
+                    .insert(storage_key.as_slice(), sealed.as_slice())
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))
+        }
+
+        pub fn get_capsule_snapshot_bytes(
+            &self,
+            session_id: [u8; 32],
+        ) -> Result<Option<Vec<u8>>, PrivateNeedError> {
+            if session_id == [0; 32] {
+                return Err(PrivateNeedError::InvalidField);
+            }
+            let storage_key = self.cipher.capsule_storage_key(session_id);
+            let read = self
+                .database
+                .begin_read()
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            let table = read
+                .open_table(DISCLOSURE_CAPSULES)
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            let Some(sealed) = table
+                .get(storage_key.as_slice())
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))?
+                .map(|guard| guard.value().to_vec())
+            else {
+                return Ok(None);
+            };
+            self.cipher.open_capsule(storage_key, &sealed).map(Some)
+        }
+
+        #[cfg(feature = "experimental")]
+        pub fn put_disclosure_session(
+            &self,
+            session: &crate::vnext_disclosure_capsule::ProgressiveDisclosureSession,
+        ) -> Result<(), PrivateNeedError> {
+            let bytes = session.to_durable_bytes()?;
+            self.put_capsule_snapshot_bytes(*session.session_id(), &bytes)
+        }
+
+        #[cfg(feature = "experimental")]
+        pub fn get_disclosure_session(
+            &self,
+            session_id: [u8; 32],
+        ) -> Result<
+            Option<crate::vnext_disclosure_capsule::ProgressiveDisclosureSession>,
+            PrivateNeedError,
+        > {
+            let Some(bytes) = self.get_capsule_snapshot_bytes(session_id)? else {
+                return Ok(None);
+            };
+            let session =
+                crate::vnext_disclosure_capsule::ProgressiveDisclosureSession::from_durable_bytes(
+                    &bytes,
+                )?;
+            if session.session_id() != &session_id {
+                return Err(PrivateNeedError::IdentityMismatch);
+            }
+            Ok(Some(session))
+        }
+
+        #[cfg(feature = "experimental")]
+        pub fn cancel_disclosure_session(
+            &self,
+            cancel: &crate::vnext_disclosure_capsule::CapsuleCancelV1,
+            permits: &ku_core::foundation::PermitValidator,
+            key: &mut crate::vnext_disclosure_capsule::DisclosureSessionKey,
+            key_state: Option<&ku_core::foundation::KeyStateReducer>,
+        ) -> Result<crate::vnext_disclosure_capsule::ProgressiveDisclosureSession, PrivateNeedError>
+        {
+            let mut session = self
+                .get_disclosure_session(cancel.session_id)?
+                .ok_or(PrivateNeedError::NotFound)?;
+            session.apply_cancel(cancel, permits, key, key_state)?;
+            self.put_disclosure_session(&session)?;
+            Ok(session)
+        }
     }
 
     pub use RedbPrivateNeedVault as Vault;
@@ -1023,6 +1206,8 @@ pub enum PrivateNeedError {
     StandingNeed(StandingNeedError),
     Receptor(ku_core::foundation::ReceptorError),
     Object(ku_core::foundation::ObjectError),
+    #[cfg(feature = "experimental")]
+    DisclosureCapsule(crate::vnext_disclosure_capsule::DisclosureCapsuleError),
     Storage(String),
     Crypto,
     DefinitionMismatch,
@@ -1038,7 +1223,10 @@ pub enum PrivateNeedError {
     NonCanonical,
     NotFound,
     Terminal,
-    GenerationMismatch { expected: u64, actual: u64 },
+    GenerationMismatch {
+        expected: u64,
+        actual: u64,
+    },
     ArchiveConflict,
     Limit,
 }
@@ -1076,6 +1264,13 @@ impl From<ku_core::foundation::ReceptorError> for PrivateNeedError {
 impl From<ku_core::foundation::ObjectError> for PrivateNeedError {
     fn from(error: ku_core::foundation::ObjectError) -> Self {
         Self::Object(error)
+    }
+}
+
+#[cfg(feature = "experimental")]
+impl From<crate::vnext_disclosure_capsule::DisclosureCapsuleError> for PrivateNeedError {
+    fn from(error: crate::vnext_disclosure_capsule::DisclosureCapsuleError) -> Self {
+        Self::DisclosureCapsule(error)
     }
 }
 
@@ -1343,6 +1538,152 @@ mod tests {
         let retired = vault.retire(id, 0).unwrap();
         assert_eq!(retired.lifecycle, PrivateNeedLifecycle::Retired);
         assert!(retired.bundle.is_none());
+    }
+
+    #[cfg(feature = "experimental")]
+    #[test]
+    fn disclosure_capsule_session_persists_encrypted_and_cancels_with_key_zeroization() {
+        use crate::vnext_disclosure_capsule::{
+            AuthorizedDisclosureSession, CancelReason, CapsuleCancelV1, DisclosureEffectProfile,
+            DisclosureSessionKey, DisclosureSessionRequest, DisclosureStage,
+            ProgressiveDisclosureSession,
+        };
+        use ed25519_dalek::SigningKey;
+        use ku_core::foundation::{
+            authenticate_delegation_permit, decode_feed_inception, ActorId, Budget,
+            DelegationGrant, DelegationPermitBody, DeviceId, FeedInception, KeyStateApplyOutcome,
+            KeyStateReducer, NamespaceCommitment, ObjectCid, PermitApplyOutcome, PermitValidator,
+            RetentionRule, ScopedDelegation, SignedDelegationPermit, SignedFeedInception,
+        };
+
+        let issuer = ActorId::from_bytes([1; 32]);
+        let recipient = ActorId::from_bytes([2; 32]);
+        let mut key_state = KeyStateReducer::new(EventCid::from_bytes([99; 32]));
+        let signing_key = SigningKey::from_bytes(&[3; 32]);
+        let delegation_ref = EventCid::from_bytes([4; 32]);
+        let mut inception = FeedInception::new(
+            *signing_key.verifying_key().as_bytes(),
+            NamespaceCommitment::derive(b"private-need-capsule-test", [5; 32]).unwrap(),
+            0,
+            DeviceId::from_bytes([6; 32]),
+        );
+        inception.actor_delegation_ref = Some(delegation_ref.into_bytes());
+        let signed: SignedFeedInception = inception.sign(&signing_key).unwrap();
+        let signer = decode_feed_inception(&signed.encode().unwrap()).unwrap();
+        assert_eq!(
+            key_state.accept_root(ScopedDelegation {
+                grant: DelegationGrant {
+                    actor: issuer,
+                    device: signer.signed.inception.owner_device,
+                    subject_feed: signer.feed_id,
+                    delegation_ref,
+                    namespace_commitment: None,
+                    first_generation: 0,
+                    last_generation: 0,
+                    proof: EventCid::from_bytes([7; 32]),
+                },
+                parent_delegation_ref: None,
+            }),
+            KeyStateApplyOutcome::Accepted
+        );
+        let permit_body = DelegationPermitBody {
+            issuer,
+            executor: recipient,
+            capability_definition: ObjectCid::from_bytes([10; 32]),
+            input_commitments: vec![[11; 32]],
+            allowed_effect_classes: vec![concept(20), concept(21), concept(22), concept(23)],
+            purpose: concept(30),
+            budget: Budget::new(10, 10_000, 10, 4).unwrap(),
+            retention: RetentionRule::NoTraining,
+            onward_delegation: false,
+            parent_permit: None,
+            not_before: 10,
+            expires_at: 100,
+            nonce: [12; 32],
+        };
+        let signed_permit = SignedDelegationPermit::sign(permit_body, &signer, &signing_key)
+            .unwrap()
+            .encode()
+            .unwrap();
+        let authenticated =
+            authenticate_delegation_permit(&signed_permit, &signer, &key_state).unwrap();
+        let permit_id = authenticated.permit_id;
+        let mut permits = PermitValidator::default();
+        assert_eq!(
+            permits.submit(authenticated, 20).unwrap(),
+            PermitApplyOutcome::Accepted(permit_id)
+        );
+
+        let session_id = [0x44; 32];
+        let auth = AuthorizedDisclosureSession::authorize(
+            &permits,
+            DisclosureSessionRequest {
+                session_id,
+                permit_id,
+                recipient,
+                capability_definition: ObjectCid::from_bytes([10; 32]),
+                input_commitment: [11; 32],
+                purpose: concept(30),
+                effect_profile: DisclosureEffectProfile {
+                    affordance: concept(20),
+                    constraints: concept(21),
+                    evidence_references: concept(22),
+                    full_payload: concept(23),
+                },
+                ceiling: DisclosureStage::ConstraintSketch,
+                max_plaintext_bytes: 4_096,
+                retention: RetentionRule::NoTraining,
+                not_before: 20,
+                expires_at: 80,
+            },
+            20,
+        )
+        .unwrap();
+        let session = ProgressiveDisclosureSession::new(auth);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("capsules.redb");
+        {
+            let vault =
+                RedbPrivateNeedVault::open(&path, LocalNeedVaultKey::from_bytes([0x99; 32]))
+                    .unwrap();
+            vault.put_disclosure_session(&session).unwrap();
+        }
+        let disk = std::fs::read(&path).unwrap();
+        assert!(!disk.windows(32).any(|w| w == session_id));
+
+        let reopened =
+            RedbPrivateNeedVault::open(&path, LocalNeedVaultKey::from_bytes([0x99; 32])).unwrap();
+        let loaded = reopened
+            .get_disclosure_session(session_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded, session);
+
+        let mut session_key = DisclosureSessionKey::from_bytes([0x55; 32]);
+        let cancel = CapsuleCancelV1::sign_with_session_key(
+            session_id,
+            permit_id,
+            CancelReason::InitiatorAborted,
+            issuer,
+            &session_key,
+        )
+        .unwrap();
+        let cancelled = reopened
+            .cancel_disclosure_session(&cancel, &permits, &mut session_key, None)
+            .unwrap();
+        assert!(cancelled.is_cancelled());
+        assert!(session_key.is_zeroized());
+
+        let reloaded = reopened
+            .get_disclosure_session(session_id)
+            .unwrap()
+            .unwrap();
+        assert!(reloaded.is_cancelled());
+        assert_eq!(
+            reloaded.cancel_reason(),
+            Some(CancelReason::InitiatorAborted)
+        );
     }
 
     /// DR-M5 owner hook: the real encrypted Redb vault write traverses all

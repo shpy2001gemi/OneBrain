@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>OneBrain Web Capture</title>
+  </head>
+  <body>
+    <main id="onebrain-popup-root">
+      <header>
+        <h1>OneBrain Capture</h1>
+        <span id="ob-reachability-badge">[Local Store Only]</span>
+      </header>
+      <section id="ob-status">
+        <span id="ob-epistemic-badge">[Private · Local Only]</span>
+      </section>
+      <section id="ob-actions">
+        <button id="ob-capture-btn" type="button">Save Private Draft</button>
+      </section>
+      <section id="ob-handoff" hidden>
+        <p>Step-2 PUBLIC confirmation requires the OneBrain Desktop/Web host.</p>
+        <a id="ob-handoff-link" href="http://127.0.0.1:4280/ku" rel="noopener noreferrer">
+          Review Draft in Host UI
+        </a>
+      </section>
+    </main>
+    <script type="module" src="dist/popup.js"></script>
+  </body>
+</html>

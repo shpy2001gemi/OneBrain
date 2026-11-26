@@ -8,7 +8,8 @@ enum MobileOnboardingCursor {
   identity('/onboarding/identity'),
   security('/onboarding/security'),
   initHandoff('/onboarding/init-handoff'),
-  limitedHome('/home');
+  limitedHome('/home'),
+  readiness('/onboarding/readiness');
 
   const MobileOnboardingCursor(this.location);
 
@@ -211,6 +212,22 @@ class MobileRegistryImportProgress {
   final bool bytesComplete;
 }
 
+class MobileRegistryActivationReceipt {
+  const MobileRegistryActivationReceipt({
+    required this.releaseId,
+    required this.readinessState,
+    required this.previousReleaseId,
+    required this.compensatedRollback,
+    required this.healthProbesChecked,
+  });
+
+  final String releaseId;
+  final String readinessState;
+  final String? previousReleaseId;
+  final bool compensatedRollback;
+  final int healthProbesChecked;
+}
+
 class MobileOwnedMediaSummary {
   const MobileOwnedMediaSummary({
     required this.mediaRef,
@@ -259,6 +276,13 @@ abstract interface class MobileHostGateway {
     required String manifestDigest,
     required MobileRegistryArtifactRole artifactRole,
   });
+
+  Future<MobileRegistryActivationReceipt> activateRegistryRelease({
+    required String operationId,
+    required String transferNonce,
+  });
+
+  Future<bool> rollbackRegistryRelease();
 
   Future<MobileRawDraftReceipt> saveRawTextDraft({
     required String contentLanguage,
@@ -407,6 +431,27 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       bytesComplete: progress.bytesComplete,
     );
   }
+
+  @override
+  Future<MobileRegistryActivationReceipt> activateRegistryRelease({
+    required String operationId,
+    required String transferNonce,
+  }) async {
+    final receipt = await _api.activateRegistryRelease(
+      operationId,
+      transferNonce,
+    );
+    return MobileRegistryActivationReceipt(
+      releaseId: receipt.releaseId,
+      readinessState: receipt.readinessState,
+      previousReleaseId: receipt.previousReleaseId,
+      compensatedRollback: receipt.compensatedRollback,
+      healthProbesChecked: receipt.healthProbesChecked,
+    );
+  }
+
+  @override
+  Future<bool> rollbackRegistryRelease() => _api.rollbackRegistryRelease();
 
   MobileRegistryInitPlan _registryPlanFromHost(HostRegistryInitPlan plan) =>
       MobileRegistryInitPlan(

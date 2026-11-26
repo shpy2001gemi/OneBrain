@@ -1,6 +1,47 @@
-use std::io::Read;
+use std::{collections::BTreeMap, io::Read, sync::Arc};
 
 use crate::{
+    activation::{EnergyPolicyEvaluation, LifecyclePressureKind},
+    ai_tools::{
+        ActiveModelRouteRecord, AssistantThreadRecord, CloudDisclosurePreview,
+        Llm0DeterministicAssistant, LlmStreamAssembler, MobileLlmProvider, ModelCatalogRecord,
+        ModelReleaseManifest, ModelRouteKind, ToolExecutionReceiptView, ToolProposalView,
+    },
+    backup::{
+        create_encrypted_backup_v2, export_reviewed_scoped_bundle, restore_encrypted_backup_v2,
+        MobileBackupReceipt, MobileRestoreReceipt, ScopedExportBundle,
+    },
+    knowledge::{
+        EncodingDraftRecord, KuLocalOrganizationRecord, LocalNeighborhoodProjection,
+        LocalReadOnlyKqlView, MobileKuDetailView, MobileKuSummary, PaginatedKuPage,
+        PreparedKuPreviewView,
+    },
+    media_staging::{
+        DerivedCacheGcReport, DerivedCacheRecord, MediaVerifiedRangeView, SignedMediaManifest,
+    },
+    migrations::{
+        build_redacted_diagnostics_report, MigrationCoordinator, RedactedDiagnosticsReport,
+    },
+    notifications::{
+        ActivityInboxEntry, ActivityInboxStore, NotificationChannelKind, NotificationPolicyConfig,
+        NotificationReceiptRecord, ReversibleNotificationAction,
+    },
+    obp_reunion::{
+        evaluate_feature_gate_status, FeatureGateStatusView, MatchProposalDisposition,
+        MatchTargetLifecycle, PrivateMatchTarget, PublicCandidateAffordance,
+        QuarantinedReunionProposal, ReunionCoverageClass,
+    },
+    registry_activation::{
+        activate_verified_registry_release, derive_registry_readiness,
+        gc_retired_registry_releases, list_registry_concepts, recover_or_open_active_registry,
+        rollback_to_previous_registry_release, DerivedRegistryReadiness,
+        RegistryActivationReceiptRecord, RegistryConceptView, RegistryGarbageCollectionReport,
+        RegistryGeneration,
+    },
+    registry_source_plan::{
+        execute_multi_provider_registry_transfer, MultiProviderTransferOutcome,
+        RegistryByteProvider, RegistrySourcePlan, ResourceSnapshot,
+    },
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
     OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
@@ -73,6 +114,11 @@ pub struct MobileRuntimeFacade {
     local_kql_rows: usize,
     stale_callback_rejected: bool,
     secure_identity: Option<SecureIdentitySession>,
+    active_registry_generation: Option<Arc<RegistryGeneration>>,
+    retained_registry_generations: Vec<Arc<RegistryGeneration>>,
+    activity_inbox: ActivityInboxStore,
+    migrations: MigrationCoordinator,
+    kill_switch_engaged: bool,
     installation_binding_verified: bool,
     installation_created: bool,
     quiesced: bool,
@@ -84,7 +130,7 @@ impl MobileRuntimeFacade {
         flags: MobileFeatureFlags,
         budgets: ResourceBudgets,
     ) -> Result<Self, MobileCoreError> {
-        Self::open_internal(services, flags, budgets, None)
+        Self::open_internal(services, flags, budgets, None, true)
     }
 
     pub fn open_secured(
@@ -94,7 +140,29 @@ impl MobileRuntimeFacade {
         material: SecurityBootstrapMaterial,
         lock_policy: AppLockPolicy,
     ) -> Result<Self, MobileCoreError> {
-        Self::open_internal(services, flags, budgets, Some((material, lock_policy)))
+        Self::open_internal(
+            services,
+            flags,
+            budgets,
+            Some((material, lock_policy)),
+            true,
+        )
+    }
+
+    pub fn open_feature_secured(
+        services: RuntimeServices,
+        flags: MobileFeatureFlags,
+        budgets: ResourceBudgets,
+        material: SecurityBootstrapMaterial,
+        lock_policy: AppLockPolicy,
+    ) -> Result<Self, MobileCoreError> {
+        Self::open_internal(
+            services,
+            flags,
+            budgets,
+            Some((material, lock_policy)),
+            false,
+        )
     }
 
     fn open_internal(
@@ -102,19 +170,24 @@ impl MobileRuntimeFacade {
         flags: MobileFeatureFlags,
         budgets: ResourceBudgets,
         security: Option<(SecurityBootstrapMaterial, AppLockPolicy)>,
+        enforce_bootstrap_flags: bool,
     ) -> Result<Self, MobileCoreError> {
-        flags.validate_bootstrap_only()?;
+        if enforce_bootstrap_flags {
+            flags.validate_bootstrap_only()?;
+            if services.connectivity.is_online() {
+                return Err(MobileCoreError::InvalidArgument(
+                    "BootstrapOnly services must report offline connectivity".into(),
+                ));
+            }
+            if services.llm.is_available() {
+                return Err(MobileCoreError::InvalidArgument(
+                    "BootstrapOnly services cannot expose an available LLM".into(),
+                ));
+            }
+        } else {
+            flags.validate_feature_runtime()?;
+        }
         budgets.validate()?;
-        if services.connectivity.is_online() {
-            return Err(MobileCoreError::InvalidArgument(
-                "BootstrapOnly services must report offline connectivity".into(),
-            ));
-        }
-        if services.llm.is_available() {
-            return Err(MobileCoreError::InvalidArgument(
-                "BootstrapOnly services cannot expose an available LLM".into(),
-            ));
-        }
         let path = services.paths.bootstrap_database_path();
         let store = services.storage.open(&path)?;
         let now = services.clock.monotonic_millis();
@@ -169,6 +242,15 @@ impl MobileRuntimeFacade {
                 true,
             )?;
         }
+        let data_root = services.paths.data_root();
+        let activity_inbox =
+            ActivityInboxStore::open(&data_root.join("private-activity-inbox.redb"))?;
+        let migrations = MigrationCoordinator::open(&data_root.join("private-migrations.redb"))?;
+        let active_registry_generation = recover_or_open_active_registry(&store).ok().flatten();
+        let mut retained_registry_generations = Vec::new();
+        if let Some(gen) = &active_registry_generation {
+            retained_registry_generations.push(Arc::clone(gen));
+        }
         services.telemetry.record("mobile_runtime_started");
         Ok(Self {
             services,
@@ -182,6 +264,11 @@ impl MobileRuntimeFacade {
             local_kql_rows: kql.rows,
             stale_callback_rejected,
             secure_identity,
+            active_registry_generation,
+            retained_registry_generations,
+            activity_inbox,
+            migrations,
+            kill_switch_engaged: false,
             installation_binding_verified,
             installation_created,
             quiesced: false,
@@ -189,6 +276,23 @@ impl MobileRuntimeFacade {
     }
 
     pub fn snapshot(&self) -> MobileRuntimeSnapshot {
+        let derived_readiness =
+            derive_registry_readiness(&self.store, self.active_registry_generation.as_ref());
+        let active_model_route = self
+            .secure_identity
+            .as_ref()
+            .and_then(|session| session.tool_orchestrator().ok())
+            .and_then(|orch| orch.active_model_route().ok())
+            .unwrap_or_default();
+        let (llm_provider_id, llm_available) =
+            if active_model_route.route_kind != ModelRouteKind::None {
+                ("activated_model", true)
+            } else {
+                (
+                    self.services.llm.provider_id(),
+                    self.services.llm.is_available(),
+                )
+            };
         MobileRuntimeSnapshot {
             profile_version: MOBILE_RUNTIME_PROFILE_VERSION,
             process_generation: self.arbiter.process_generation(),
@@ -196,12 +300,12 @@ impl MobileRuntimeFacade {
             active_grant_count: self.arbiter.active_grant_count(),
             recovered_unclean_start: self.recovered_unclean_start,
             bootstrap_store_opened: true,
-            registry_state: "BootstrapOnly",
+            registry_state: derived_readiness.as_snapshot_str(),
             local_kql_fixture_verified: self.local_kql_fixture_verified,
             private_planner_verified: self.private_planner_verified,
             local_kql_rows: self.local_kql_rows,
-            llm_provider_id: self.services.llm.provider_id(),
-            llm_available: self.services.llm.is_available(),
+            llm_provider_id,
+            llm_available,
             signer_available: self.secure_identity.as_ref().is_some_and(|session| {
                 session.session_is_eligible(self.services.clock.monotonic_millis())
             }) || self.services.signer.is_available(),
@@ -294,9 +398,12 @@ impl MobileRuntimeFacade {
         content_language: &str,
         content_utf8: &[u8],
     ) -> Result<RawDraftReceipt, MobileCoreError> {
-        if self.snapshot().registry_state != "BootstrapOnly" {
+        if matches!(
+            self.derived_registry_readiness(),
+            DerivedRegistryReadiness::RegistryDegraded { .. }
+        ) {
             return Err(MobileCoreError::InvalidArgument(
-                "raw draft command is only the Limited-mode source intake".into(),
+                "raw draft intake is suspended while Registry authority is degraded".into(),
             ));
         }
         let now = self.services.clock.monotonic_millis();
@@ -839,6 +946,890 @@ impl MobileRuntimeFacade {
         self.services.telemetry.record("mobile_runtime_quiesced");
         self.quiesced = true;
         Ok(())
+    }
+
+    // --- Wave 7: MOB-05C & MOB-05B ---
+
+    pub fn derived_registry_readiness(&self) -> DerivedRegistryReadiness {
+        derive_registry_readiness(&self.store, self.active_registry_generation.as_ref())
+    }
+
+    pub fn active_registry_generation(&self) -> Option<Arc<RegistryGeneration>> {
+        self.active_registry_generation.as_ref().map(Arc::clone)
+    }
+
+    pub fn activate_registry_release(
+        &mut self,
+        operation_id: &str,
+        transfer_nonce: &str,
+    ) -> Result<RegistryActivationReceiptRecord, MobileCoreError> {
+        self.activate_registry_release_inner(operation_id, transfer_nonce, false)
+    }
+
+    pub fn activate_registry_release_with_test_fault(
+        &mut self,
+        operation_id: &str,
+        transfer_nonce: &str,
+        corrupt_sidecar_before_health: bool,
+    ) -> Result<RegistryActivationReceiptRecord, MobileCoreError> {
+        self.activate_registry_release_inner(
+            operation_id,
+            transfer_nonce,
+            corrupt_sidecar_before_health,
+        )
+    }
+
+    fn activate_registry_release_inner(
+        &mut self,
+        operation_id: &str,
+        transfer_nonce: &str,
+        corrupt_sidecar_before_health: bool,
+    ) -> Result<RegistryActivationReceiptRecord, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let (receipt, next_gen) = activate_verified_registry_release(
+            &self.store,
+            operation_id,
+            transfer_nonce,
+            now,
+            corrupt_sidecar_before_health,
+        )?;
+        if let Some(gen) = &next_gen {
+            if !self
+                .retained_registry_generations
+                .iter()
+                .any(|existing| existing.release_id == gen.release_id)
+            {
+                self.retained_registry_generations.push(Arc::clone(gen));
+            }
+        }
+        self.active_registry_generation = next_gen;
+        Ok(receipt)
+    }
+
+    pub fn rollback_registry_release(&mut self) -> Result<String, MobileCoreError> {
+        let restored = rollback_to_previous_registry_release(&self.store)?;
+        let release_id = restored.release_id.clone();
+        if !self
+            .retained_registry_generations
+            .iter()
+            .any(|existing| existing.release_id == release_id)
+        {
+            self.retained_registry_generations
+                .push(Arc::clone(&restored));
+        }
+        self.active_registry_generation = Some(restored);
+        Ok(release_id)
+    }
+
+    pub fn gc_retired_registry_releases(
+        &mut self,
+        force_reclaim_rollback_slot: bool,
+    ) -> Result<RegistryGarbageCollectionReport, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.retained_registry_generations.retain(|gen| {
+            self.active_registry_generation
+                .as_ref()
+                .is_some_and(|active| active.release_id == gen.release_id)
+                || Arc::strong_count(gen) > 1
+        });
+        gc_retired_registry_releases(
+            &self.store,
+            &self.retained_registry_generations,
+            now,
+            force_reclaim_rollback_slot,
+        )
+    }
+
+    pub fn list_registry_concepts(
+        &self,
+        query: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<RegistryConceptView>, MobileCoreError> {
+        let gen = self.active_registry_generation.as_ref().ok_or_else(|| {
+            MobileCoreError::RegistryNotReady(
+                "Concept Registry browse requires ReadyOffline".into(),
+            )
+        })?;
+        list_registry_concepts(gen, query, limit)
+    }
+
+    pub fn execute_multi_provider_registry_transfer(
+        &self,
+        transfer_nonce: &str,
+        plan: &RegistrySourcePlan,
+        initial_capacity: &RegistryCapacityPlan,
+        snapshot: &ResourceSnapshot,
+        providers: &mut [&mut dyn RegistryByteProvider],
+    ) -> Result<MultiProviderTransferOutcome, MobileCoreError> {
+        execute_multi_provider_registry_transfer(
+            &self.store,
+            transfer_nonce,
+            plan,
+            initial_capacity,
+            snapshot,
+            providers,
+        )
+    }
+
+    // --- Wave 7: MOB-04 Shared ARCH-10 KU, Fidelity, Search, Local KQL, Backup ---
+
+    pub fn create_encoding_draft_from_raw_draft(
+        &self,
+        raw_draft_ref: &str,
+        title: &str,
+        subject_label: &str,
+        predicate_label: &str,
+        object_label: &str,
+    ) -> Result<EncodingDraftRecord, MobileCoreError> {
+        let readiness = self.derived_registry_readiness();
+        let now = self.services.clock.monotonic_millis();
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        session
+            .knowledge_engine()?
+            .create_encoding_draft_from_raw_draft(
+                &readiness,
+                session.drafts_store()?,
+                raw_draft_ref,
+                title,
+                subject_label,
+                predicate_label,
+                object_label,
+                now,
+            )
+    }
+
+    pub fn prepare_canonical_triple(
+        &self,
+        title: &str,
+        subject_label: &str,
+        predicate_label: &str,
+        object_label: &str,
+        source_text: Option<&str>,
+        predecessor_cid_hex: Option<&str>,
+    ) -> Result<PreparedKuPreviewView, MobileCoreError> {
+        let readiness = self.derived_registry_readiness();
+        let gen = self.active_registry_generation.as_ref().ok_or_else(|| {
+            MobileCoreError::RegistryNotReady(format!(
+                "canonical KU prepare requires ReadyOffline (current: {})",
+                readiness.as_snapshot_str()
+            ))
+        })?;
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        session.knowledge_engine()?.prepare_canonical_triple(
+            &readiness,
+            &gen.reader,
+            title,
+            subject_label,
+            predicate_label,
+            object_label,
+            source_text,
+            predecessor_cid_hex,
+        )
+    }
+
+    pub fn preview_prepared_ku(
+        &self,
+        prepare_id: &str,
+    ) -> Result<PreparedKuPreviewView, MobileCoreError> {
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        session.knowledge_engine()?.preview_prepared_ku(prepare_id)
+    }
+
+    pub fn save_prepared_ku(
+        &mut self,
+        prepare_id: &str,
+        alternate_of_cid_hex: Option<&str>,
+        source_raw_draft_ref: Option<&str>,
+    ) -> Result<MobileKuDetailView, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let detail = self
+            .secure_identity
+            .as_mut()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine_mut()?
+            .save_prepared_ku(prepare_id, alternate_of_cid_hex, source_raw_draft_ref)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_KU_SAVED_LOCAL_ONLY",
+            "KNOWLEDGE",
+            true,
+        )?;
+        Ok(detail)
+    }
+
+    pub fn update_ku_local_organization(
+        &self,
+        object_cid_hex: &str,
+        tags: Vec<String>,
+        collections: Vec<String>,
+    ) -> Result<KuLocalOrganizationRecord, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .update_local_organization(object_cid_hex, tags, collections)
+    }
+
+    pub fn list_my_ku_paginated(
+        &self,
+        cursor_saved_seq_exclusive: Option<u64>,
+        limit: usize,
+        collection_filter: Option<&str>,
+    ) -> Result<PaginatedKuPage, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .list_paginated(cursor_saved_seq_exclusive, limit, collection_filter)
+    }
+
+    pub fn inspect_ku_detail(
+        &self,
+        object_cid_hex: &str,
+    ) -> Result<MobileKuDetailView, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .inspect_ku_detail(object_cid_hex)
+    }
+
+    pub fn search_library(&self, query: &str) -> Result<Vec<MobileKuSummary>, MobileCoreError> {
+        let reg = self
+            .active_registry_generation
+            .as_ref()
+            .map(|gen| &gen.reader as &dyn ku_core::concept_registry::ConceptLookup);
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .search_semantic(query, reg)
+    }
+
+    pub fn execute_local_kql(
+        &self,
+        query_text: &str,
+    ) -> Result<LocalReadOnlyKqlView, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .execute_read_only_kql(query_text)
+    }
+
+    pub fn project_local_neighborhood(
+        &self,
+        object_cid_hex: &str,
+    ) -> Result<LocalNeighborhoodProjection, MobileCoreError> {
+        let reg = self
+            .active_registry_generation
+            .as_ref()
+            .map(|gen| &gen.reader as &dyn ku_core::concept_registry::ConceptLookup);
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .knowledge_engine()?
+            .project_local_neighborhood(object_cid_hex, reg)
+    }
+
+    pub fn create_encrypted_backup_v2(
+        &self,
+        recovery_key_bytes: [u8; 32],
+    ) -> Result<(Vec<u8>, MobileBackupReceipt), MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        let media_refs = session
+            .owned_media(100)?
+            .into_iter()
+            .map(|item| item.media_ref)
+            .collect();
+        create_encrypted_backup_v2(
+            &self.store,
+            session.drafts_store()?,
+            Some(session.knowledge_engine()?),
+            media_refs,
+            recovery_key_bytes,
+            now,
+        )
+    }
+
+    pub fn restore_encrypted_backup_v2(
+        &mut self,
+        archive_bytes: &[u8],
+        recovery_key_bytes: [u8; 32],
+        embedded_trust_profile_generation: u64,
+    ) -> Result<MobileRestoreReceipt, MobileCoreError> {
+        let spool_root = self.services.paths.backup_staging_root();
+        let reg_clone = self.active_registry_generation.as_ref().map(Arc::clone);
+        let session = self
+            .secure_identity
+            .as_mut()
+            .ok_or(MobileCoreError::Locked)?;
+        let (knowledge, drafts) = session.knowledge_and_drafts_mut()?;
+        let kn_pair = reg_clone.as_ref().map(|gen| {
+            (
+                knowledge,
+                &gen.reader as &dyn ku_core::concept_registry::ConceptLookup,
+            )
+        });
+        restore_encrypted_backup_v2(
+            archive_bytes,
+            &spool_root,
+            recovery_key_bytes,
+            embedded_trust_profile_generation,
+            &self.store,
+            drafts,
+            kn_pair,
+            &self.migrations,
+        )
+    }
+
+    pub fn export_reviewed_scoped_bundle(
+        &self,
+        selected_object_cids_hex: &[String],
+        include_source_text: bool,
+    ) -> Result<ScopedExportBundle, MobileCoreError> {
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        export_reviewed_scoped_bundle(
+            session.knowledge_engine()?,
+            selected_object_cids_hex,
+            include_source_text,
+        )
+    }
+
+    // --- Wave 7: MOB-06 AI Provider, ToolOrchestrator, Signed Model Catalog ---
+
+    pub fn run_llm0_assistant_turn(
+        &self,
+        thread_id: &str,
+        user_prompt: &str,
+        scoped_context_refs: Vec<String>,
+    ) -> Result<(AssistantThreadRecord, Vec<ToolProposalView>), MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        let orchestrator = session.tool_orchestrator()?;
+        let provider = Llm0DeterministicAssistant;
+        let events = provider.run_turn(user_prompt, &scoped_context_refs)?;
+        let mut assembler =
+            LlmStreamAssembler::new(provider.provider_id(), provider.is_cloud_route());
+        for ev in events {
+            assembler.push(ev)?;
+        }
+        let completed = assembler.finalize()?;
+        let mut proposals = Vec::new();
+        for (tool_name, args_json) in &completed.candidate_tool_calls {
+            proposals.push(orchestrator.propose_tool_call(tool_name, args_json, now)?);
+        }
+        let proposal_ids = proposals.iter().map(|p| p.proposal_id.clone()).collect();
+        let thread = orchestrator.append_thread_turn(
+            thread_id,
+            user_prompt,
+            &completed,
+            proposal_ids,
+            scoped_context_refs,
+            now,
+        )?;
+        Ok((thread, proposals))
+    }
+
+    pub fn propose_tool_call(
+        &self,
+        tool_name: &str,
+        arguments_json: &str,
+    ) -> Result<ToolProposalView, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .propose_tool_call(tool_name, arguments_json, now)
+    }
+
+    pub fn authorize_and_execute_tool(
+        &mut self,
+        proposal_id: &str,
+        consent_nonce: Option<&str>,
+    ) -> Result<ToolExecutionReceiptView, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let reg = self.active_registry_generation.as_ref().map(Arc::clone);
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        let orchestrator = session.tool_orchestrator()?;
+        let knowledge = session.knowledge_engine()?;
+        let drafts = session.drafts_store()?;
+        orchestrator.authorize_and_execute(proposal_id, consent_nonce, now, |tool_name, args| {
+            match tool_name {
+                "search_local_library" => {
+                    let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                    let lookup = reg
+                        .as_ref()
+                        .map(|g| &g.reader as &dyn ku_core::concept_registry::ConceptLookup);
+                    let hits = knowledge.search_semantic(query, lookup)?;
+                    Ok(serde_json::to_value(hits)?)
+                }
+                "run_local_read_only_kql" => {
+                    let query = args
+                        .get("query")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("FIND (k:KU)");
+                    let view = knowledge.execute_read_only_kql(query)?;
+                    Ok(serde_json::to_value(view)?)
+                }
+                "save_private_raw_draft" => {
+                    let lang = args
+                        .get("content_language")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("en");
+                    let content = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                    let receipt = drafts.save_text(lang, content.as_bytes(), now)?;
+                    Ok(serde_json::json!({
+                        "draft_ref": receipt.draft_ref,
+                        "content_bytes": receipt.content_bytes,
+                        "total_drafts": receipt.total_drafts,
+                    }))
+                }
+                "draft_ku_encoding_candidate" => Ok(serde_json::json!({
+                    "status": "candidate_staged_for_user_review",
+                })),
+                other => Err(MobileCoreError::ForbiddenTool(format!(
+                    "tool '{other}' requires dedicated interactive flow"
+                ))),
+            }
+        })
+    }
+
+    pub fn deny_tool_proposal(
+        &self,
+        proposal_id: &str,
+    ) -> Result<ToolExecutionReceiptView, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .deny_proposal(proposal_id, now)
+    }
+
+    pub fn list_tool_proposals(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ToolProposalView>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .list_proposals(limit)
+    }
+
+    pub fn prepare_cloud_disclosure(
+        &self,
+        destination_provider_id: &str,
+        minimized_fields: &[(&str, &str)],
+        switching_from_local_thread: bool,
+    ) -> Result<CloudDisclosurePreview, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .prepare_cloud_disclosure(
+                destination_provider_id,
+                minimized_fields,
+                switching_from_local_thread,
+                now,
+            )
+    }
+
+    pub fn approve_cloud_disclosure(
+        &self,
+        request_id: &str,
+        consent_nonce: &str,
+    ) -> Result<CloudDisclosurePreview, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .approve_cloud_disclosure(request_id, consent_nonce)
+    }
+
+    pub fn verify_and_stage_model_release(
+        &self,
+        manifest: &ModelReleaseManifest,
+        publisher_public_key: &[u8; 32],
+        artifact_bytes: &[u8],
+    ) -> Result<ModelCatalogRecord, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .verify_and_stage_model_release(manifest, publisher_public_key, artifact_bytes, now)
+    }
+
+    pub fn activate_model_release(
+        &self,
+        release_id: &str,
+    ) -> Result<ActiveModelRouteRecord, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .activate_model_release(release_id)
+    }
+
+    pub fn rollback_model_release(&self) -> Result<ActiveModelRouteRecord, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .rollback_model_release()
+    }
+
+    pub fn delete_model_release(&self, release_id: &str) -> Result<(), MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .delete_model_release(release_id)
+    }
+
+    pub fn list_model_releases(&self) -> Result<Vec<ModelCatalogRecord>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .list_model_releases()
+    }
+
+    pub fn active_model_route(&self) -> Result<ActiveModelRouteRecord, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .active_model_route()
+    }
+
+    pub fn read_assistant_thread(
+        &self,
+        thread_id: &str,
+    ) -> Result<Option<AssistantThreadRecord>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .tool_orchestrator()?
+            .read_thread(thread_id)
+    }
+
+    // --- Wave 7: MOB-07 Media Manifest, Range Viewer, Cache GC, Activity Inbox, Energy ---
+
+    pub fn inspect_media_manifest(
+        &self,
+        media_ref: &str,
+    ) -> Result<Option<SignedMediaManifest>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .media_store()?
+            .inspect_media_manifest(media_ref)
+    }
+
+    pub fn read_verified_media_range(
+        &self,
+        media_ref: &str,
+        offset: u64,
+        max_bytes: usize,
+    ) -> Result<MediaVerifiedRangeView, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .media_store()?
+            .read_verified_range(media_ref, offset, max_bytes)
+    }
+
+    pub fn set_media_pinned(&self, media_ref: &str, pinned: bool) -> Result<bool, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .media_store()?
+            .set_media_pinned(media_ref, pinned)
+    }
+
+    pub fn put_derived_media_cache(
+        &self,
+        cache_key: &str,
+        media_ref: &str,
+        derived_bytes: &[u8],
+    ) -> Result<DerivedCacheRecord, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .media_store()?
+            .put_derived_cache(cache_key, media_ref, derived_bytes, now)
+    }
+
+    pub fn gc_derived_media_cache(
+        &self,
+        target_reclaim_bytes: u64,
+    ) -> Result<DerivedCacheGcReport, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .media_store()?
+            .gc_derived_cache(target_reclaim_bytes)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn schedule_notification_intent(
+        &self,
+        intent_id: &str,
+        channel: NotificationChannelKind,
+        title_code: &str,
+        redacted_summary: &str,
+        target_route: &str,
+        allowed_actions: Vec<ReversibleNotificationAction>,
+        requires_in_app_approval: bool,
+        local_hour: u8,
+    ) -> Result<ActivityInboxEntry, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.activity_inbox.schedule_intent(
+            intent_id,
+            channel,
+            title_code,
+            redacted_summary,
+            target_route,
+            allowed_actions,
+            requires_in_app_approval,
+            local_hour,
+            now,
+        )
+    }
+
+    pub fn record_os_notification_submission(
+        &self,
+        intent_id: &str,
+        os_notification_tag: &str,
+        observed_in_active_tray: bool,
+    ) -> Result<NotificationReceiptRecord, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.activity_inbox.record_os_submission(
+            intent_id,
+            os_notification_tag,
+            observed_in_active_tray,
+            now,
+        )
+    }
+
+    pub fn reconcile_notifications_after_restart(
+        &self,
+        active_os_tags: &[String],
+    ) -> Result<usize, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.activity_inbox
+            .reconcile_unobserved_after_restart(active_os_tags, now)
+    }
+
+    pub fn execute_reversible_notification_action(
+        &self,
+        intent_id: &str,
+        action_nonce: &str,
+        action: ReversibleNotificationAction,
+    ) -> Result<ActivityInboxEntry, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.activity_inbox
+            .execute_reversible_action(intent_id, action_nonce, action, now)
+    }
+
+    pub fn list_activity_inbox(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ActivityInboxEntry>, MobileCoreError> {
+        self.activity_inbox.list_entries(limit)
+    }
+
+    pub fn notification_policy(&self) -> Result<NotificationPolicyConfig, MobileCoreError> {
+        self.activity_inbox.policy()
+    }
+
+    pub fn update_notification_policy(
+        &self,
+        config: &NotificationPolicyConfig,
+    ) -> Result<(), MobileCoreError> {
+        self.activity_inbox.update_policy(config)
+    }
+
+    pub fn apply_lifecycle_pressure(
+        &mut self,
+        pressure: LifecyclePressureKind,
+    ) -> EnergyPolicyEvaluation {
+        self.arbiter.apply_lifecycle_pressure(pressure)
+    }
+
+    // --- Wave 7: MOB-08 Gated Passive OBP Reunion Engine ---
+
+    pub fn feature_gate_status(&self) -> Result<FeatureGateStatusView, MobileCoreError> {
+        let active_ds = self.migrations.active_dataset()?;
+        Ok(evaluate_feature_gate_status(
+            &self.flags,
+            active_ds.safe_mode_reason.is_some(),
+            self.kill_switch_engaged,
+        ))
+    }
+
+    pub fn set_feature_kill_switch(&mut self, engaged: bool) {
+        self.kill_switch_engaged = engaged;
+    }
+
+    pub fn create_reunion_target(
+        &self,
+        title: &str,
+        role_ccid: [u8; 16],
+        expected_type_ccid: [u8; 16],
+    ) -> Result<PrivateMatchTarget, MobileCoreError> {
+        if self.kill_switch_engaged {
+            return Err(MobileCoreError::FeatureGateDisabled(
+                "MOB-GATE-NETWORKED-BETA kill-switch is engaged".into(),
+            ));
+        }
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .reunion_engine()?
+            .create_private_target(&self.flags, title, role_ccid, expected_type_ccid, now)
+    }
+
+    pub fn set_reunion_target_lifecycle(
+        &self,
+        target_id: &str,
+        lifecycle: MatchTargetLifecycle,
+    ) -> Result<PrivateMatchTarget, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .reunion_engine()?
+            .set_target_lifecycle(&self.flags, target_id, lifecycle)
+    }
+
+    pub fn evaluate_passive_reunion_delta(
+        &self,
+        reunion_frontier: [u8; 32],
+        matcher_version: u32,
+        coverage: ReunionCoverageClass,
+        candidates: &[PublicCandidateAffordance],
+    ) -> Result<Vec<QuarantinedReunionProposal>, MobileCoreError> {
+        if self.kill_switch_engaged {
+            return Err(MobileCoreError::FeatureGateDisabled(
+                "MOB-GATE-NETWORKED-BETA kill-switch is engaged".into(),
+            ));
+        }
+        let now = self.services.clock.monotonic_millis();
+        let session = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?;
+        session.reunion_engine()?.evaluate_passive_reunion_delta(
+            &self.flags,
+            session.knowledge_engine()?.composition_store(),
+            reunion_frontier,
+            matcher_version,
+            coverage,
+            candidates,
+            now,
+        )
+    }
+
+    pub fn update_reunion_proposal_disposition(
+        &self,
+        proposal_ref: &str,
+        disposition: MatchProposalDisposition,
+    ) -> Result<QuarantinedReunionProposal, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .reunion_engine()?
+            .update_proposal_disposition(&self.flags, proposal_ref, disposition)
+    }
+
+    pub fn list_reunion_targets(&self) -> Result<Vec<PrivateMatchTarget>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .reunion_engine()?
+            .list_targets(&self.flags)
+    }
+
+    pub fn list_reunion_proposals(
+        &self,
+    ) -> Result<Vec<QuarantinedReunionProposal>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .reunion_engine()?
+            .list_proposals(&self.flags)
+    }
+
+    // --- Wave 7: MOB-09 Migrations & Privacy-Safe Redacted Diagnostics ---
+
+    pub fn migration_coordinator(&self) -> &MigrationCoordinator {
+        &self.migrations
+    }
+
+    pub fn export_redacted_diagnostics(
+        &self,
+    ) -> Result<RedactedDiagnosticsReport, MobileCoreError> {
+        let snap = self.snapshot();
+        let active_ds = self.migrations.active_dataset()?;
+        let mut counts = BTreeMap::new();
+        counts.insert("active_grants".into(), snap.active_grant_count as u64);
+        counts.insert(
+            "encrypted_raw_drafts".into(),
+            snap.encrypted_raw_draft_count,
+        );
+        counts.insert(
+            "pending_share_spools".into(),
+            snap.pending_share_spool_count,
+        );
+        counts.insert(
+            "owned_original_media".into(),
+            snap.owned_original_media_count,
+        );
+        if let Some(session) = &self.secure_identity {
+            if let Ok(kn) = session.knowledge_engine() {
+                counts.insert("saved_private_kus".into(), kn.saved_ku_count() as u64);
+            }
+        }
+        let history = self.store.recent_security_history(32)?;
+        let codes: Vec<String> = history.into_iter().map(|h| h.event_code).collect();
+        Ok(build_redacted_diagnostics_report(
+            snap.profile_version,
+            snap.process_generation,
+            snap.registry_state,
+            &active_ds,
+            counts,
+            &codes,
+        ))
     }
 }
 

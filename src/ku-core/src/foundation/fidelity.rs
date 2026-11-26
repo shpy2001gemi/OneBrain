@@ -146,6 +146,7 @@ pub enum CorrelationDimension {
     ExecutionEnvironment = 6,
     BlindSession = 7,
     ChallengeNonce = 8,
+    CausalStakeholderRelation = 9,
 }
 
 impl CorrelationDimension {
@@ -160,6 +161,7 @@ impl CorrelationDimension {
             6 => Some(Self::ExecutionEnvironment),
             7 => Some(Self::BlindSession),
             8 => Some(Self::ChallengeNonce),
+            9 => Some(Self::CausalStakeholderRelation),
             _ => None,
         }
     }

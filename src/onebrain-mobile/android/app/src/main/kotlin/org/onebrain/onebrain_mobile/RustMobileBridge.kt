@@ -194,7 +194,14 @@ internal object RustMobileBridge {
                 if (nativeRuntimeRegistryBootstrapOnly()) {
                     "BootstrapOnly"
                 } else {
-                    "Unknown"
+                    when (runCatching { nativeRuntimeRegistryReadinessCode() }.getOrDefault(-1)) {
+                        0 -> "BootstrapOnly"
+                        1 -> "Provisioning"
+                        2 -> "ReadyOffline"
+                        3 -> "ReadyOffline(UpdateHealthPending)"
+                        4 -> "RegistryDegraded"
+                        else -> "Unknown"
+                    }
                 },
             localKqlFixtureVerified = nativeRuntimeLocalKqlFixtureVerified(),
             privatePlannerVerified = nativeRuntimePrivatePlannerVerified(),
@@ -590,6 +597,34 @@ internal object RustMobileBridge {
         return nativeRuntimeSetOnboardingCursor(cursor) == 0
     }
 
+    fun activateRegistryRelease(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        operationId: String,
+        transferNonce: String,
+    ): Pair<Int, String> {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        val status = nativeRuntimeActivateRegistryRelease(operationId, transferNonce)
+        val readiness =
+            when (nativeRuntimeRegistryReadinessCode()) {
+                0 -> "BootstrapOnly"
+                1 -> "Provisioning"
+                2 -> "ReadyOffline"
+                3 -> "ReadyOffline(UpdateHealthPending)"
+                4 -> "RegistryDegraded"
+                else -> "Unknown"
+            }
+        return status to readiness
+    }
+
+    fun rollbackRegistryRelease(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): Boolean {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return nativeRuntimeRollbackRegistryRelease() == 0
+    }
+
     fun saveRawTextDraft(
         dataRoot: String,
         securityMaterial: ByteArray,
@@ -942,6 +977,15 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeStagedVerifiedMediaCount(): Long
 
     @JvmStatic private external fun nativeRuntimeOnboardingCursor(): Int
+
+    @JvmStatic private external fun nativeRuntimeRegistryReadinessCode(): Int
+
+    @JvmStatic private external fun nativeRuntimeActivateRegistryRelease(
+        operationId: String,
+        transferNonce: String,
+    ): Int
+
+    @JvmStatic private external fun nativeRuntimeRollbackRegistryRelease(): Int
 
     @JvmStatic private external fun nativeRuntimeSetOnboardingCursor(cursor: Int): Int
 

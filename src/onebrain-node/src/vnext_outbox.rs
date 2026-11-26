@@ -39,9 +39,11 @@ const CHECKPOINT_STATE: TableDefinition<&[u8], &[u8]> =
 const MAGIC_V1: &[u8; 8] = b"OBOUTV1\0";
 const MAGIC_V2: &[u8; 8] = b"OBOUTV2\0";
 const MAGIC_V3: &[u8; 8] = b"OBOUTV3\0";
+const MAGIC_V4: &[u8; 8] = b"OBOUTV4\0";
 const FIXED_BYTES_V1: usize = 206;
 const FIXED_BYTES_V2: usize = 222;
 const FIXED_BYTES_V3: usize = 238;
+const FIXED_BYTES_V4: usize = 351;
 const TOMBSTONE_BYTES_V1: usize = 25;
 const TOMBSTONE_BYTES_V2: usize = 89;
 const FAIR_CURSOR_KEY: &[u8] = b"fair_cursor";
@@ -107,12 +109,26 @@ pub enum OutboundIntentState {
     Acknowledged = 1,
     DeadLetter = 2,
     RetryExhausted = 3,
+    /// Relay `MailboxStoredReceipt` received (`FW-05`): carrier-staged only,
+    /// NEVER terminal or `Acknowledged` until end-to-end recipient proof arrives.
+    PendingMailboxPickup = 4,
 }
 
 impl OutboundIntentState {
     pub const fn is_terminal(self) -> bool {
-        !matches!(self, Self::Pending)
+        !matches!(self, Self::Pending | Self::PendingMailboxPickup)
     }
+}
+
+/// Relay-staging metadata recorded when a `MailboxStoredReceipt` transitions an
+/// intent to `PendingMailboxPickup` (`obp/mailbox/1`, `FW-05`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MailboxStagingMetadata {
+    pub relay_node_id: NodeId,
+    pub slot_id: [u8; 32],
+    pub envelope_id: [u8; 32],
+    pub stored_at_unix_seconds: u64,
+    pub expires_at_unix_seconds: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +148,7 @@ pub struct OutboundTransferIntent {
     pub enqueued_at_unix_seconds: u64,
     pub updated_at_unix_seconds: u64,
     pub state: OutboundIntentState,
+    pub mailbox_staging: Option<MailboxStagingMetadata>,
 }
 
 impl OutboundTransferIntent {
@@ -167,6 +184,7 @@ impl OutboundTransferIntent {
             enqueued_at_unix_seconds: now,
             updated_at_unix_seconds: now,
             state: OutboundIntentState::Pending,
+            mailbox_staging: None,
         };
         validate_intent(&intent)?;
         Ok(intent)
@@ -184,6 +202,7 @@ pub enum OutboxEnqueueOutcome {
 pub struct OutboundOutboxStats {
     pub total: u64,
     pub pending: u64,
+    pub pending_mailbox_pickup: u64,
     pub acknowledged: u64,
     pub dead_letter: u64,
     pub retry_exhausted: u64,
@@ -409,6 +428,9 @@ impl OutboundOutbox {
                         );
                     }
                 }
+                OutboundIntentState::PendingMailboxPickup => {
+                    stats.pending_mailbox_pickup = stats.pending_mailbox_pickup.saturating_add(1);
+                }
                 OutboundIntentState::Acknowledged => {
                     stats.acknowledged = stats.acknowledged.saturating_add(1);
                 }
@@ -451,6 +473,73 @@ impl OutboundOutbox {
             {
                 intent.state = OutboundIntentState::RetryExhausted;
             }
+            Ok(intent.state)
+        })
+    }
+
+    /// Record a verified relay `MailboxStoredReceipt` (`obp/mailbox/1`).
+    ///
+    /// Enforces `FW-05`: relay staging transitions a `Pending` intent only to
+    /// `PendingMailboxPickup` and NEVER marks `Acknowledged`.
+    pub fn record_mailbox_stored_receipt(
+        &self,
+        id: &[u8; 32],
+        receipt: &onebrain_protocol::MailboxStoredReceipt,
+        relay_public_key: &[u8; 32],
+    ) -> Result<OutboundIntentState, OutboundOutboxError> {
+        onebrain_protocol::verify_mailbox_stored_receipt(receipt, relay_public_key)
+            .map_err(|_| OutboundOutboxError::InvalidMailboxReceipt)?;
+        if !receipt.carrier_staged_only
+            || receipt.grants_peer_delivery()
+            || receipt.grants_authority()
+            || ku_net::vnext_session::principal_node_id(relay_public_key) != receipt.relay_node_id
+        {
+            return Err(OutboundOutboxError::InvalidMailboxReceipt);
+        }
+        self.update(id, "TX-OUT-001", |intent| {
+            if intent.state.is_terminal() {
+                return Ok(intent.state);
+            }
+            intent.state = OutboundIntentState::PendingMailboxPickup;
+            intent.mailbox_staging = Some(MailboxStagingMetadata {
+                relay_node_id: receipt.relay_node_id,
+                slot_id: receipt.slot_id,
+                envelope_id: receipt.envelope_id,
+                stored_at_unix_seconds: receipt.stored_at_unix_s,
+                expires_at_unix_seconds: receipt.expires_at_unix_s,
+            });
+            Ok(intent.state)
+        })
+    }
+
+    /// Record an end-to-end recipient-signed `MailboxDeliveryReceiptV1` (`obp/mailbox/1`),
+    /// proving that `expected_peer` decrypted and received the staged envelope so the
+    /// outbox intent may transition to terminal `Acknowledged`.
+    pub fn record_mailbox_delivery_receipt(
+        &self,
+        id: &[u8; 32],
+        receipt: &onebrain_protocol::MailboxDeliveryReceiptV1,
+    ) -> Result<OutboundIntentState, OutboundOutboxError> {
+        onebrain_protocol::verify_mailbox_delivery_receipt(receipt)
+            .map_err(|_| OutboundOutboxError::InvalidMailboxReceipt)?;
+        let recipient_node_id =
+            ku_net::vnext_session::principal_node_id(&receipt.recipient_signing_pk);
+        self.update_terminal(id, "TX-OUT-002", |intent| {
+            if intent.expected_peer != recipient_node_id {
+                return Err(OutboundOutboxError::InvalidMailboxReceipt);
+            }
+            if let Some(staging) = intent.mailbox_staging {
+                if staging.slot_id != receipt.slot_id
+                    || !receipt.envelope_ids.contains(&staging.envelope_id)
+                {
+                    return Err(OutboundOutboxError::InvalidMailboxReceipt);
+                }
+            }
+            if intent.state.is_terminal() {
+                return Ok(intent.state);
+            }
+            intent.transport_attempts = 0;
+            intent.state = OutboundIntentState::Acknowledged;
             Ok(intent.state)
         })
     }
@@ -523,7 +612,10 @@ impl OutboundOutbox {
                 .map(|guard| guard.value().to_vec())
                 .ok_or(OutboundOutboxError::MissingIntent)?;
             let mut intent = decode_intent(&bytes)?;
-            if intent.state != OutboundIntentState::Pending {
+            if !matches!(
+                intent.state,
+                OutboundIntentState::Pending | OutboundIntentState::PendingMailboxPickup
+            ) {
                 return Err(OutboundOutboxError::CheckpointSequence);
             }
             intent.transport_attempts = 0;
@@ -1215,6 +1307,13 @@ fn validate_intent(intent: &OutboundTransferIntent) -> Result<(), OutboundOutbox
         || content_domain(intent.kind).digest(&intent.canonical_bytes) != intent.cid
         || (intent.enqueued_at_unix_seconds != 0
             && intent.updated_at_unix_seconds < intent.enqueued_at_unix_seconds)
+        || (intent.state == OutboundIntentState::PendingMailboxPickup
+            && intent.mailbox_staging.is_none_or(|s| {
+                s.slot_id == [0; 32]
+                    || s.envelope_id == [0; 32]
+                    || s.relay_node_id.as_bytes() == &[0; 32]
+                    || s.expires_at_unix_seconds <= s.stored_at_unix_seconds
+            }))
         || intent_id(
             intent.expected_peer,
             intent.selector,
@@ -1293,14 +1392,22 @@ fn parse_state(value: u8) -> Result<OutboundIntentState, OutboundOutboxError> {
         1 => Ok(OutboundIntentState::Acknowledged),
         2 => Ok(OutboundIntentState::DeadLetter),
         3 => Ok(OutboundIntentState::RetryExhausted),
+        4 => Ok(OutboundIntentState::PendingMailboxPickup),
         _ => Err(OutboundOutboxError::InvalidRecord),
     }
 }
 
 fn encode_intent(intent: &OutboundTransferIntent) -> Result<Vec<u8>, OutboundOutboxError> {
     validate_intent(intent)?;
-    let mut output = Vec::with_capacity(FIXED_BYTES_V3 + intent.canonical_bytes.len());
-    output.extend_from_slice(MAGIC_V3);
+    let use_v4 = intent.state == OutboundIntentState::PendingMailboxPickup
+        || intent.mailbox_staging.is_some();
+    let fixed_len = if use_v4 {
+        FIXED_BYTES_V4
+    } else {
+        FIXED_BYTES_V3
+    };
+    let mut output = Vec::with_capacity(fixed_len + intent.canonical_bytes.len());
+    output.extend_from_slice(if use_v4 { MAGIC_V4 } else { MAGIC_V3 });
     output.extend_from_slice(&intent.id);
     output.extend_from_slice(intent.expected_peer.as_bytes());
     match intent.last_known_addr.ip() {
@@ -1326,9 +1433,25 @@ fn encode_intent(intent: &OutboundTransferIntent) -> Result<Vec<u8>, OutboundOut
     output.extend_from_slice(&intent.terminal_sequence.to_be_bytes());
     output.extend_from_slice(&intent.enqueued_at_unix_seconds.to_be_bytes());
     output.extend_from_slice(&intent.updated_at_unix_seconds.to_be_bytes());
+    if use_v4 {
+        match intent.mailbox_staging {
+            Some(staging) => {
+                output.push(1);
+                output.extend_from_slice(staging.relay_node_id.as_bytes());
+                output.extend_from_slice(&staging.slot_id);
+                output.extend_from_slice(&staging.envelope_id);
+                output.extend_from_slice(&staging.stored_at_unix_seconds.to_be_bytes());
+                output.extend_from_slice(&staging.expires_at_unix_seconds.to_be_bytes());
+            }
+            None => {
+                output.push(0);
+                output.extend_from_slice(&[0u8; 112]);
+            }
+        }
+    }
     output.extend_from_slice(&(intent.canonical_bytes.len() as u64).to_be_bytes());
     output.extend_from_slice(&intent.canonical_bytes);
-    debug_assert_eq!(output.len(), FIXED_BYTES_V3 + intent.canonical_bytes.len());
+    debug_assert_eq!(output.len(), fixed_len + intent.canonical_bytes.len());
     Ok(output)
 }
 
@@ -1339,15 +1462,18 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
     let is_v1 = &bytes[..8] == MAGIC_V1;
     let is_v2 = &bytes[..8] == MAGIC_V2;
     let is_v3 = &bytes[..8] == MAGIC_V3;
-    if !is_v1 && !is_v2 && !is_v3 {
+    let is_v4 = &bytes[..8] == MAGIC_V4;
+    if !is_v1 && !is_v2 && !is_v3 && !is_v4 {
         return Err(OutboundOutboxError::InvalidRecord);
     }
     let fixed_bytes = if is_v1 {
         FIXED_BYTES_V1
     } else if is_v2 {
         FIXED_BYTES_V2
-    } else {
+    } else if is_v3 {
         FIXED_BYTES_V3
+    } else {
+        FIXED_BYTES_V4
     };
     if bytes.len() < fixed_bytes {
         return Err(OutboundOutboxError::InvalidRecord);
@@ -1386,9 +1512,18 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
             .map_err(|_| OutboundOutboxError::InvalidRecord)?,
     );
     let state = parse_state(bytes[197])?;
-    let (validation_retries, terminal_sequence, enqueued_at, updated_at, payload_offset) = if is_v1
-    {
-        (0, 0, 0, 0, 198)
+    if !is_v4 && state == OutboundIntentState::PendingMailboxPickup {
+        return Err(OutboundOutboxError::InvalidRecord);
+    }
+    let (
+        validation_retries,
+        terminal_sequence,
+        enqueued_at,
+        updated_at,
+        mailbox_staging,
+        payload_offset,
+    ) = if is_v1 {
+        (0, 0, 0, 0, None, 198)
     } else {
         let validation_retries = u64::from_be_bytes(
             bytes[198..206]
@@ -1401,7 +1536,7 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
                 .map_err(|_| OutboundOutboxError::InvalidRecord)?,
         );
         if is_v2 {
-            (validation_retries, terminal_sequence, 0, 0, 214)
+            (validation_retries, terminal_sequence, 0, 0, None, 214)
         } else {
             let enqueued_at = u64::from_be_bytes(
                 bytes[214..222]
@@ -1413,13 +1548,56 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
                     .try_into()
                     .map_err(|_| OutboundOutboxError::InvalidRecord)?,
             );
-            (
-                validation_retries,
-                terminal_sequence,
-                enqueued_at,
-                updated_at,
-                230,
-            )
+            if is_v3 {
+                (
+                    validation_retries,
+                    terminal_sequence,
+                    enqueued_at,
+                    updated_at,
+                    None,
+                    230,
+                )
+            } else {
+                let staging = match bytes[230] {
+                    0 => {
+                        if bytes[231..343] != [0u8; 112] {
+                            return Err(OutboundOutboxError::InvalidRecord);
+                        }
+                        None
+                    }
+                    1 => {
+                        let relay_node_id = NodeId::from_bytes(array32(&bytes[231..263])?);
+                        let slot_id = array32(&bytes[263..295])?;
+                        let envelope_id = array32(&bytes[295..327])?;
+                        let stored_at_unix_seconds = u64::from_be_bytes(
+                            bytes[327..335]
+                                .try_into()
+                                .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+                        );
+                        let expires_at_unix_seconds = u64::from_be_bytes(
+                            bytes[335..343]
+                                .try_into()
+                                .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+                        );
+                        Some(MailboxStagingMetadata {
+                            relay_node_id,
+                            slot_id,
+                            envelope_id,
+                            stored_at_unix_seconds,
+                            expires_at_unix_seconds,
+                        })
+                    }
+                    _ => return Err(OutboundOutboxError::InvalidRecord),
+                };
+                (
+                    validation_retries,
+                    terminal_sequence,
+                    enqueued_at,
+                    updated_at,
+                    staging,
+                    343,
+                )
+            }
         }
     };
     let payload_len = u64::from_be_bytes(
@@ -1449,6 +1627,7 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
         enqueued_at_unix_seconds: enqueued_at,
         updated_at_unix_seconds: updated_at,
         state,
+        mailbox_staging,
     };
     validate_intent(&intent)?;
     Ok(intent)
@@ -1708,6 +1887,8 @@ pub enum OutboundOutboxError {
     CompactionFenced,
     #[error("outbox database has live clones and cannot reclaim disk")]
     CompactionDatabaseBusy,
+    #[error("mailbox staging or delivery receipt failed verification")]
+    InvalidMailboxReceipt,
 }
 
 #[cfg(test)]

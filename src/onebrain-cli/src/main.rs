@@ -171,6 +171,12 @@ enum Commands {
     Pomv(PomvArgs),
     /// Inspect the vNext product runtime.
     Vnext(VNextArgs),
+    /// Manage Personal Mesh pairing, epoch sync, and device revocation (`obp/personal-mesh/1`).
+    Mesh(cli::p10::MeshArgs),
+    /// Mint, list, and revoke scoped `obc_surface1` client surface capabilities.
+    Surface(cli::p10::SurfaceArgs),
+    /// Inspect firewalled vNext OBT shadow/settlement status.
+    Obt(cli::p10::ObtArgs),
 }
 
 #[derive(clap::Args)]
@@ -232,6 +238,9 @@ async fn main() {
         Commands::Need(args) => exit_on_client_error(cli::vnext::execute_need(args).await),
         Commands::Pomv(args) => exit_on_client_error(cli::vnext::execute_pomv(args).await),
         Commands::Vnext(args) => exit_on_client_error(cli::vnext::execute_vnext(args).await),
+        Commands::Mesh(args) => exit_on_client_error(cli::p10::execute_mesh(args).await),
+        Commands::Surface(args) => exit_on_client_error(cli::p10::execute_surface(args).await),
+        Commands::Obt(args) => exit_on_client_error(cli::p10::execute_obt(args).await),
         Commands::Start {
             name,
             port,

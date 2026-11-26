@@ -11,6 +11,8 @@ const NONCES: TableDefinition<&[u8], &[u8]> = TableDefinition::new("consumed_non
 const RESERVATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("reservations");
 const REVOCATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("revocations");
 const RENDEZVOUS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("rendezvous_records");
+const MAILBOX_SLOTS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("mailbox_slots");
+const MAILBOX_ENVELOPES: TableDefinition<&[u8], &[u8]> = TableDefinition::new("mailbox_envelopes");
 pub(crate) const CANDIDATE_KEY: &[u8] = b"candidate-v1";
 pub(crate) const ACTIVATION_KEY: &[u8] = b"descriptor-activation-v1";
 
@@ -22,6 +24,8 @@ pub enum DurableStateKind {
     Reservation,
     Revocation,
     RendezvousRecord,
+    MailboxSlot,
+    MailboxEnvelope,
 }
 
 pub struct DurableRelayState {
@@ -237,6 +241,103 @@ impl DurableRelayState {
         write.commit().map_err(|_| DurableStateError::Corrupt)?;
         Ok(removed)
     }
+
+    pub fn put_mailbox_envelope_and_slot(
+        &self,
+        slot_id: &[u8; 32],
+        slot_meta: &[u8],
+        envelope_key: &[u8; 64],
+        envelope_bytes: &[u8],
+    ) -> Result<(), DurableStateError> {
+        if slot_meta.is_empty() || envelope_bytes.is_empty() {
+            return Err(DurableStateError::Invalid);
+        }
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        {
+            write
+                .open_table(MAILBOX_SLOTS)
+                .map_err(|_| DurableStateError::Corrupt)?
+                .insert(slot_id.as_slice(), slot_meta)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            write
+                .open_table(MAILBOX_ENVELOPES)
+                .map_err(|_| DurableStateError::Corrupt)?
+                .insert(envelope_key.as_slice(), envelope_bytes)
+                .map_err(|_| DurableStateError::Corrupt)?;
+        }
+        write.commit().map_err(|_| DurableStateError::Corrupt)
+    }
+
+    pub fn delete_mailbox_envelopes_and_slots(
+        &self,
+        envelope_keys: &[[u8; 64]],
+        empty_slots: &[[u8; 32]],
+    ) -> Result<(), DurableStateError> {
+        if envelope_keys.is_empty() && empty_slots.is_empty() {
+            return Ok(());
+        }
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        {
+            let mut env_table = write
+                .open_table(MAILBOX_ENVELOPES)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            for key in envelope_keys {
+                env_table
+                    .remove(key.as_slice())
+                    .map_err(|_| DurableStateError::Corrupt)?;
+            }
+            let mut slot_table = write
+                .open_table(MAILBOX_SLOTS)
+                .map_err(|_| DurableStateError::Corrupt)?;
+            for slot in empty_slots {
+                slot_table
+                    .remove(slot.as_slice())
+                    .map_err(|_| DurableStateError::Corrupt)?;
+            }
+        }
+        write.commit().map_err(|_| DurableStateError::Corrupt)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn load_all_mailbox_state(
+        &self,
+    ) -> Result<(Vec<([u8; 32], Vec<u8>)>, Vec<([u8; 64], Vec<u8>)>), DurableStateError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let slot_table = read
+            .open_table(MAILBOX_SLOTS)
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let mut slots = Vec::new();
+        for row in slot_table.iter().map_err(|_| DurableStateError::Corrupt)? {
+            let (k, v) = row.map_err(|_| DurableStateError::Corrupt)?;
+            let slot_id: [u8; 32] = k
+                .value()
+                .try_into()
+                .map_err(|_| DurableStateError::Corrupt)?;
+            slots.push((slot_id, v.value().to_vec()));
+        }
+        let env_table = read
+            .open_table(MAILBOX_ENVELOPES)
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let mut envelopes = Vec::new();
+        for row in env_table.iter().map_err(|_| DurableStateError::Corrupt)? {
+            let (k, v) = row.map_err(|_| DurableStateError::Corrupt)?;
+            let key: [u8; 64] = k
+                .value()
+                .try_into()
+                .map_err(|_| DurableStateError::Corrupt)?;
+            envelopes.push((key, v.value().to_vec()));
+        }
+        Ok((slots, envelopes))
+    }
 }
 
 const CONSUMED_NONCE_VALUE_BYTES: usize = 40;
@@ -268,6 +369,8 @@ fn initialize_tables(database: &Database) -> Result<(), DurableStateError> {
         RESERVATIONS,
         REVOCATIONS,
         RENDEZVOUS,
+        MAILBOX_SLOTS,
+        MAILBOX_ENVELOPES,
     ] {
         write
             .open_table(definition)
@@ -284,6 +387,8 @@ fn table(kind: DurableStateKind) -> TableDefinition<'static, &'static [u8], &'st
         DurableStateKind::Reservation => RESERVATIONS,
         DurableStateKind::Revocation => REVOCATIONS,
         DurableStateKind::RendezvousRecord => RENDEZVOUS,
+        DurableStateKind::MailboxSlot => MAILBOX_SLOTS,
+        DurableStateKind::MailboxEnvelope => MAILBOX_ENVELOPES,
     }
 }
 

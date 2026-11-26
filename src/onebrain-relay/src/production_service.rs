@@ -10,11 +10,14 @@ use ku_net::vnext_reachability_crypto::{
     possession_challenge_digest, possession_proof_signing_bytes,
 };
 use onebrain_protocol::{
-    connectivity_signing_bytes, decode_connectivity_signaling, decode_relay_control,
-    encode_connectivity_signaling, encode_relay_control, ConnectivitySignalingV1,
+    connectivity_signing_bytes, decode_connectivity_signaling, decode_mailbox_delivery_receipt,
+    decode_mailbox_deposit_request, decode_mailbox_pull_request, decode_relay_control,
+    encode_connectivity_signaling, encode_mailbox_delivery_ack, encode_mailbox_pull_page,
+    encode_mailbox_stored_receipt, encode_relay_control, ConnectivitySignalingV1,
     ConnectivitySignatureRoleV1, HostAddressV1, ReachabilityEndpointV1, ReflexiveObservationV1,
     RelayAssociationV1, RelayConnectRequestV1, RelayControlV1, RelayPossessionProofV1,
-    RelayWireFrameV1, RelayWireKindV1, MAX_RELAY_WIRE_PAYLOAD_BYTES,
+    RelayWireFrameV1, RelayWireKindV1, MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES,
+    RELAY_STREAM_PREFACE_MAILBOX_V1, RELAY_STREAM_PREFACE_OUTER_CONTROL_V1,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -26,8 +29,9 @@ use tokio_rustls::server::TlsStream;
 
 use crate::{
     principal_node_id, ActiveOuterAdmission, AssociationBinding, AuthenticatedOuterClient,
-    DurableRelayState, OuterClientAuthenticator, OuterConnectionLimiter, RelayDataPlane,
-    RelayDataPlaneError, RelayGlobalBudget, ReservationDecision, ReservationStore,
+    DurableRelayState, MailboxStore, OuterClientAuthenticator, OuterConnectionLimiter,
+    RelayDataPlane, RelayDataPlaneError, RelayGlobalBudget, ReservationDecision, ReservationStore,
+    DEFAULT_MAX_GLOBAL_MAILBOX_BYTES, DEFAULT_MAX_MAILBOX_SLOTS,
 };
 
 const IO_DEADLINE: Duration = Duration::from_secs(5);
@@ -143,6 +147,7 @@ pub struct RelayProductionService {
     relay_signer: SigningKey,
     authenticator: Mutex<OuterClientAuthenticator>,
     reservations: Mutex<ReservationStore>,
+    mailbox: Mutex<MailboxStore>,
     connections: Mutex<BTreeMap<[u8; 32], ConnectedClient>>,
     connect_sequences: Mutex<RelayConnectReplayGuard>,
     reflexive_sequences: Mutex<BTreeMap<NodeId, u64>>,
@@ -168,13 +173,21 @@ impl RelayProductionService {
             signer.clone(),
             max_reservations,
             max_per_target,
-            durable,
+            durable.clone(),
         )
         .map_err(|_| RelayDataPlaneError::InvalidAssociation)?;
+        let mailbox = MailboxStore::new_durable(
+            signer.clone(),
+            DEFAULT_MAX_MAILBOX_SLOTS,
+            DEFAULT_MAX_GLOBAL_MAILBOX_BYTES,
+            durable,
+        )
+        .map_err(|_| RelayDataPlaneError::Capacity)?;
         Ok(Self {
             relay_signer: signer.clone(),
             authenticator: Mutex::new(authenticator),
             reservations: Mutex::new(reservations),
+            mailbox: Mutex::new(mailbox),
             connections: Mutex::new(BTreeMap::new()),
             connect_sequences: Mutex::new(RelayConnectReplayGuard::new(
                 MAX_RELAY_CONNECT_SEQUENCE_SCOPES,
@@ -203,7 +216,9 @@ impl RelayProductionService {
             .await
             .map_err(|_| RelayDataPlaneError::Expired)?
             .map_err(|_| RelayDataPlaneError::Closed)?;
-        if preface != [0] {
+        if preface != [RELAY_STREAM_PREFACE_OUTER_CONTROL_V1]
+            && preface != [RELAY_STREAM_PREFACE_MAILBOX_V1]
+        {
             return Err(RelayDataPlaneError::InvalidEnvelope);
         }
         let (client, active) = self
@@ -471,8 +486,98 @@ impl RelayProductionService {
                     .await?;
                 Ok(None)
             }
+            RelayWireKindV1::MailboxDeposit => {
+                self.handle_mailbox_deposit(request, client).map(Some)
+            }
+            RelayWireKindV1::MailboxPullRequest => {
+                self.handle_mailbox_pull(request, client).map(Some)
+            }
+            RelayWireKindV1::MailboxDeliveryReceipt => {
+                self.handle_mailbox_delivery_ack(request, client).map(Some)
+            }
             _ => Err(RelayDataPlaneError::InvalidEnvelope),
         }
+    }
+
+    fn handle_mailbox_deposit(
+        &self,
+        frame: RelayWireFrameV1,
+        client: &AuthenticatedOuterClient,
+    ) -> Result<RelayWireFrameV1, RelayDataPlaneError> {
+        let now = unix_now()?;
+        if client.expires_at().saturating_add(30) < now {
+            return Err(RelayDataPlaneError::Expired);
+        }
+        let req = decode_mailbox_deposit_request(frame.payload())
+            .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        let receipt = self
+            .mailbox
+            .lock()
+            .map_err(|_| RelayDataPlaneError::Closed)?
+            .deposit(req, now)
+            .map_err(|_| RelayDataPlaneError::Capacity)?;
+        let payload = encode_mailbox_stored_receipt(&receipt)
+            .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        RelayWireFrameV1::new(
+            RelayWireKindV1::MailboxStoredReceipt,
+            frame.request_id(),
+            payload,
+        )
+        .map_err(|_| RelayDataPlaneError::InvalidEnvelope)
+    }
+
+    fn handle_mailbox_pull(
+        &self,
+        frame: RelayWireFrameV1,
+        client: &AuthenticatedOuterClient,
+    ) -> Result<RelayWireFrameV1, RelayDataPlaneError> {
+        let now = unix_now()?;
+        if client.expires_at().saturating_add(30) < now {
+            return Err(RelayDataPlaneError::Expired);
+        }
+        let req = decode_mailbox_pull_request(frame.payload())
+            .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        let page = self
+            .mailbox
+            .lock()
+            .map_err(|_| RelayDataPlaneError::Closed)?
+            .pull(req, now)
+            .map_err(|_| RelayDataPlaneError::IdentityMismatch)?;
+        let payload =
+            encode_mailbox_pull_page(&page).map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        RelayWireFrameV1::new(
+            RelayWireKindV1::MailboxPullPage,
+            frame.request_id(),
+            payload,
+        )
+        .map_err(|_| RelayDataPlaneError::InvalidEnvelope)
+    }
+
+    fn handle_mailbox_delivery_ack(
+        &self,
+        frame: RelayWireFrameV1,
+        client: &AuthenticatedOuterClient,
+    ) -> Result<RelayWireFrameV1, RelayDataPlaneError> {
+        let now = unix_now()?;
+        if client.expires_at().saturating_add(30) < now {
+            return Err(RelayDataPlaneError::Expired);
+        }
+        let receipt = decode_mailbox_delivery_receipt(frame.payload())
+            .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        let ack = self
+            .mailbox
+            .lock()
+            .map_err(|_| RelayDataPlaneError::Closed)?
+            .acknowledge_delivery(receipt, now)
+            .map_err(|_| RelayDataPlaneError::IdentityMismatch)?;
+        let payload =
+            encode_mailbox_delivery_ack(&ack).map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        RelayWireFrameV1::new(
+            RelayWireKindV1::MailboxDeliveryReceipt,
+            frame.request_id(),
+            payload,
+        )
+        .map_err(|_| RelayDataPlaneError::InvalidEnvelope)
     }
 
     fn handle_reflexive_observation(
@@ -865,7 +970,7 @@ where
         .map_err(|_| RelayDataPlaneError::Expired)?
         .map_err(|_| RelayDataPlaneError::Closed)?;
     let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_RELAY_WIRE_PAYLOAD_BYTES + 26 {
+    if length == 0 || length > MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES + 26 {
         return Err(RelayDataPlaneError::Oversize);
     }
     let mut bytes = vec![0; length];
@@ -907,7 +1012,7 @@ where
         .await
         .map_err(|_| RelayDataPlaneError::Closed)?;
     let length = u32::from_be_bytes(prefix) as usize;
-    if length == 0 || length > MAX_RELAY_WIRE_PAYLOAD_BYTES + 26 {
+    if length == 0 || length > MAX_RELAY_MAILBOX_WIRE_PAYLOAD_BYTES + 26 {
         return Err(RelayDataPlaneError::Oversize);
     }
     let mut bytes = vec![0; length];

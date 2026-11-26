@@ -41,6 +41,7 @@ enum HostOnboardingCursor {
   security,
   initHandoff,
   limitedHome,
+  readiness,
 }
 
 class HostRuntimeSnapshot {
@@ -243,6 +244,22 @@ class HostRegistryImportProgress {
   bool bytesComplete;
 }
 
+class HostRegistryActivationReceipt {
+  HostRegistryActivationReceipt({
+    required this.releaseId,
+    required this.readinessState,
+    required this.previousReleaseId,
+    required this.compensatedRollback,
+    required this.healthProbesChecked,
+  });
+
+  String releaseId;
+  String readinessState;
+  String? previousReleaseId;
+  bool compensatedRollback;
+  int healthProbesChecked;
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -286,6 +303,15 @@ abstract class MobileHostApi {
     String manifestDigest,
     HostRegistryArtifactRole artifactRole,
   );
+
+  @async
+  HostRegistryActivationReceipt activateRegistryRelease(
+    String operationId,
+    String transferNonce,
+  );
+
+  @async
+  bool rollbackRegistryRelease();
 
   @async
   HostRawDraftReceipt saveRawTextDraft(String contentLanguage, String content);

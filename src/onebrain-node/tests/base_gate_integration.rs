@@ -354,6 +354,7 @@ fn write_tiny_obr(path: &std::path::Path) {
         sources,
         label_index: None,
         ccid_index: None,
+        lifecycle_blake3: None,
     };
     fs::write(
         manifest_path(path),

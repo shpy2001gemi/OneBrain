@@ -139,6 +139,7 @@ pub enum ManualEditorRequest {
     ReviewResume { operation_id: OperationId },
     ReviewCancel { operation_id: OperationId },
     ReviewLower(ReviewLowerInput),
+    ReviewLowerV2(ReviewLowerInput),
     Resolve { label: String },
     Draft(ManualDraft),
     SharePrepare(PublicSharePrepare),
@@ -329,6 +330,7 @@ impl KuInputProvider for ManualKuInputs {
             | ManualEditorRequest::ReviewResume { .. }
             | ManualEditorRequest::ReviewCancel { .. }
             | ManualEditorRequest::ReviewLower(_)
+            | ManualEditorRequest::ReviewLowerV2(_)
             | ManualEditorRequest::SharePrepare(_)
             | ManualEditorRequest::ShareConfirm(_)
             | ManualEditorRequest::SharePreview(_)

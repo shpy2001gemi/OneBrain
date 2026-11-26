@@ -119,6 +119,7 @@ pub(super) fn registry_for_entries(
             .collect(),
         label_index: Some(label_index),
         ccid_index: Some(ccid_index),
+        lifecycle_blake3: None,
     };
     fs::write(
         manifest_path(&obr_path),

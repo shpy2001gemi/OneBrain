@@ -213,6 +213,20 @@ pub struct OneBrainNode {
     /// keystore, HSM, or remote signer; private-key bytes never enter OneBrain.
     #[cfg(feature = "vnext-network-runtime")]
     vnext_identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
+    /// Default-off extended Pillar feature flags & independent kill switches (`P1`..`P10`).
+    vnext_extended: crate::vnext_extended_config::VNextExtendedFeatureConfig,
+    /// Lazy-opened `P1` composition & supersession runtime (`vnext_ku_composition.redb`).
+    ku_composition: crate::vnext_ku_composition::KuCompositionRuntime,
+    /// Lazy-opened `P5` isolated OBT runtime (`obt-ledger-v1/obt.redb`).
+    obt_runtime: crate::vnext_obt_runtime::ObtRuntimeCoordinator,
+    /// Lazy-opened `P10` Personal Mesh runtime (`vnext_personal_mesh.redb`).
+    personal_mesh: crate::personal_mesh_runtime::PersonalMeshRuntime,
+    /// In-memory `P10` `obc_surface1` capability registry & route ceiling guard.
+    surface_capabilities: crate::surface_capability::SurfaceCapabilityRegistry,
+    /// In-memory `P6` `D-013` delegated encode & blind verify coordinator.
+    delegated_jobs: crate::vnext_delegated_jobs::DelegatedJobCoordinator,
+    /// Lazy-opened `P6` `RUN-003` remote cognition coordinator (`vnext_cognition.redb`).
+    remote_cognition: crate::vnext_remote_cognition::RemoteCognitionRuntime,
 }
 
 impl OneBrainNode {
@@ -392,8 +406,16 @@ impl OneBrainNode {
         // Create event channel
         let (event_tx, event_rx) = mpsc::channel::<NodeEvent>(256);
 
-        // Capture device name before config ownership transfer
+        // Capture device name and lazy runtime paths before config ownership transfer
         let device_name = config.name.clone();
+        let node_data_dir = config.data_dir.clone();
+        let default_surface_secret = blake3::derive_key(
+            "onebrain:vnext:node-surface-default-secret:1",
+            node_data_dir.to_string_lossy().as_bytes(),
+        );
+        let surface_capabilities =
+            crate::surface_capability::SurfaceCapabilityRegistry::new(default_surface_secret)
+                .map_err(|error| NodeError::Config(error.to_string()))?;
 
         Ok(Self {
             config,
@@ -428,6 +450,20 @@ impl OneBrainNode {
             vnext_product_dependencies: None,
             #[cfg(feature = "vnext-network-runtime")]
             vnext_identity_signer: None,
+            vnext_extended: crate::vnext_extended_config::VNextExtendedFeatureConfig::default(),
+            ku_composition: crate::vnext_ku_composition::KuCompositionRuntime::new_lazy(
+                &node_data_dir,
+            ),
+            obt_runtime: crate::vnext_obt_runtime::ObtRuntimeCoordinator::new_lazy(&node_data_dir),
+            personal_mesh: crate::personal_mesh_runtime::PersonalMeshRuntime::new_lazy(
+                &node_data_dir,
+            ),
+            surface_capabilities,
+            delegated_jobs: crate::vnext_delegated_jobs::DelegatedJobCoordinator::default(),
+            remote_cognition: crate::vnext_remote_cognition::RemoteCognitionRuntime::new_lazy(
+                &node_data_dir,
+                crate::vnext_remote_cognition::default_cognitive_execution_policy(),
+            ),
             devices: vec![DeviceInfo {
                 device_id: format!("dev-{:08x}", rand_u32()),
                 name: device_name,
@@ -467,6 +503,105 @@ impl OneBrainNode {
     /// Return the effective Concept Registry startup policy and load result.
     pub fn concept_registry_status(&self) -> &ConceptRegistryStatus {
         &self.registry_status
+    }
+
+    /// Return the extended Pillar (`P1`..`P10`) default-off feature configuration.
+    pub fn vnext_extended(&self) -> &crate::vnext_extended_config::VNextExtendedFeatureConfig {
+        &self.vnext_extended
+    }
+
+    /// Replace the extended Pillar feature configuration.
+    pub fn set_vnext_extended(
+        &mut self,
+        extended: crate::vnext_extended_config::VNextExtendedFeatureConfig,
+    ) {
+        self.vnext_extended = extended;
+    }
+
+    /// Builder-style setter for the extended Pillar feature configuration.
+    pub fn with_vnext_extended(
+        mut self,
+        extended: crate::vnext_extended_config::VNextExtendedFeatureConfig,
+    ) -> Self {
+        self.vnext_extended = extended;
+        self
+    }
+
+    /// Access the lazy-opened `P1` composition & supersession runtime (`KU-002..008`).
+    pub fn ku_composition(&self) -> &crate::vnext_ku_composition::KuCompositionRuntime {
+        &self.ku_composition
+    }
+
+    /// Mutably access the lazy-opened `P1` composition & supersession runtime.
+    pub fn ku_composition_mut(&mut self) -> &mut crate::vnext_ku_composition::KuCompositionRuntime {
+        &mut self.ku_composition
+    }
+
+    /// Access the isolated `P5` OBT runtime coordinator (`SimulatedNonEconomic` / default `Disabled`).
+    pub fn obt_runtime(&self) -> &crate::vnext_obt_runtime::ObtRuntimeCoordinator {
+        &self.obt_runtime
+    }
+
+    /// Mutably access the isolated `P5` OBT runtime coordinator.
+    pub fn obt_runtime_mut(&mut self) -> &mut crate::vnext_obt_runtime::ObtRuntimeCoordinator {
+        &mut self.obt_runtime
+    }
+
+    /// Access the lazy-opened `P10` Personal Mesh runtime.
+    pub fn personal_mesh(&self) -> &crate::personal_mesh_runtime::PersonalMeshRuntime {
+        &self.personal_mesh
+    }
+
+    /// Mutably access the lazy-opened `P10` Personal Mesh runtime.
+    pub fn personal_mesh_mut(&mut self) -> &mut crate::personal_mesh_runtime::PersonalMeshRuntime {
+        &mut self.personal_mesh
+    }
+
+    /// Access the `P10` `obc_surface1` capability registry & route ceiling guard.
+    pub fn surface_capabilities(&self) -> &crate::surface_capability::SurfaceCapabilityRegistry {
+        &self.surface_capabilities
+    }
+
+    /// Mutably access the `P10` `obc_surface1` capability registry.
+    pub fn surface_capabilities_mut(
+        &mut self,
+    ) -> &mut crate::surface_capability::SurfaceCapabilityRegistry {
+        &mut self.surface_capabilities
+    }
+
+    /// Rotate/override the `obc_surface1` root MAC secret with a caller-supplied key.
+    pub fn set_surface_capability_secret(
+        &mut self,
+        root_secret: [u8; 32],
+    ) -> Result<(), NodeError> {
+        self.surface_capabilities =
+            crate::surface_capability::SurfaceCapabilityRegistry::new(root_secret)
+                .map_err(|error| NodeError::Config(error.to_string()))?;
+        Ok(())
+    }
+
+    /// Access the `P6` `D-013` delegated encode & blind verify coordinator.
+    pub fn delegated_jobs(&self) -> &crate::vnext_delegated_jobs::DelegatedJobCoordinator {
+        &self.delegated_jobs
+    }
+
+    /// Mutably access the `P6` `D-013` delegated encode & blind verify coordinator.
+    pub fn delegated_jobs_mut(
+        &mut self,
+    ) -> &mut crate::vnext_delegated_jobs::DelegatedJobCoordinator {
+        &mut self.delegated_jobs
+    }
+
+    /// Access the lazy-opened `P6` `RUN-003` remote cognition coordinator.
+    pub fn remote_cognition(&self) -> &crate::vnext_remote_cognition::RemoteCognitionRuntime {
+        &self.remote_cognition
+    }
+
+    /// Mutably access the lazy-opened `P6` `RUN-003` remote cognition coordinator.
+    pub fn remote_cognition_mut(
+        &mut self,
+    ) -> &mut crate::vnext_remote_cognition::RemoteCognitionRuntime {
+        &mut self.remote_cognition
     }
 
     /// Close the Task 25 integration receipt from independently measured

@@ -19,3 +19,4 @@ pub use server::{base_runtime_config_for_api_token, ApiServer};
 pub use vnext_api::VNextFeedPublisher;
 
 pub mod obp_api;
+pub mod p10_api;

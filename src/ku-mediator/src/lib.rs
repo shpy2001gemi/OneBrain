@@ -66,6 +66,7 @@ pub mod profile;
 pub mod retriever;
 pub mod session;
 pub mod synthesizer;
+pub mod vnext_pam;
 
 // ─── Re-exports ─────────────────────────────────────────────────────────
 
@@ -82,6 +83,16 @@ pub use profile::{ExpertiseArea, ResponseStyle, UserProfile};
 pub use retriever::{KuRetriever, RetrievalSource, RetrievedKU, RetrieverConfig};
 pub use session::{ConversationMode, MediatorSession, SessionId};
 pub use synthesizer::Synthesizer;
+pub use vnext_pam::{
+    ConfirmedPamRecommendation, EphemeralTurnBuffer, EpisodicObservationLink,
+    EpisodicObservationLinks, ExposureKind, InMemoryPamMetadataStore, ObservationModality,
+    PamCompanionExposure, PamError, PamRecommendationActionKind, PamRecommendationCard,
+    PamRecommendationGuard, PamSealedMetadataStore, PamTurnAbortReason, PamVaultRuntime,
+    SanitizedRemoteCognitionBundle, SessionTurnEntry, SessionTurnSpeaker,
+    SovereignActorPreferences, UserConfirmationGesture, WorkingSessionThread,
+    DEFAULT_PAM_EXPOSURE_CAPACITY, MAX_WORKING_SESSION_TURNS, PAM_VAULT_PURPOSE_LOCAL_METADATA,
+    SEMANTIC_DRAFT_PROFILE_V2, SOMATIC_IMMEDIATE_ABORT_PROFILE, UNASSESSED_EPISTEMIC_LABEL,
+};
 
 #[cfg(test)]
 mod tests {

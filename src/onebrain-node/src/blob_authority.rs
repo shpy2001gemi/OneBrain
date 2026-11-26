@@ -384,14 +384,58 @@ impl CanonicalBlobReferenceOracle {
     /// canonical live owner makes missing blob bytes a hard snapshot failure.
     pub fn canonical_retained_blob_cids(&self) -> Result<Vec<BlobCid>, BlobAuthorityError> {
         let mut cids = self
-            .canonical_records()?
+            .retained_canonical_records()?
             .into_iter()
-            .filter(OwnedBlobReferenceV1::retains_blob)
             .map(|record| record.blob_cid)
             .collect::<Vec<_>>();
         cids.sort_by_key(|cid| cid.0);
         cids.dedup();
         Ok(cids)
+    }
+
+    /// Reduced canonical `OwnedBlobReferenceV1` records whose latest state still
+    /// retains the underlying blob (`retains_blob() == true`).
+    pub fn retained_canonical_records(
+        &self,
+    ) -> Result<Vec<OwnedBlobReferenceV1>, BlobAuthorityError> {
+        let records = self.canonical_records()?;
+        let mut reduced: BTreeMap<([u8; 34], u64, [u8; 32]), OwnedBlobReferenceV1> =
+            BTreeMap::new();
+        for record in records {
+            let key = (
+                record.blob_cid.0,
+                record.owner.reference_kind,
+                record.owner.cid,
+            );
+            match reduced.get(&key) {
+                None => {
+                    reduced.insert(key, record);
+                }
+                Some(existing) if existing == &record => {}
+                Some(existing)
+                    if matches!(existing.retention_state, BlobRetentionState::Live)
+                        && !matches!(record.retention_state, BlobRetentionState::Live) =>
+                {
+                    reduced.insert(key, record);
+                }
+                Some(existing)
+                    if !matches!(existing.retention_state, BlobRetentionState::Live)
+                        && matches!(record.retention_state, BlobRetentionState::Live) => {}
+                Some(_) => return Err(BlobAuthorityError::InvalidCanonicalReference),
+            }
+        }
+        Ok(reduced
+            .into_values()
+            .filter(OwnedBlobReferenceV1::retains_blob)
+            .collect())
+    }
+
+    /// Prove that at least one canonical accepted object currently retains `cid`.
+    pub fn prove_retained_reference(&self, cid: &BlobCid) -> Option<OwnedBlobReferenceV1> {
+        self.retained_canonical_records()
+            .ok()?
+            .into_iter()
+            .find(|record| &record.blob_cid == cid && record.retains_blob())
     }
 }
 

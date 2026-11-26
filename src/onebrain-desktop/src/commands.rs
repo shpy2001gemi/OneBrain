@@ -229,3 +229,23 @@ pub async fn wizard_complete(
 
     config.save().map_err(|e| e.to_string())
 }
+
+// ─── Pillar 10 Host Surface Summary (`P10-SURFACES-SYNC-001`) ──────────────
+
+/// Return Desktop foreground surface capability & offline usability metadata.
+#[tauri::command]
+pub fn desktop_p10_surface_summary(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    local_main(&window)?;
+    Ok(json!({
+        "surface_kind": "desktop",
+        "usability": "USABLE_OFFLINE",
+        "personal_mesh_protocol": "obp/personal-mesh/1",
+        "private_signing_keys_shared": false,
+        "somatic_foreground_host_eligible": true,
+        "step2_public_confirm": "typed_receipt_wizard",
+        "backend_ready": state.supervisor.ready(),
+    }))
+}

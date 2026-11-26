@@ -2,12 +2,29 @@
 
 use std::collections::BTreeMap;
 
-use ku_core::foundation::{decode_canonical, CanonicalValue, ResourceProfile};
+use ku_core::foundation::{decode_canonical, CanonicalValue, ResourceProfile, SelectorCid};
 
 use crate::vnext_query::{route_padding_target, CoarseRouteToken, CoarseRouteTokenClass};
 
 pub const ROUTE_NEED_SKETCH_MAJOR: u64 = 1;
 pub const DEFAULT_ROUTE_REPLAY_CAPACITY: usize = 16_384;
+pub const MAX_REDB_ROUTE_REPLAY_ENTRIES: usize = 65_536;
+pub const DHT_PROVIDER_KEY_DOMAIN: &[u8] = b"onebrain:vnext:dht-provider-key:1\0";
+
+/// Compute the deterministic DHT provider routing key for an allow-listed public
+/// `SelectorCid` and coarse target `ConceptCcid` or tuple bytes.
+pub fn provider_dht_key(selector: SelectorCid, target_ccid_or_tuple: &[u8]) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(DHT_PROVIDER_KEY_DOMAIN);
+    hasher.update(selector.as_bytes());
+    hasher.update(target_ccid_or_tuple);
+    *hasher.finalize().as_bytes()
+}
+
+/// Compute the domain-separated BLAKE3 packet tag for a `RouteNeedSketchV1` wire frame.
+pub fn route_packet_tag_blake3(packet_bytes: &[u8]) -> [u8; 32] {
+    packet_digest(packet_bytes)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodedRouteNeedSketchV1 {
@@ -254,6 +271,7 @@ pub enum RoutePacketError {
     Expired,
     ExpiryOverflow,
     Capacity,
+    Storage(String),
 }
 
 impl From<ku_core::foundation::CanonicalError> for RoutePacketError {
@@ -261,6 +279,299 @@ impl From<ku_core::foundation::CanonicalError> for RoutePacketError {
         Self::Canonical(error)
     }
 }
+
+#[cfg(feature = "storage")]
+mod persistent {
+    use std::path::Path;
+
+    use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+
+    use super::*;
+
+    const ROUTE_PACKET_TOMBSTONES: TableDefinition<&[u8], u64> =
+        TableDefinition::new("vnext_route_packet_tombstones_v1");
+    const ROUTE_PACKET_NONCES: TableDefinition<&[u8], &[u8]> =
+        TableDefinition::new("vnext_route_packet_nonces_v1");
+
+    /// Durable Redb-backed replay guard persisting `(packet_tag_blake3, expires_at_unix_s)`
+    /// tombstones bounded at `65_536` entries with expiry eviction and fail-closed capacity.
+    pub struct RedbRoutePacketReplayGuard {
+        database: Database,
+        capacity: usize,
+    }
+
+    impl RedbRoutePacketReplayGuard {
+        pub fn open(path: &Path) -> Result<Self, RoutePacketError> {
+            Self::open_with_capacity(path, MAX_REDB_ROUTE_REPLAY_ENTRIES)
+        }
+
+        pub fn open_with_capacity(path: &Path, capacity: usize) -> Result<Self, RoutePacketError> {
+            if capacity == 0 || capacity > MAX_REDB_ROUTE_REPLAY_ENTRIES {
+                return Err(RoutePacketError::Capacity);
+            }
+            let database = Database::create(path)
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            let write = database
+                .begin_write()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            {
+                write
+                    .open_table(ROUTE_PACKET_TOMBSTONES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                write
+                    .open_table(ROUTE_PACKET_NONCES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            Ok(Self { database, capacity })
+        }
+
+        pub const fn capacity(&self) -> usize {
+            self.capacity
+        }
+
+        /// Record a raw `(packet_tag_blake3, expires_at_unix_s)` tombstone at `now_unix_s`.
+        /// Evicts expired entries when full; fails closed with `RoutePacketError::Capacity`
+        /// if all `capacity` entries remain unexpired.
+        pub fn record_tombstone(
+            &self,
+            packet_tag_blake3: [u8; 32],
+            now_unix_s: u64,
+            expires_at_unix_s: u64,
+        ) -> Result<(), RoutePacketError> {
+            if packet_tag_blake3 == [0; 32] {
+                return Err(RoutePacketError::Schema);
+            }
+            if expires_at_unix_s <= now_unix_s {
+                return Err(RoutePacketError::Expired);
+            }
+            let write = self
+                .database
+                .begin_write()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            {
+                let mut tombstones = write
+                    .open_table(ROUTE_PACKET_TOMBSTONES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                let mut nonces = write
+                    .open_table(ROUTE_PACKET_NONCES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                if let Some(existing_expiry) = tombstones
+                    .get(packet_tag_blake3.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+                    .map(|guard| guard.value())
+                {
+                    if now_unix_s >= existing_expiry {
+                        return Err(RoutePacketError::Expired);
+                    }
+                    return Err(RoutePacketError::Replay);
+                }
+                ensure_capacity_or_evict(&mut tombstones, &mut nonces, self.capacity, now_unix_s)?;
+                tombstones
+                    .insert(packet_tag_blake3.as_slice(), expires_at_unix_s)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            Ok(())
+        }
+
+        /// Decode, validate, and durably guard a `RouteNeedSketchV1` packet against replay
+        /// and nonce collision across restarts.
+        pub fn accept(
+            &self,
+            packet_bytes: &[u8],
+            now_unix_s: u64,
+        ) -> Result<AcceptedRouteNeed, RoutePacketError> {
+            let packet = decode_route_need_sketch_v1(packet_bytes)?;
+            let tag = packet_digest(packet_bytes);
+            let expires_at_unix_s = now_unix_s
+                .checked_add(u64::from(packet.expiry_evaluations))
+                .ok_or(RoutePacketError::ExpiryOverflow)?;
+
+            let write = self
+                .database
+                .begin_write()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            {
+                let mut tombstones = write
+                    .open_table(ROUTE_PACKET_TOMBSTONES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                let mut nonces = write
+                    .open_table(ROUTE_PACKET_NONCES)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+
+                if let Some(existing_tag) = nonces
+                    .get(packet.replay_nonce.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+                    .map(|guard| {
+                        let mut out = [0u8; 32];
+                        out.copy_from_slice(guard.value());
+                        out
+                    })
+                {
+                    if existing_tag != tag {
+                        return Err(RoutePacketError::NonceCollision);
+                    }
+                    if let Some(existing_expiry) = tombstones
+                        .get(tag.as_slice())
+                        .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+                        .map(|guard| guard.value())
+                    {
+                        if now_unix_s >= existing_expiry {
+                            return Err(RoutePacketError::Expired);
+                        }
+                    }
+                    return Err(RoutePacketError::Replay);
+                }
+
+                if let Some(existing_expiry) = tombstones
+                    .get(tag.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+                    .map(|guard| guard.value())
+                {
+                    if now_unix_s >= existing_expiry {
+                        return Err(RoutePacketError::Expired);
+                    }
+                    return Err(RoutePacketError::Replay);
+                }
+
+                ensure_capacity_or_evict(&mut tombstones, &mut nonces, self.capacity, now_unix_s)?;
+
+                tombstones
+                    .insert(tag.as_slice(), expires_at_unix_s)
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                nonces
+                    .insert(packet.replay_nonce.as_slice(), tag.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+
+            Ok(AcceptedRouteNeed {
+                packet_digest: tag,
+                token: packet.token,
+                one_time_reply_capability: packet.one_time_reply_capability,
+                expires_at_local_evaluation: expires_at_unix_s,
+            })
+        }
+
+        pub fn tombstone_expiry(
+            &self,
+            packet_tag_blake3: &[u8; 32],
+        ) -> Result<Option<u64>, RoutePacketError> {
+            let read = self
+                .database
+                .begin_read()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            let table = read
+                .open_table(ROUTE_PACKET_TOMBSTONES)
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            Ok(table
+                .get(packet_tag_blake3.as_slice())
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+                .map(|guard| guard.value()))
+        }
+
+        pub fn is_active(
+            &self,
+            packet_tag_blake3: &[u8; 32],
+            now_unix_s: u64,
+        ) -> Result<bool, RoutePacketError> {
+            Ok(self
+                .tombstone_expiry(packet_tag_blake3)?
+                .is_some_and(|expires_at| now_unix_s < expires_at))
+        }
+
+        pub fn len(&self) -> Result<usize, RoutePacketError> {
+            let read = self
+                .database
+                .begin_read()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            let table = read
+                .open_table(ROUTE_PACKET_TOMBSTONES)
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            let len = table
+                .len()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            usize::try_from(len).map_err(|_| RoutePacketError::Capacity)
+        }
+
+        pub fn is_empty(&self) -> Result<bool, RoutePacketError> {
+            Ok(self.len()? == 0)
+        }
+    }
+
+    fn ensure_capacity_or_evict(
+        tombstones: &mut redb::Table<&[u8], u64>,
+        nonces: &mut redb::Table<&[u8], &[u8]>,
+        capacity: usize,
+        now_unix_s: u64,
+    ) -> Result<(), RoutePacketError> {
+        let current_len = tombstones
+            .len()
+            .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+        if current_len < capacity as u64 {
+            return Ok(());
+        }
+        let mut expired_tags = Vec::new();
+        for entry in tombstones
+            .iter()
+            .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+        {
+            let (tag_guard, expiry_guard) =
+                entry.map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            if expiry_guard.value() <= now_unix_s {
+                let mut tag = [0u8; 32];
+                tag.copy_from_slice(tag_guard.value());
+                expired_tags.push(tag);
+            }
+        }
+        if !expired_tags.is_empty() {
+            let expired_set: std::collections::BTreeSet<[u8; 32]> =
+                expired_tags.iter().copied().collect();
+            for tag in &expired_tags {
+                tombstones
+                    .remove(tag.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            }
+            let mut expired_nonces = Vec::new();
+            for entry in nonces
+                .iter()
+                .map_err(|error| RoutePacketError::Storage(error.to_string()))?
+            {
+                let (nonce_guard, tag_guard) =
+                    entry.map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+                let mut tag = [0u8; 32];
+                tag.copy_from_slice(tag_guard.value());
+                if expired_set.contains(&tag) {
+                    let mut nonce = [0u8; 32];
+                    nonce.copy_from_slice(nonce_guard.value());
+                    expired_nonces.push(nonce);
+                }
+            }
+            for nonce in &expired_nonces {
+                nonces
+                    .remove(nonce.as_slice())
+                    .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+            }
+        }
+        let after_len = tombstones
+            .len()
+            .map_err(|error| RoutePacketError::Storage(error.to_string()))?;
+        if after_len >= capacity as u64 {
+            return Err(RoutePacketError::Capacity);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "storage")]
+pub use persistent::RedbRoutePacketReplayGuard;
 
 #[cfg(test)]
 mod tests {
@@ -439,5 +750,69 @@ mod tests {
             decode_route_need_sketch_v1(&tampered),
             Err(RoutePacketError::Padding)
         );
+    }
+
+    #[test]
+    fn provider_dht_key_is_domain_separated_and_deterministic() {
+        let sel_a = SelectorCid::from_bytes([0x11; 32]);
+        let sel_b = SelectorCid::from_bytes([0x22; 32]);
+        let k1 = provider_dht_key(sel_a, &[0xAA; 16]);
+        let k2 = provider_dht_key(sel_a, &[0xAA; 16]);
+        let k3 = provider_dht_key(sel_b, &[0xAA; 16]);
+        let k4 = provider_dht_key(sel_a, &[0xBB; 16]);
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+        assert_ne!(k1, k4);
+        assert_ne!(k1, [0; 32]);
+    }
+
+    #[cfg(feature = "storage")]
+    #[test]
+    fn redb_replay_guard_persists_across_restarts_evicts_expired_and_fails_closed_when_full() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("route_replay.redb");
+        let run = run();
+
+        let p1 = DisclosureCompiler::default()
+            .compile_route_minimal(&run, token(7), 64, 1, 10, 3, 1, entropy(10))
+            .unwrap()
+            .network_bytes()
+            .unwrap();
+        let p2 = DisclosureCompiler::default()
+            .compile_route_minimal(&run, token(8), 64, 1, 20, 3, 1, entropy(20))
+            .unwrap()
+            .network_bytes()
+            .unwrap();
+        let p3 = DisclosureCompiler::default()
+            .compile_route_minimal(&run, token(9), 64, 1, 20, 3, 1, entropy(30))
+            .unwrap()
+            .network_bytes()
+            .unwrap();
+
+        let tag1 = route_packet_tag_blake3(&p1);
+        {
+            let guard = RedbRoutePacketReplayGuard::open_with_capacity(&path, 2).unwrap();
+            let accepted1 = guard.accept(&p1, 1_000).unwrap();
+            assert_eq!(accepted1.expires_at_local_evaluation, 1_010);
+            let accepted2 = guard.accept(&p2, 1_000).unwrap();
+            assert_eq!(accepted2.expires_at_local_evaluation, 1_020);
+            assert_eq!(guard.len().unwrap(), 2);
+            // Capacity full with two unexpired tombstones -> fail closed.
+            assert_eq!(guard.accept(&p3, 1_005), Err(RoutePacketError::Capacity));
+        }
+
+        // Reopen database: replay of p1 is still rejected before expiry, then evicted once expired.
+        {
+            let guard = RedbRoutePacketReplayGuard::open_with_capacity(&path, 2).unwrap();
+            assert!(guard.is_active(&tag1, 1_009).unwrap());
+            assert_eq!(guard.accept(&p1, 1_009), Err(RoutePacketError::Replay));
+            assert_eq!(guard.accept(&p1, 1_010), Err(RoutePacketError::Expired));
+
+            // At t = 1_010, p1 has expired so accepting p3 evicts p1 and succeeds!
+            let accepted3 = guard.accept(&p3, 1_010).unwrap();
+            assert_eq!(accepted3.expires_at_local_evaluation, 1_030);
+            assert_eq!(guard.len().unwrap(), 2);
+            assert_eq!(guard.tombstone_expiry(&tag1).unwrap(), None);
+        }
     }
 }

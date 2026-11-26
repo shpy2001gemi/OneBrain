@@ -1,0 +1,11 @@
+{
+  "name": "@onebrain/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Least-privilege OneBrain Manifest V3 browser extension adapter (P10-SURFACES-SYNC-001 §4.1)",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/extension.test.ts"
+  }
+}

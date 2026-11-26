@@ -274,6 +274,16 @@ pub enum RegistryNetworkPolicy {
     AnyNetwork,
 }
 
+impl RegistryNetworkPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::WifiOnly => "wifi_only",
+            Self::Unmetered => "unmetered",
+            Self::AnyNetwork => "any_network",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegistryCapacityPlan {
@@ -390,12 +400,54 @@ impl RegistryReleaseCatalogRecord {
                 .ok_or_else(|| registry_admission("Registry allocation total overflow"))
         })
     }
+
+    pub fn artifact_final_length(&self, role: u8) -> Result<u64, MobileCoreError> {
+        let manifest = parse_manifest_body(&self.manifest_body_cbor)?;
+        manifest
+            .artifacts
+            .iter()
+            .find(|art| art.role == role)
+            .map(|art| art.final_length)
+            .ok_or_else(|| registry_admission("unknown Registry artifact role"))
+    }
+
+    pub fn artifact_whole_hash(&self, role: u8) -> Result<String, MobileCoreError> {
+        let manifest = parse_manifest_body(&self.manifest_body_cbor)?;
+        manifest
+            .artifacts
+            .iter()
+            .find(|art| art.role == role)
+            .map(|art| hex::encode(art.whole_blake3))
+            .ok_or_else(|| registry_admission("unknown Registry artifact role"))
+    }
+
+    pub fn verify_whole_artifact(
+        &self,
+        role: u8,
+        observed_len: u64,
+        observed_blake3_hex: &str,
+    ) -> Result<(), MobileCoreError> {
+        let expected_len = self.artifact_final_length(role)?;
+        let expected_hash = self.artifact_whole_hash(role)?;
+        if observed_len != expected_len || observed_blake3_hex != expected_hash {
+            return Err(MobileCoreError::Security(format!(
+                "whole-artifact verification failed for role {role}: expected ({expected_len}, {expected_hash}), got ({observed_len}, {observed_blake3_hex})"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistryReleaseState {
     ManifestVerified,
+    DirectoryCommitted,
+    HealthPending,
+    Healthy,
+    FailedAfterCompensation,
+    RolledBackOrRetired,
+    RetiredReclaimed,
     Revoked,
 }
 
@@ -406,6 +458,8 @@ pub struct RegistryReleaseCatalogRecord {
     pub release_sequence: u64,
     pub manifest_digest: String,
     pub manifest_body_cbor: Vec<u8>,
+    #[serde(default)]
+    pub release_envelope_cbor: Vec<u8>,
     pub release_signing_key_id: String,
     pub channel_signing_key_id: String,
     pub trust_profile_digest: String,

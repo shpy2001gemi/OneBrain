@@ -79,6 +79,22 @@ pub trait ConceptLookup: Send + Sync {
     ) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
         Err(ConceptLookupError::new("reverse CCID lookup unsupported"))
     }
+
+    /// Optional Concept Lifecycle Table bound to this Registry generation (`P1` §2.1).
+    fn lifecycle_table(&self) -> Option<&crate::concept_lifecycle::ConceptLifecycleTable> {
+        None
+    }
+
+    /// Resolve a `ConceptCcid` under active lifecycle rules for new KU authoring.
+    fn resolve_for_authoring(
+        &self,
+        ccid: crate::foundation::ConceptCcid,
+    ) -> crate::concept_lifecycle::AuthoringConceptResolution {
+        match self.lifecycle_table() {
+            Some(table) => table.resolve_for_authoring(ccid),
+            None => crate::concept_lifecycle::AuthoringConceptResolution::Canonical(ccid),
+        }
+    }
 }
 
 /// A resolved concept with its metadata.
@@ -193,6 +209,8 @@ pub struct ConceptRegistry {
     ccid_index: HashMap<Ccid, usize>,
     /// Collision log: records any CCID conflicts detected.
     collisions: Vec<CollisionRecord>,
+    /// Optional validated Concept Lifecycle Table (`P1` §2.1).
+    lifecycle: Option<crate::concept_lifecycle::ConceptLifecycleTable>,
 }
 
 impl ConceptRegistry {
@@ -204,6 +222,7 @@ impl ConceptRegistry {
             entries: Vec::new(),
             ccid_index: HashMap::new(),
             collisions: Vec::new(),
+            lifecycle: None,
         }
     }
 
@@ -215,7 +234,18 @@ impl ConceptRegistry {
             entries: Vec::with_capacity(cap),
             ccid_index: HashMap::with_capacity(cap),
             collisions: Vec::new(),
+            lifecycle: None,
         }
+    }
+
+    /// Attach a validated Concept Lifecycle Table to this in-memory registry.
+    pub fn set_lifecycle_table(&mut self, table: crate::concept_lifecycle::ConceptLifecycleTable) {
+        self.lifecycle = Some(table);
+    }
+
+    /// Inspect the attached Concept Lifecycle Table, if any.
+    pub fn lifecycle_table(&self) -> Option<&crate::concept_lifecycle::ConceptLifecycleTable> {
+        self.lifecycle.as_ref()
     }
 
     /// Add a concept entry with one or more labels.
@@ -660,6 +690,10 @@ impl ConceptLookup for ConceptRegistry {
 
     fn describe_checked(&self, ccid: &Ccid) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
         Ok(self.get_by_ccid(ccid).cloned())
+    }
+
+    fn lifecycle_table(&self) -> Option<&crate::concept_lifecycle::ConceptLifecycleTable> {
+        self.lifecycle.as_ref()
     }
 }
 

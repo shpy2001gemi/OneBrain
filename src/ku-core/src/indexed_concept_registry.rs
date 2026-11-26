@@ -15,6 +15,7 @@ use indexmap::IndexMap;
 use memmap2::Mmap;
 
 use crate::ccid::Ccid;
+use crate::concept_lifecycle::{ConceptLifecycleError, ConceptLifecycleTable};
 use crate::concept_registry::{
     ConceptCategory, ConceptLookup, ConceptLookupError, ConceptRegistry, ResolveResult,
     ResolvedConcept,
@@ -40,6 +41,7 @@ pub enum IndexedRegistryError {
     InvalidUtf8,
     TooManyMatches(usize),
     Poisoned(&'static str),
+    Lifecycle(ConceptLifecycleError),
 }
 
 impl fmt::Display for IndexedRegistryError {
@@ -59,6 +61,7 @@ impl fmt::Display for IndexedRegistryError {
                 write!(formatter, "label expands to too many concepts: {count}")
             }
             Self::Poisoned(lock) => write!(formatter, "indexed registry lock poisoned: {lock}"),
+            Self::Lifecycle(error) => write!(formatter, "registry lifecycle error: {error}"),
         }
     }
 }
@@ -215,6 +218,7 @@ pub struct IndexedConceptRegistry {
     ccid_index: FixedIndex,
     cache: Mutex<LookupCache>,
     metadata: ObrHeaderMetadata,
+    lifecycle: Option<ConceptLifecycleTable>,
 }
 
 impl IndexedConceptRegistry {
@@ -224,6 +228,15 @@ impl IndexedConceptRegistry {
 
     pub fn ccid_index_path(obr_path: &Path) -> PathBuf {
         append_suffix(obr_path, ".ccids.idx")
+    }
+
+    pub fn lifecycle_path(obr_path: &Path) -> PathBuf {
+        let sibling = obr_path.with_file_name("concepts.lifecycle.cbor");
+        if sibling.is_file() {
+            sibling
+        } else {
+            append_suffix(obr_path, ".lifecycle.cbor")
+        }
     }
 
     pub fn indexes_exist(obr_path: &Path) -> bool {
@@ -265,6 +278,20 @@ impl IndexedConceptRegistry {
                 "CCID index record count",
             ));
         }
+        let lifecycle = if let Some(expected_hex) = &manifest.lifecycle_blake3 {
+            let path = Self::lifecycle_path(obr_path);
+            let bytes = std::fs::read(&path)?;
+            let actual_hex = blake3::hash(&bytes).to_hex().to_string();
+            if &actual_hex != expected_hex {
+                return Err(IndexedRegistryError::ArtifactMismatch("lifecycle checksum"));
+            }
+            Some(
+                ConceptLifecycleTable::decode_bytes(&bytes)
+                    .map_err(IndexedRegistryError::Lifecycle)?,
+            )
+        } else {
+            None
+        };
         Ok(Self {
             obr: Mutex::new(obr),
             obr_len,
@@ -272,11 +299,16 @@ impl IndexedConceptRegistry {
             ccid_index,
             cache: Mutex::new(LookupCache::new(cache_capacity)),
             metadata,
+            lifecycle,
         })
     }
 
     pub const fn metadata(&self) -> ObrHeaderMetadata {
         self.metadata
+    }
+
+    pub fn lifecycle_table(&self) -> Option<&ConceptLifecycleTable> {
+        self.lifecycle.as_ref()
     }
 
     pub fn resolve_checked(&self, name: &str) -> Result<ResolveResult, IndexedRegistryError> {
@@ -407,6 +439,10 @@ impl ConceptLookup for IndexedConceptRegistry {
     fn describe_checked(&self, ccid: &Ccid) -> Result<Option<ResolvedConcept>, ConceptLookupError> {
         self.get_by_ccid_checked(ccid)
             .map_err(|error| ConceptLookupError::new(error.to_string()))
+    }
+
+    fn lifecycle_table(&self) -> Option<&ConceptLifecycleTable> {
+        self.lifecycle.as_ref()
     }
 }
 
@@ -554,6 +590,7 @@ mod tests {
             sources: BTreeMap::new(),
             label_index: None,
             ccid_index: None,
+            lifecycle_blake3: None,
         };
 
         let registry = IndexedConceptRegistry::open(&obr_path, &manifest, 2).unwrap();
@@ -655,6 +692,7 @@ mod tests {
             sources: BTreeMap::new(),
             label_index: None,
             ccid_index: None,
+            lifecycle_blake3: None,
         };
 
         let registry = IndexedConceptRegistry::open(&obr_path, &manifest, 2).unwrap();

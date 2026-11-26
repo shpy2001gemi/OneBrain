@@ -847,4 +847,185 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get initLocalImportError =>
       'The selected artifact was cancelled, unreadable, too short, too long or did not match the signed chunk ledger. Verified durable bytes were kept for resume.';
+
+  @override
+  String get wave7ReadyOfflineTitle => 'Ready offline';
+
+  @override
+  String get wave7ReadyOfflineBody =>
+      'Verified Concept Registry slot is active and demand-paged. Private KU encoding, semantic search, read-only local KQL and encrypted backup are unlocked offline.';
+
+  @override
+  String get wave7ActivateRegistryAction =>
+      'Verify whole artifacts & activate slot';
+
+  @override
+  String get wave7RollbackRegistryAction => 'Roll back to previous slot (N-1)';
+
+  @override
+  String get wave7GcRegistryAction => 'Reclaim retired Registry slots';
+
+  @override
+  String get wave7SourcePlanAction => 'Multi-source plan & policy';
+
+  @override
+  String get wave7ReadinessOnboardingTitle => 'Offline readiness summary';
+
+  @override
+  String get wave7ReadinessOnboardingBody =>
+      'Review active local capabilities and gated boundaries before entering your node.';
+
+  @override
+  String get wave7EnterNodeAction => 'Enter OneBrain node';
+
+  @override
+  String get wave7OperationsCenterTitle => 'Operations & transfers';
+
+  @override
+  String get wave7OperationDetailTitle => 'Operation receipt';
+
+  @override
+  String get wave7RegistrySettingsActiveBody =>
+      'Active generation slot verified by REGISTRY_HEALTH_V1. Demand-paged reader and N-1 rollback remain local.';
+
+  @override
+  String get wave7OpenRegistrySettingsAction => 'Manage Registry slots';
+
+  @override
+  String get wave7EncodeFromDraftAction => 'Encode canonical private KU';
+
+  @override
+  String get wave7EncodeTitle => 'Canonical private KU encoding';
+
+  @override
+  String get wave7EncodeGateBody =>
+      'Canonical KU encoding requires ReadyOffline with a healthy Concept Registry release. Save raw drafts now or complete Init first.';
+
+  @override
+  String get wave7EncodePreviewTitle => 'Encoding preview & lifecycle check';
+
+  @override
+  String get wave7SavePrivateKuAction => 'Save immutable LOCAL_ONLY KU';
+
+  @override
+  String get wave7MyKuTitle => 'My private KU';
+
+  @override
+  String get wave7SearchTitle => 'Semantic search';
+
+  @override
+  String get wave7KqlTitle => 'Read-only local KQL';
+
+  @override
+  String get wave7KqlHint => 'FIND (k:KU) WHERE gene_type = \"Fact\"';
+
+  @override
+  String get wave7RunKqlAction => 'Run local read-only query';
+
+  @override
+  String get wave7ConceptsBrowserTitle => 'Concept Registry browser';
+
+  @override
+  String get wave7NeighborhoodTitle => 'Local 2D neighborhood';
+
+  @override
+  String get wave7KuDetailTitle => 'Private KU detail';
+
+  @override
+  String get wave7KuRevisionAction => 'Create new immutable revision';
+
+  @override
+  String get wave7KuOrganizeAction => 'Private tags & collections';
+
+  @override
+  String get wave7KuWorkflowAction => '6-stage workflow inspection';
+
+  @override
+  String get wave7KuLineageAction => 'Revision & branch lineage';
+
+  @override
+  String get wave7KuAlternateAction => 'Alternate encodings';
+
+  @override
+  String get wave7KuFidelityTitle => 'Local encoding-fidelity portfolio';
+
+  @override
+  String get wave7KuFidelityDisclaimer =>
+      'SELF_ATTESTED records a local publisher EncodingAttempt only. It is frontier-relative, never establishes proposition truth, and never publishes to any network.';
+
+  @override
+  String get wave7BackupCreateAction => 'Create OBARV002 encrypted backup';
+
+  @override
+  String get wave7RestoreVerifyAction => 'Verify & stage OBARV002 restore';
+
+  @override
+  String get wave7ScopedExportAction => 'Export reviewed private bundle';
+
+  @override
+  String get wave7StorageCleanupTitle => 'Derived cache & staging cleanup';
+
+  @override
+  String get wave7RunGcAction => 'Reclaim derived caches (keep OwnedOriginal)';
+
+  @override
+  String get wave7AssistantLocalHelperLabel =>
+      'LLM-0 deterministic local helper';
+
+  @override
+  String get wave7AssistantNoLlmChip => 'No LLM active · deterministic mode';
+
+  @override
+  String get wave7AssistantSendAction => 'Ask local helper';
+
+  @override
+  String get wave7ToolConsentTitle => 'Durable tool proposal review';
+
+  @override
+  String get wave7ToolApproveAction => 'Authorize bounded execution';
+
+  @override
+  String get wave7ToolDenyAction => 'Deny proposal';
+
+  @override
+  String get wave7CloudDisclosureTitle => 'Cloud disclosure gate';
+
+  @override
+  String get wave7ModelsTitle => 'Signed model catalog';
+
+  @override
+  String get wave7ActivateModelAction => 'Verify & activate signed model';
+
+  @override
+  String get wave7RollbackModelAction => 'Deactivate / roll back model';
+
+  @override
+  String get wave7MediaViewerTitle => 'Verified-range private media viewer';
+
+  @override
+  String get wave7MediaInfoTitle => 'Logical piece & pack manifest';
+
+  @override
+  String get wave7ActivityInboxTitle => 'Activity & approvals inbox';
+
+  @override
+  String get wave7NotificationsSettingsTitle =>
+      'Notification channels & quiet hours';
+
+  @override
+  String get wave7BackgroundPolicyTitle =>
+      'Single ActivationArbiter & energy policy';
+
+  @override
+  String get wave7DiagnosticsTitle => 'Redacted diagnostics export';
+
+  @override
+  String get wave7AdvancedGatesTitle => 'Feature gates & schema migrations';
+
+  @override
+  String get wave7NetworkedBetaNotice =>
+      'MOB-GATE-NETWORKED-BETA is disabled by default in this build. Passive OBP reunion matching stays local-only and quarantined; P2P sync, blind fidelity network, and public publication routes are absent.';
+
+  @override
+  String get wave7AboutTitle => 'About this autonomous node';
 }
