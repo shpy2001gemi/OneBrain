@@ -19,7 +19,8 @@ authenticated ``POST /api/vnext/ku/editor`` share actions:
   ``--api-token-file`` (when ``onebrain`` is built or ``--require-cli-client``
   is passed), and a final local-only offline receiver restart.
 
-It checks prepare (nothing enqueued) -> refused ``confirm_public=false`` ->
+It checks prepare (nothing enqueued) -> sender restart with the exact preview
+read back by the same ``prepared_id`` (D-062) -> refused ``confirm_public=false`` ->
 explicit confirm -> ``Acknowledged`` intent -> receiver inspection of the same
 Public CID/bytes with authenticated sender provenance, then restarts both
 processes and checks durability, idempotent same-intent retry, and (for Web/CLI
@@ -621,6 +622,8 @@ class Check:
                    same and read_back.get("enqueued") is False
                    and read_back.get("payload_sent") is False,
                    f"{code} {error_code(env) or ''}".rstrip())
+        if not self.check_prepared_survives_sender_restart(prepared, sid, intent_preexisting):
+            return
         code, env = self.editor("share_confirm", {"prepared_id": prepared["prepared_id"],
                                                   "confirm_public": False})
         self.check("confirm_public=false is refused", not ok(code, env), f"{code} {error_code(env)}")
@@ -636,6 +639,7 @@ class Check:
             self.check("onebrain ku share confirm showed the host preview before the prompt",
                        CONFIRM_PREVIEW_MARKER in err and pub in err)
         self.check_delivery_note(confirmed, "")
+        self.check_confirm_replay_refused(prepared)
 
         state, view = None, {}
         for _ in range(self.args.ack_timeout):
@@ -689,6 +693,42 @@ class Check:
         self.check("private KU readable after restart", ok(code, env))
         self.check_receiver_local_only_offline(prepared)
         self.check_share_cli_summary()
+
+    def check_prepared_survives_sender_restart(self, prepared: dict, sid: str,
+                                               intent_preexisting: bool) -> bool:
+        """D-062: restart the sender between prepare and confirm (as stop-web.ps1 does).
+
+        The unexpired preparation must read back byte-identical through
+        ``share_preview`` with the same ``prepared_id``; the restart itself must
+        not confirm, enqueue or send anything.
+        """
+        self.web.stop(graceful=False)
+        stopped = self.web.p.returncode is not None
+        sid_r, _ = self.start_web()
+        self.check("sender restart between prepare and confirm keeps its NodeID (D-062)",
+                   stopped and sid_r == sid)
+        code, env = self.editor("share_preview", {"prepared_id": prepared["prepared_id"]})
+        read_back = payload(env) if ok(code, env) else {}
+        same = all(read_back.get(k) == prepared.get(k) for k in (
+            "prepared_id", "public_object_cid", "intent_id", "canonical_base64", "expires_at"))
+        restored = self.check(
+            "share_preview after sender restart reads back the exact prepared preview (D-062)",
+            same and read_back.get("enqueued") is False and read_back.get("payload_sent") is False,
+            f"{code} {error_code(env) or ''}".rstrip())
+        if not intent_preexisting:
+            code, env = self.editor("share_intent", {"intent_id": prepared["intent_id"]})
+            self.check("sender restart alone creates no outbound intent", not ok(code, env),
+                       f"{code} {error_code(env) or ''}".rstrip())
+        return restored
+
+    def check_confirm_replay_refused(self, prepared: dict) -> None:
+        """D-062: the durable preparation is single-use; a replayed confirm is refused."""
+        code, env = self.api.editor("share_confirm", {"prepared_id": prepared["prepared_id"],
+                                                      "confirm_public": True})
+        message = (env.get("error") or {}).get("message")
+        self.check("replayed share_confirm of the consumed prepared_id is refused",
+                   not ok(code, env) and message == "prepared_share_missing",
+                   f"{code} {error_code(env) or ''} {message or ''}".rstrip())
 
     def seed_sample_ku(self) -> None:
         """Explicit opt-in: save one private sample KU through the ``/ku`` button API.

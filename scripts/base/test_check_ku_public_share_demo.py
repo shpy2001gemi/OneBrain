@@ -448,6 +448,52 @@ class CheckKuPublicShareDemoTests(unittest.TestCase):
                 check.check_share_cli_summary()
             self.assertFalse(check.results[-1]["pass"])
 
+    def test_prepared_share_restart_reads_back_exact_preview_and_replay_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            sender_path, receiver_path, _ = self._write_host_configs(root)
+            check = demo.Check(self._make_args(sender_path, receiver_path, skip_cli_client=True))
+            prepared = {"prepared_id": "ab" * 32, "public_object_cid": "ef" * 32,
+                        "intent_id": "cd" * 32, "canonical_base64": "AAE=",
+                        "expires_at": 1_800_000_000, "enqueued": False, "payload_sent": False}
+            old_web = MagicMock()
+            old_web.p.returncode = None
+            old_web.stop.side_effect = lambda graceful: setattr(old_web.p, "returncode", 1)
+            check.web = old_web
+            sid = "11" * 32
+            calls: list[tuple[str, dict]] = []
+            preview = dict(prepared)
+
+            def fake_editor(action, body):
+                calls.append((action, body))
+                if action == "share_preview":
+                    return 200, {"ok": True, "data": {"payload": preview}}
+                if action == "share_confirm":
+                    return 404, {"ok": False, "error": {"code": "not_found",
+                                                        "message": "prepared_share_missing"}}
+                return 404, {"ok": False, "error": {"code": "not_found"}}
+
+            with patch.object(check, "start_web", return_value=(sid, "127.0.0.1:1")) as start, \
+                    patch.object(check.api, "editor", side_effect=fake_editor), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertTrue(check.check_prepared_survives_sender_restart(prepared, sid, False))
+                check.check_confirm_replay_refused(prepared)
+            old_web.stop.assert_called_once_with(graceful=False)
+            start.assert_called_once()
+            self.assertEqual([a for a, _ in calls], ["share_preview", "share_intent", "share_confirm"])
+            self.assertIs(calls[-1][1]["confirm_public"], True)
+            self.assertTrue(all(r["pass"] for r in check.results), check.results)
+
+            # A changed preview after restart (e.g. extended expiry) fails the check.
+            preview["expires_at"] = prepared["expires_at"] + 900
+            check.web, check.results = old_web, []
+            old_web.p.returncode = None
+            with patch.object(check, "start_web", return_value=(sid, "127.0.0.1:1")), \
+                    patch.object(check.api, "editor", side_effect=fake_editor), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertFalse(check.check_prepared_survives_sender_restart(prepared, sid, True))
+            self.assertFalse(check.results[-1]["pass"])
+
 
 if __name__ == "__main__":
     unittest.main()

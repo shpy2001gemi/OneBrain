@@ -6,7 +6,29 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — prepared Public KU share survives host restart (D-062, t17, 2026-11-26)
+## Latest follow-up — live two-node sender restart between prepare and confirm (D-062, t18, 2026-11-26)
+
+After t17 the owner chose the recommended item: prove D-062 through real hosts, not only the
+in-process API restart test. No product behavior, decision, wire or DTO change.
+
+- **Check:** [check_ku_public_share_demo.py](../../../../scripts/base/check_ku_public_share_demo.py)
+  `check_prepared_survives_sender_restart` stops the sender right after `share_prepare` +
+  `share_preview` (terminate, as `stop-web.ps1`), restarts it from the same config and requires the
+  same NodeID, a byte-identical `share_preview` read-back for the same `prepared_id`
+  (`prepared_id`, Public CID, intent id, canonical bytes, `expires_at`; `enqueued`/`payload_sent`
+  false) and still no outbound intent. The existing `confirm_public=false` refusal, mistyped CLI
+  confirm and explicit confirm then run on the restored preparation. `check_confirm_replay_refused`
+  replays HTTP `share_confirm` with the consumed id and requires `prepared_share_missing`.
+- **Test:** synthetic `test_prepared_share_restart_reads_back_exact_preview_and_replay_is_refused`
+  (an extended `expires_at` after restart fails the check).
+- **CI:** no workflow change; the printed CLI/CLI (`--cli-share`) and Web/Web lines of
+  `KU dev demo scripts` (Linux/macOS/Windows) now include the restart step.
+
+Live run 2026-11-26, Windows, fresh DEV-ONLY bootstrap roots: CLI/CLI 63/63 and Web/Web 53/53.
+Not covered: `ku_peer_demo` receiver (not a sender) stays in memory; no browser click-test,
+real Registry, non-loopback/NAT; DEV-ONLY, no qualification.
+
+## Earlier follow-up — prepared Public KU share survives host restart (D-062, t17, 2026-11-26)
 
 Backlog item "prepared share only in memory": restarting the normal host lost every
 unexpired `share prepare`, so the user had to prepare again. The owner chose the
@@ -33,7 +55,7 @@ recommended option D-062.
   replay after confirm returns `prepared_share_missing` (durable record gone).
 
 Checks: see the PROGRESS checkpoint. Not covered: the isolated `ku_peer_demo` helper and library
-`PublicKuShareCoordinator` callers stay in memory; no live two-node restart run; same DEV-ONLY/
+`PublicKuShareCoordinator` callers stay in memory; live two-node restart run added in t18; same DEV-ONLY/
 no-qualification limits.
 
 ## Earlier follow-up — prepared-preview read-back `share_preview` before CLI confirm (D-059, t16, 2026-11-25)
