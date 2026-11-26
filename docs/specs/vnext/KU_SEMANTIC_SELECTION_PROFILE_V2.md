@@ -104,6 +104,15 @@ Omission asserts no conjunction or contrast operator. Groups whose quote also
 contains an OR cue, whose quote is not a bound argument, which do not resolve
 uniquely, or which contain a resolved reference target stay unrouted.
 
+Comparison binding errors may dispatch a `comparisons`-only repair (D-065). A
+comparison flagged `property_binding` whose property and the claim predicate are
+contiguous whitespace-bounded token extensions of one another may only be rebound
+to the exact claim predicate. A comparison flagged `unexpected_target` (a target
+emitted with `target_kind: unspecified`) may only omit that ungrounded target; the
+`target_unspecified` issue stays visible. Comparison count, cues and target kinds
+are fixed, no target is added, substituted or marked explicit, and full
+revalidation still applies. Unrelated properties stay unrouted.
+
 ## Lifecycle, limits and compatibility
 
 Use the existing durable reservations, cancel/restart fencing and consent boundary.

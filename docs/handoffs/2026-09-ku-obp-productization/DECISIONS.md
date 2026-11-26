@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-065 — Bounded repair for comparison binding errors (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issues
+`property_binding` and `unexpected_target` dispatch one bounded `comparisons`
+repair. A flagged property may only be rebound to the exact claim predicate, and
+only when the two are contiguous whitespace-bounded token extensions of one another
+(unrelated properties do not dispatch). A target emitted with `target_kind:
+unspecified` may only be omitted; `target_unspecified` stays visible. Count, cues
+and target kinds are fixed; no target is added, substituted or marked explicit; full
+host revalidation (no new issues, no coverage loss) applies. Deterministic tests
+only; no model run, no fidelity claim, user host stays v1.
+
 ## D-064 — Bounded repair for a conjunction cue in an OR group (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: `incompatible_or_cue`

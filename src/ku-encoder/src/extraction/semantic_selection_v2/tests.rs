@@ -976,3 +976,108 @@ fn incompatible_or_cue_dispatches_only_whole_group_drop_keeping_exact_argument()
             .is_empty()
     );
 }
+
+#[test]
+fn comparison_binding_and_stray_target_dispatch_only_rebind_or_omission() {
+    // D-065: rebind a token-extended property to the exact predicate; omit a
+    // target emitted with `target_kind: unspecified`. Nothing becomes explicit.
+    let source = "Xe đỏ nhanh hơn xe xanh.";
+    let selection = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh hơn","cue":"hơn","target_kind":"unspecified","target":{"quote":"xe xanh"}}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[0].comparisons: property_binding",
+            "selection[0].comparisons: target_unspecified",
+            "selection[0].comparisons: unexpected_target",
+        ]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["comparisons".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["comparisons"],
+        json!({"count":1,"property":["nhanh","nhanh hơn"],"target_kind":["unspecified"],"targets":["xe xanh"],"repairable":[{"comparison":0,"property":"nhanh","omit_target":true}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let cmp = &wire["properties"]["patch"]["properties"]["comparisons"];
+    assert_eq!(
+        (cmp["minItems"].clone(), cmp["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    let props = &cmp["items"]["properties"];
+    assert_eq!(props["property"]["enum"], json!(["nhanh", "nhanh hơn"]));
+    assert_eq!(props["target_kind"]["enum"], json!(["unspecified"]));
+    assert_eq!(
+        props["target"]["properties"]["quote"]["enum"],
+        json!(["xe xanh"])
+    );
+    // Accepted: rebind and omit; the unspecified target stays visible.
+    let (changed, draft, after) = apply_repair(
+        source,
+        &selection,
+        target,
+        &fields,
+        &json!({"patch":{"comparisons":[{"property":"nhanh","cue":"hơn","target_kind":"unspecified"}]}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[0].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0]["arguments"], json!(["xe xanh"]));
+    assert!(draft["statements"][0]["comparisons"][0]
+        .get("target")
+        .is_none());
+    // Rejected: marked explicit, other property, new target, dropped comparison, cue.
+    let reject = |comparisons: Value| {
+        apply_repair(
+            source,
+            &selection,
+            target,
+            &fields,
+            &json!({"patch":{"comparisons":comparisons}}),
+            &mut budget(),
+        )
+        .is_err()
+    };
+    let base = selection["claims"][0]["comparisons"].clone();
+    assert!(reject(base.clone()));
+    let mut explicit = base.clone();
+    explicit[0]["target_kind"] = json!("explicit");
+    assert!(reject(explicit));
+    let mut other_property = base.clone();
+    other_property[0]["property"] = json!("xe xanh");
+    assert!(reject(other_property));
+    let mut new_target = base.clone();
+    new_target[0]["target"] = json!({"quote":"Xe đỏ"});
+    assert!(reject(new_target));
+    assert!(reject(json!([])));
+    let mut cue = base.clone();
+    cue[0]["cue"] = json!("nhanh hơn");
+    assert!(reject(cue));
+
+    // Unrouted: property that is not a whitespace-bounded token extension.
+    for property in ["xe xanh", "nhanhh"] {
+        let unrelated = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":property,"cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}}]}]});
+        let (_, v) = assemble(source, &unrelated, &mut budget()).unwrap();
+        assert_eq!(v.issues, vec!["selection[0].comparisons: property_binding"]);
+        assert!(repair_target(source, &unrelated, &v, &mut budget())
+            .unwrap()
+            .is_none());
+    }
+}

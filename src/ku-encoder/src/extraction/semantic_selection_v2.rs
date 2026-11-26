@@ -285,6 +285,34 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             branch["properties"]["borrowed"]["properties"]["quote"]["enum"] = json!(quotes);
         }
     }
+    if let Some(cmp) = wire["properties"]["patch"]["properties"].get_mut("comparisons") {
+        // D-065: no comparison added or removed; every value from host choices.
+        let c = &choices["comparisons"];
+        let count = c["count"]
+            .as_u64()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        cmp["minItems"] = json!(count);
+        cmp["maxItems"] = json!(count);
+        let props = &mut cmp["items"]["properties"];
+        for (key, choice) in [("property", "property"), ("target_kind", "target_kind")] {
+            let options = c[choice]
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!options.is_empty(), "selection_repair_choice")?;
+            props[key]["enum"] = json!(options);
+        }
+        let targets = c["targets"]
+            .as_array()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        if targets.is_empty() {
+            props
+                .as_object_mut()
+                .ok_or(ExtractionError("schema"))?
+                .remove("target");
+        } else {
+            props["target"]["properties"]["quote"]["enum"] = json!(targets);
+        }
+    }
     for (key, choice) in [("arguments", "arguments"), ("links", "to")] {
         if wire["properties"]["patch"]["properties"].get(key).is_some() {
             let options = choices[choice]
@@ -715,8 +743,67 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
+        if ["property_binding", "unexpected_target"]
+            .iter()
+            .any(|code| {
+                v.issues
+                    .contains(&format!("selection[{i}].comparisons: {code}"))
+            })
+            && !comparison_choices(claim).is_empty()
+        {
+            return Ok(Some((i, vec!["comparisons".into()])));
+        }
     }
     Ok(None)
+}
+
+/// D-065 finite choices for one flagged comparison.
+struct ComparisonRepair {
+    rebind: bool,
+    omit_target: bool,
+}
+
+/// True when the shorter string occurs in the longer one bounded by whitespace
+/// or the string edges, so one is a contiguous token extension of the other.
+fn token_extension(a: &str, b: &str) -> bool {
+    let (short, long) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if short.trim().is_empty() || short == long {
+        return false;
+    }
+    long.match_indices(short).any(|(at, _)| {
+        let end = at + short.len();
+        long[..at]
+            .chars()
+            .next_back()
+            .is_none_or(char::is_whitespace)
+            && long[end..].chars().next().is_none_or(char::is_whitespace)
+    })
+}
+
+/// D-065: comparisons flagged `property_binding` whose property and the claim
+/// predicate are contiguous whitespace-bounded token extensions of one another
+/// may only be rebound to the exact claim predicate; comparisons flagged
+/// `unexpected_target` (a target with `target_kind: unspecified`) may only omit
+/// that stray target. No target is invented, re-kinded or marked explicit, and
+/// unrelated properties stay unrouted so futile repairs never dispatch.
+fn comparison_choices(claim: &Value) -> BTreeMap<usize, ComparisonRepair> {
+    let predicate = text(&claim["predicate"]);
+    let mut out = BTreeMap::new();
+    for (j, cmp) in items(claim, "comparisons").enumerate() {
+        let rebind = cmp["property"] != claim["predicate"]
+            && token_extension(text(&cmp["property"]), predicate);
+        let omit_target = cmp["target_kind"] == "unspecified" && cmp.get("target").is_some();
+        if rebind || omit_target {
+            out.insert(
+                j,
+                ComparisonRepair {
+                    rebind,
+                    omit_target,
+                },
+            );
+        }
+    }
+    out
 }
 
 /// D-064: OR groups flagged `incompatible_or_cue` (a known conjunction or
@@ -1124,6 +1211,44 @@ pub fn repair_choices(
         }
         choices["alternatives"] = alt_choices;
     }
+    if fields.iter().any(|f| f == "comparisons") {
+        let claim = selection["claims"]
+            .as_array()
+            .and_then(|c| c.get(target))
+            .ok_or(ExtractionError("selection_repair_target"))?;
+        // D-065: same comparison count; property/kind/target only from existing values
+        // plus the exact claim predicate for flagged property bindings.
+        let repairs = comparison_choices(claim);
+        let mut properties = BTreeSet::new();
+        let mut kinds = BTreeSet::new();
+        let mut targets = BTreeSet::new();
+        for cmp in items(claim, "comparisons") {
+            properties.insert(text(&cmp["property"]).to_owned());
+            kinds.insert(text(&cmp["target_kind"]).to_owned());
+            if let Some(q) = cmp["target"]["quote"].as_str() {
+                targets.insert(q.to_owned());
+            }
+        }
+        let mut listed = Vec::new();
+        for (j, r) in &repairs {
+            let mut entry = json!({ "comparison": j });
+            if r.rebind {
+                properties.insert(text(&claim["predicate"]).to_owned());
+                entry["property"] = claim["predicate"].clone();
+            }
+            if r.omit_target {
+                entry["omit_target"] = json!(true);
+            }
+            listed.push(entry);
+        }
+        choices["comparisons"] = json!({
+            "count": items(claim, "comparisons").count(),
+            "property": properties,
+            "target_kind": kinds,
+            "targets": targets,
+            "repairable": listed,
+        });
+    }
     Ok(choices)
 }
 pub fn apply_repair(
@@ -1186,6 +1311,32 @@ pub fn apply_repair(
                 previous.len() == next.len(),
                 "selection_repair_structure_loss",
             )?;
+            if key == "comparisons" {
+                // D-065: cue and kind fixed; a flagged property may only become the
+                // exact claim predicate and a flagged stray target may only be omitted.
+                let repairs = comparison_choices(old);
+                for (j, (before, after)) in previous.iter().zip(next).enumerate() {
+                    let r = repairs.get(&j);
+                    require(
+                        before["cue"] == after["cue"]
+                            && before["target_kind"] == after["target_kind"],
+                        "selection_repair_structure_loss",
+                    )?;
+                    require(
+                        before["property"] == after["property"]
+                            || (r.is_some_and(|r| r.rebind)
+                                && after["property"] == old["predicate"]),
+                        "selection_repair_choice",
+                    )?;
+                    require(
+                        before.get("target") == after.get("target")
+                            || (r.is_some_and(|r| r.omit_target) && after.get("target").is_none()),
+                        "selection_repair_choice",
+                    )?;
+                }
+                result["claims"][target][key] = value.clone();
+                continue;
+            }
             for (g, (before, after)) in previous.iter().zip(next).enumerate() {
                 let retained: &[&str] = match key.as_str() {
                     "alternatives" => &["quote", "cue", "exclusivity"],
