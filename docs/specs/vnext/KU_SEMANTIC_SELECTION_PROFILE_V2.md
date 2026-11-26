@@ -211,6 +211,16 @@ selectors and target kinds stay unchanged, no token outside the emitted
 sub-word slice is accepted, and full revalidation applies. References without a
 valid cross-claim target token run stay unrouted in `needs_review`.
 
+A claim flagged `references: cycle` whose cyclic `references` entries can all be
+omitted without adding any issue or losing source coverage (for example, when
+`via` remains covered by a symmetric `contrast` link or bound role) may join
+that `references`-only repair (D-075). Its only finite choice for those cyclic
+references is omitting all cyclic references of that claim together while
+keeping every non-cyclic sibling reference byte-identical and in order; no
+`via`, `to` or `target_kind` is substituted during omission, partial cycle drops
+are rejected, and full revalidation applies. Cyclic claims whose omission would
+uncover `via` stay unrouted in `needs_review`.
+
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound

@@ -2995,3 +2995,176 @@ fn qualifier_predicate_overlap_dispatches_only_whitespace_bounded_predicate_trim
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn references_cycle_dispatches_only_coverage_preserving_cyclic_omission() {
+    // D-075 (round 2): when mutual/cyclic `references` raise `references: cycle`,
+    // a claim whose cyclic reference `via` remains covered (e.g. by a symmetric
+    // `contrast` link) may omit only its cyclic references while keeping
+    // non-cyclic sibling references byte-identical and in order; claims whose
+    // cyclic `via` would become uncovered skip dispatch.
+    let source = "Trong đó , nhiên liệu lỏng tạo lực đẩy lớn . Ngược lại , nhiên liệu rắn bảo quản dễ nhờ kho khô . Kho khô giữ vật liệu ổn định .";
+    let kept_sibling = json!({
+        "via": {"quote": "nhờ"},
+        "to": {"quote": "Kho khô"},
+        "target_kind": "term"
+    });
+    let cyclic_ref = json!({
+        "via": {"quote": "Ngược lại"},
+        "to": {"quote": "nhiên liệu lỏng"},
+        "target_kind": "term"
+    });
+    let selection = json!({"claims":[
+        {
+            "subject": "nhiên liệu lỏng",
+            "predicate": "tạo",
+            "arguments": ["lực đẩy lớn"],
+            "anchor": "Trong đó , nhiên liệu lỏng tạo lực đẩy lớn",
+            "references": [{
+                "via": {"quote": "Trong đó"},
+                "to": {"quote": "nhiên liệu rắn"},
+                "target_kind": "term"
+            }]
+        },
+        {
+            "subject": "nhiên liệu rắn",
+            "predicate": "bảo quản dễ",
+            "arguments": ["kho khô"],
+            "anchor": "Ngược lại , nhiên liệu rắn bảo quản dễ nhờ kho khô",
+            "links": [{
+                "to": "Trong đó , nhiên liệu lỏng tạo lực đẩy lớn",
+                "kind": "contrast",
+                "via": "Ngược lại"
+            }],
+            "references": [cyclic_ref.clone(), kept_sibling.clone()]
+        },
+        {
+            "subject": "Kho khô",
+            "predicate": "giữ",
+            "arguments": ["vật liệu ổn định"],
+            "anchor": "Kho khô giữ vật liệu ổn định"
+        }
+    ]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[0].references: cycle",
+            "selection[1].references: cycle"
+        ]
+    );
+    assert!(
+        validation.uncovered.is_empty(),
+        "{:?}",
+        validation.uncovered
+    );
+    // Claim 0 cannot drop its cyclic reference without uncovering `"Trong đó"`,
+    // so `repair_target` skips claim 0 and dispatches claim 1 (`via: "Ngược lại"`
+    // stays covered by claim 1's symmetric `contrast` link).
+    assert!(reference_cycle_drops(source, &selection, 0, &mut budget())
+        .unwrap()
+        .is_empty());
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["references".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(choices["references"]["count"], json!(2));
+    assert_eq!(choices["references"]["drop"], json!([0]));
+    assert_eq!(
+        choices["references"]["repairable"],
+        json!([{"reference": 0, "may_omit": true}])
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let refs_prop = &wire["properties"]["patch"]["properties"]["references"];
+    assert_eq!(
+        (refs_prop["minItems"].clone(), refs_prop["maxItems"].clone()),
+        (json!(1), json!(2))
+    );
+    let apply = |sel: &Value, refs: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch": {"references": refs}}),
+            &mut budget(),
+        )
+    };
+    let (changed, draft, after) = apply(&selection, json!([kept_sibling.clone()])).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(
+        changed["claims"][1]["references"],
+        json!([kept_sibling.clone()])
+    );
+    assert_eq!(
+        draft["statements"][0]["references"][0]["target_id"],
+        "claim-1-role-0"
+    );
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-2-role-0"
+    );
+    assert_eq!(draft["statements"][1]["relations"][0]["kind"], "contrast");
+
+    // Rejected: no-op, dropping the non-cyclic sibling instead, dropping both,
+    // or mutating the kept sibling while omitting the cyclic reference.
+    assert!(apply(
+        &selection,
+        json!([cyclic_ref.clone(), kept_sibling.clone()])
+    )
+    .is_err());
+    assert!(apply(&selection, json!([cyclic_ref.clone()])).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+    let mut mutated_sibling = kept_sibling.clone();
+    mutated_sibling["target_kind"] = json!("claim");
+    assert!(apply(&selection, json!([mutated_sibling])).is_err());
+
+    // Partial drop rejected when two cyclic references exist on the same claim.
+    let mut two_cycles = selection.clone();
+    two_cycles["claims"][2]["references"] = json!([{
+        "via": {"quote": "Kho khô"},
+        "to": {"quote": "nhiên liệu rắn"},
+        "target_kind": "term"
+    }]);
+    let (_, two_v) = assemble(source, &two_cycles, &mut budget()).unwrap();
+    assert!(two_v
+        .issues
+        .contains(&"selection[1].references: cycle".to_owned()));
+    // Claim 1's second reference (`nhờ`) has no backup coverage, so dropping all
+    // cyclic references of claim 1 would uncover `nhờ`: claim 1 skips dispatch,
+    // while claim 2 (`via: "Kho khô"` covered by subject) dispatches omission.
+    assert!(reference_cycle_drops(source, &two_cycles, 1, &mut budget())
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        repair_target(source, &two_cycles, &two_v, &mut budget()).unwrap(),
+        Some((2, vec!["references".into()]))
+    );
+
+    // Unrouted: mutual cycle where neither claim keeps `via` coverage on omission.
+    let mut unrouted = selection.clone();
+    unrouted["claims"][1]["links"] = json!([]);
+    let (_, uv) = assemble(source, &unrouted, &mut budget()).unwrap();
+    assert_eq!(
+        uv.issues,
+        vec![
+            "selection[0].references: cycle",
+            "selection[1].references: cycle"
+        ]
+    );
+    assert!(repair_target(source, &unrouted, &uv, &mut budget())
+        .unwrap()
+        .is_none());
+}

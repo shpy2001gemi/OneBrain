@@ -22,6 +22,17 @@ VPS/NAT, `D-063` two physical machines, operator Registry release signing
   `vnext_distributed_pomv.rs` (`wait_acknowledged`, `wait_event_sources`) and
   `vnext_distributed_kql.rs` from 10 s to 30 s (`10 ms` poll interval and all
   production/runtime budgets unchanged).
+- **Round 2 (`KU-SEM-001` `references: cycle` bounded omission — 18th and final
+  `SEM-F03` mechanical repair slice):** when claim `i` is flagged
+  `references: cycle`, its cyclic `references` entries join the bounded
+  `references` repair only when omitting all cyclic references of claim `i`
+  clears `references: cycle` on that claim without adding any issue or losing
+  source coverage (for example, when `via` stays covered by a symmetric
+  `contrast` link or bound role); non-cyclic sibling references stay
+  byte-identical and in order, partial cycle drops and substitutions are
+  rejected, and claims whose omission would uncover `via` do not dispatch. With
+  all 18 mechanical `SEM-F03` host repairs merged, remaining `KU-SEM-001` items
+  require model evaluation or versioned contracts, so Rounds 3–5 switch tracks.
 
 ## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
 

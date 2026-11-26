@@ -1145,6 +1145,10 @@
           "needle": "qualifier_predicate_overlap_dispatches_only_whitespace_bounded_predicate_trim"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "references_cycle_dispatches_only_coverage_preserving_cyclic_omission"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

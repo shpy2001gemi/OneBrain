@@ -354,12 +354,13 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
         }
     }
     if let Some(refs) = wire["properties"]["patch"]["properties"].get_mut("references") {
-        // D-072: no reference added or removed; every quote/kind from host choices.
+        // D-072 / D-075: only listed cyclic references may be omitted; values from host choices.
         let c = &choices["references"];
         let count = c["count"]
             .as_u64()
             .ok_or(ExtractionError("selection_repair_choice"))?;
-        refs["minItems"] = json!(count);
+        let drops = c["drop"].as_array().map_or(0, |d| d.len() as u64);
+        refs["minItems"] = json!(count.saturating_sub(drops));
         refs["maxItems"] = json!(count);
         let props = &mut refs["items"]["properties"];
         for (key, choice) in [("via", "via"), ("to", "to")] {
@@ -847,14 +848,15 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
-        if ["cue_ambiguous", "target_absent_ambiguous_or_self"]
+        if ["cue_ambiguous", "target_absent_ambiguous_or_self", "cycle"]
             .iter()
             .any(|code| {
                 v.issues
                     .contains(&format!("selection[{i}].references: {code}"))
             })
             && (!reference_cue_choices(source, claim, b)?.is_empty()
-                || !reference_target_choices(source, selection, i, b)?.is_empty())
+                || !reference_target_choices(source, selection, i, b)?.is_empty()
+                || !reference_cycle_drops(source, selection, i, b)?.is_empty())
         {
             return Ok(Some((i, vec!["references".into()])));
         }
@@ -1651,6 +1653,98 @@ fn reference_target_choices(
     Ok(out)
 }
 
+/// D-075 (round 2): when claim `target` is flagged `references: cycle`,
+/// collect the indices of its `references` that resolve to a cross-claim
+/// target lying on a reference dependency cycle back to `target`, provided
+/// omitting all cyclic references of `target` clears `references: cycle` on
+/// `target` without adding any issue or losing source coverage (e.g. when
+/// `via` remains covered by a symmetric `contrast` link or bound role).
+/// Claims whose cycle cannot be broken without uncovering `via` return an
+/// empty set so futile repairs never dispatch.
+fn reference_cycle_drops(
+    source: &str,
+    selection: &Value,
+    target: usize,
+    b: &mut WorkBudget,
+) -> Result<BTreeSet<usize>> {
+    let mut out = BTreeSet::new();
+    let Some(claims) = selection["claims"].as_array() else {
+        return Ok(out);
+    };
+    let Some(claim) = claims.get(target) else {
+        return Ok(out);
+    };
+    if items(claim, "references").next().is_none() {
+        return Ok(out);
+    }
+    let (draft, before) = assemble(source, selection, b)?;
+    let cycle_issue = format!("selection[{target}].references: cycle");
+    if !before.issues.contains(&cycle_issue) {
+        return Ok(out);
+    }
+    let statements: Vec<&Value> = items(&draft, "statements").collect();
+    let mut edges: Vec<(usize, usize, usize)> = Vec::new();
+    for (k, st) in statements.iter().enumerate() {
+        for (j, r_out) in items(st, "references").enumerate() {
+            if let Some(tid) = r_out["target_id"].as_str() {
+                if let Some(rest) = tid.strip_prefix("claim-") {
+                    let digits = rest.split('-').next().unwrap_or("");
+                    if let Ok(dest) = digits.parse::<usize>() {
+                        if dest != k {
+                            edges.push((k, j, dest));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let reaches_target = |start: usize, b: &mut WorkBudget| -> Result<bool> {
+        let mut queue = vec![start];
+        let mut seen = BTreeSet::new();
+        while let Some(at) = queue.pop() {
+            b.charge(1)?;
+            if at == target {
+                return Ok(true);
+            }
+            if seen.insert(at) {
+                queue.extend(edges.iter().filter(|e| e.0 == at).map(|e| e.2));
+            }
+        }
+        Ok(false)
+    };
+    let mut cyclic = BTreeSet::new();
+    for &(src, j, dest) in &edges {
+        if src == target && reaches_target(dest, b)? {
+            cyclic.insert(j);
+        }
+    }
+    if cyclic.is_empty() {
+        return Ok(out);
+    }
+    let positions = |v: &Validation| -> BTreeSet<usize> {
+        v.uncovered
+            .iter()
+            .flat_map(|q| quote_positions(source, q))
+            .flat_map(|(s, e)| s..e)
+            .collect()
+    };
+    let mut trial = selection.clone();
+    let kept: Vec<Value> = items(claim, "references")
+        .enumerate()
+        .filter(|(j, _)| !cyclic.contains(j))
+        .map(|(_, r)| r.clone())
+        .collect();
+    trial["claims"][target]["references"] = json!(kept);
+    let (_, after) = assemble(source, &trial, b)?;
+    if !after.issues.contains(&cycle_issue)
+        && after.issues.iter().all(|s| before.issues.contains(s))
+        && positions(&after).is_subset(&positions(&before))
+    {
+        out = cyclic;
+    }
+    Ok(out)
+}
+
 struct GroupScopeRepair {
     group: usize,
     group_span: (usize, usize),
@@ -2247,11 +2341,13 @@ pub fn repair_choices(
             .as_array()
             .and_then(|c| c.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
-        // D-072 / D-074 (slice 2): same reference count; `target_kind` fixed;
-        // unflagged `via` and `to` quotes stay as emitted and flagged ones list
-        // only local token runs.
+        // D-072 / D-074 (slice 2) / D-075 (round 2): `target_kind` fixed;
+        // unflagged `via` and `to` quotes stay as emitted, flagged ones list
+        // only local token runs, and coverage-preserving cyclic references may
+        // only be omitted (`drop`).
         let via_repairs = reference_cue_choices(source, claim, b)?;
         let to_repairs = reference_target_choices(source, selection, target, b)?;
+        let drops = reference_cycle_drops(source, selection, target, b)?;
         let mut via = BTreeSet::new();
         let mut to = BTreeSet::new();
         let mut kinds = BTreeSet::new();
@@ -2267,6 +2363,7 @@ pub fn repair_choices(
         let flagged: BTreeSet<usize> = via_repairs
             .keys()
             .chain(to_repairs.keys())
+            .chain(drops.iter())
             .copied()
             .collect();
         let mut listed = Vec::new();
@@ -2280,15 +2377,22 @@ pub fn repair_choices(
                 to.extend(options.iter().cloned());
                 entry["to"] = json!(options);
             }
+            if drops.contains(&j) {
+                entry["may_omit"] = json!(true);
+            }
             listed.push(entry);
         }
-        choices["references"] = json!({
+        let mut ref_choices = json!({
             "count": items(claim, "references").count(),
             "via": via,
             "to": to,
             "target_kind": kinds,
             "repairable": listed,
         });
+        if !drops.is_empty() {
+            ref_choices["drop"] = json!(drops);
+        }
+        choices["references"] = ref_choices;
     }
     Ok(choices)
 }
@@ -2377,6 +2481,26 @@ pub fn apply_repair(
                             kept.next();
                         }
                         _ => require(options.is_some(), "selection_repair_choice")?,
+                    }
+                }
+                require(kept.next().is_none(), "selection_repair_structure_loss")?;
+                result["claims"][target][key] = value.clone();
+                continue;
+            }
+            if key == "references" && next.len() < previous.len() {
+                // D-075 (round 2): only listed cyclic references may be omitted,
+                // every non-cyclic reference stays byte-identical and in its
+                // original order, and all cyclic references of the target claim
+                // must be cleared together.
+                let drops = reference_cycle_drops(source, base, target, b)?;
+                require(!drops.is_empty(), "selection_repair_structure_loss")?;
+                let mut kept = next.iter().peekable();
+                for (j, before) in previous.iter().enumerate() {
+                    if kept.peek() == Some(&before) {
+                        require(!drops.contains(&j), "selection_repair_choice")?;
+                        kept.next();
+                    } else {
+                        require(drops.contains(&j), "selection_repair_choice")?;
                     }
                 }
                 require(kept.next().is_none(), "selection_repair_structure_loss")?;
