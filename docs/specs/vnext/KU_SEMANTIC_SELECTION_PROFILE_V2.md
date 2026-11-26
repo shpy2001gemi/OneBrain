@@ -151,6 +151,17 @@ full revalidation (no new issues, no coverage loss) applies. Groups without a
 unique local token run (such as an absent cue or a repeated single-token cue)
 stay unrouted in `needs_review`.
 
+A reference flagged `cue_ambiguous` (`via` does not resolve uniquely in the claim
+scope) may dispatch a `references`-only repair when finite local choices exist
+(D-072). A flagged reference may only narrow `via.quote` to one contiguous
+whitespace-bounded token run of the emitted `via.quote` itself that resolves
+uniquely in the same scope (any emitted `via.within` kept) and overlaps no
+resolved `to` span. Unflagged `via` selectors, reference count, `to` selectors and
+target kinds stay unchanged, no token outside the emitted `via.quote`, target
+token or sub-word slice is accepted, and full revalidation (no new issues, no
+coverage loss) applies. References without a unique local token run (such as an
+absent cue or a repeated single-token cue) stay unrouted in `needs_review`.
+
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound

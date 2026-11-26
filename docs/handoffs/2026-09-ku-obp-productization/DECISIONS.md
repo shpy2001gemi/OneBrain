@@ -1,5 +1,20 @@
 # Decisions and claim boundary
 
+## D-072 — Bounded narrowing for an unresolved reference cue (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: references issue
+`cue_ambiguous` (`via` does not resolve uniquely in the claim scope) dispatches a
+bounded `references`-only repair when finite local choices exist. A flagged
+reference may only narrow `via.quote` to a contiguous whitespace-bounded token
+run of the emitted `via.quote` itself that resolves uniquely in the same scope
+(any emitted `via.within` kept) and overlaps no resolved `to` span. Unflagged
+`via` selectors, reference count, `to` selectors and target kinds stay fixed;
+tokens outside the emitted `via.quote`, target tokens and sub-word slices are
+rejected; full host revalidation (no new issues, no coverage loss) applies.
+References with no valid run (absent cue or repeated single-token cue) do not
+dispatch. Deterministic tests only; no model run, no fidelity claim, user host
+stays v1.
+
 ## D-071 — Bounded narrowing for an unresolved OR-group cue (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: alternatives issue

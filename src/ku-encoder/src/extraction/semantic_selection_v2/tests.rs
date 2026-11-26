@@ -1744,3 +1744,157 @@ fn alternatives_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
             .is_none());
     }
 }
+
+#[test]
+fn references_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
+    // D-072: an unresolved reference `via` may only narrow to a contiguous
+    // whitespace-bounded token run of the emitted `via.quote` that resolves
+    // uniquely in the claim scope outside the resolved `to` span; `to`,
+    // `target_kind` and `via.within` stay fixed; unrepairable cues do not dispatch.
+    let mut selection = rocket();
+    selection["claims"][1]["references"][0]["via"] = json!({"quote":"Trong đó ấy"});
+    let (_, validation) = assemble(ROCKET, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[1].comparisons: target_unspecified",
+            "selection[1].references: cue_ambiguous"
+        ]
+    );
+    assert_eq!(validation.uncovered, vec![". Trong đó ,"]);
+    let (target, fields) = repair_target(ROCKET, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["references".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["references"],
+        json!({"count":1,"via":["Trong","Trong đó","đó"],"to":["nhiên liệu lỏng hoặc rắn"],"target_kind":["group"],"repairable":[{"reference":0,"via":["Trong","Trong đó","đó"]}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let refs = &wire["properties"]["patch"]["properties"]["references"];
+    assert_eq!(
+        (refs["minItems"].clone(), refs["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(
+        refs["items"]["properties"]["via"]["properties"]["quote"]["enum"],
+        json!(["Trong", "Trong đó", "đó"])
+    );
+    assert_eq!(
+        refs["items"]["properties"]["to"]["properties"]["quote"]["enum"],
+        json!(["nhiên liệu lỏng hoặc rắn"])
+    );
+    assert_eq!(
+        refs["items"]["properties"]["target_kind"]["enum"],
+        json!(["group"])
+    );
+    let apply = |sel: &Value, references: Value| {
+        apply_repair(
+            ROCKET,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"references":references}}),
+            &mut budget(),
+        )
+    };
+    let base = selection["claims"][1]["references"].clone();
+    let mut narrowed = base.clone();
+    narrowed[0]["via"]["quote"] = json!("Trong đó");
+    let (changed, draft, after) = apply(&selection, narrowed).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0], selection["claims"][0]);
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-0-group-0"
+    );
+    assert!(draft["statements"][1]["references"][0]["via_span"].is_array());
+
+    // Rejected: no-op, token outside emitted cue, sub-word slice, altered
+    // target/kind, added `within`, or dropped reference.
+    assert!(apply(&selection, base.clone()).is_err());
+    for bad in ["nhiên liệu", "Tron", "ấy"] {
+        let mut r = base.clone();
+        r[0]["via"]["quote"] = json!(bad);
+        assert!(apply(&selection, r).is_err());
+    }
+    let mut retarget = base.clone();
+    retarget[0]["via"]["quote"] = json!("Trong đó");
+    retarget[0]["to"] = json!({"quote":"nhiên liệu lỏng"});
+    assert!(apply(&selection, retarget).is_err());
+    let mut rekind = base.clone();
+    rekind[0]["via"]["quote"] = json!("Trong đó");
+    rekind[0]["target_kind"] = json!("claim");
+    assert!(apply(&selection, rekind).is_err());
+    let mut scoped = base.clone();
+    scoped[0]["via"] = json!({"quote":"Trong đó","within":"Trong đó , nhiên liệu rắn"});
+    assert!(apply(&selection, scoped).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+
+    // An emitted `within` is kept: dropping it is rejected, keeping it is accepted.
+    let mut within = rocket();
+    within["claims"][1]["references"][0]["via"] =
+        json!({"quote":"Trong đó ấy","within":"Trong đó , nhiên liệu rắn"});
+    let (_, wv) = assemble(ROCKET, &within, &mut budget()).unwrap();
+    assert!(wv
+        .issues
+        .contains(&"selection[1].references: cue_ambiguous".to_owned()));
+    let mut kept = within["claims"][1]["references"].clone();
+    kept[0]["via"]["quote"] = json!("Trong đó");
+    assert!(apply(&within, kept).is_ok());
+    let mut dropped = within["claims"][1]["references"].clone();
+    dropped[0]["via"] = json!({"quote":"Trong đó"});
+    assert!(apply(&within, dropped).is_err());
+
+    // Unflagged sibling reference keeps its exact `via`; only the flagged one narrows.
+    let mut mixed = rocket();
+    mixed["claims"][1]["references"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"via":{"quote":"sẽ kia"},"to":{"quote":"nhiên liệu lỏng hoặc rắn"},"target_kind":"group"}));
+    let (_, mv) = assemble(ROCKET, &mixed, &mut budget()).unwrap();
+    assert!(mv
+        .issues
+        .contains(&"selection[1].references: cue_ambiguous".to_owned()));
+    let mc = repair_choices(ROCKET, &mixed, 1, &fields, &mv, &mut budget()).unwrap();
+    assert_eq!(mc["references"]["via"], json!(["Trong đó", "sẽ"]));
+    let refs = mixed["claims"][1]["references"].clone();
+    let mut ok = refs.clone();
+    ok[1]["via"]["quote"] = json!("sẽ");
+    assert!(apply(&mixed, ok.clone()).is_ok());
+    let mut swapped = ok;
+    swapped[0]["via"]["quote"] = json!("sẽ");
+    assert!(apply(&mixed, swapped).is_err());
+
+    // Unrouted: the only resolving token lies inside the resolved target, and
+    // the other token is absent.
+    let source = "A chạy. B dừng.";
+    let sel = json!({"claims":[{"subject":"A","predicate":"chạy"},{"subject":"B","predicate":"dừng","references":[{"via":{"quote":"chạy kia"},"to":{"quote":"A chạy"},"target_kind":"claim"}]}]});
+    let (_, v) = assemble(source, &sel, &mut budget()).unwrap();
+    assert!(v
+        .issues
+        .contains(&"selection[1].references: cue_ambiguous".to_owned()));
+    assert!(
+        reference_cue_choices(source, &sel["claims"][1], &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(repair_target(source, &sel, &v, &mut budget())
+        .unwrap()
+        .is_none());
+}

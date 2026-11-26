@@ -345,6 +345,28 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             ell["items"]["properties"][key]["properties"]["quote"]["enum"] = json!(options);
         }
     }
+    if let Some(refs) = wire["properties"]["patch"]["properties"].get_mut("references") {
+        // D-072: no reference added or removed; every quote/kind from host choices.
+        let c = &choices["references"];
+        let count = c["count"]
+            .as_u64()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        refs["minItems"] = json!(count);
+        refs["maxItems"] = json!(count);
+        let props = &mut refs["items"]["properties"];
+        for (key, choice) in [("via", "via"), ("to", "to")] {
+            let options = c[choice]
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!options.is_empty(), "selection_repair_choice")?;
+            props[key]["properties"]["quote"]["enum"] = json!(options);
+        }
+        let kinds = c["target_kind"]
+            .as_array()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        require(!kinds.is_empty(), "selection_repair_choice")?;
+        props["target_kind"]["enum"] = json!(kinds);
+    }
     for (key, choice) in [("arguments", "arguments"), ("links", "to")] {
         if wire["properties"]["patch"]["properties"].get(key).is_some() {
             let options = choices[choice]
@@ -781,6 +803,12 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
+        if v.issues
+            .contains(&format!("selection[{i}].references: cue_ambiguous"))
+            && !reference_cue_choices(source, claim, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["references".into()])));
+        }
         if [
             "property_binding",
             "unexpected_target",
@@ -1112,6 +1140,56 @@ fn alternative_cue_choices(
         }
         if !options.is_empty() {
             out.insert(g, options);
+        }
+    }
+    Ok(out)
+}
+
+/// D-072: references flagged `cue_ambiguous` (`via` does not resolve uniquely
+/// in the claim scope) may only narrow `via.quote` to a contiguous
+/// whitespace-bounded token run of the emitted `via.quote` itself that resolves
+/// uniquely in the same scope (any emitted `via.within` kept) and overlaps no
+/// resolved `to` span. References without a valid run (an absent cue or a
+/// repeated single-token cue) get no choice so unrepairable cues never dispatch.
+fn reference_cue_choices(
+    source: &str,
+    claim: &Value,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, BTreeSet<String>>> {
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut out = BTreeMap::new();
+    for (j, r) in items(claim, "references").enumerate() {
+        if span(source, &r["via"], scope, b)?.is_some() {
+            continue;
+        }
+        let target = span(source, &r["to"], source, b)?;
+        let cue = text(&r["via"]["quote"]);
+        let tokens: Vec<(usize, usize)> = cue
+            .split_whitespace()
+            .take(16)
+            .map(|t| {
+                let start = t.as_ptr() as usize - cue.as_ptr() as usize;
+                (start, start + t.len())
+            })
+            .collect();
+        let mut options = BTreeSet::new();
+        for s in 0..tokens.len() {
+            for e in s..tokens.len().min(s + 8) {
+                let candidate = &cue[tokens[s].0..tokens[e].1];
+                if candidate == cue || candidate.len() > 128 || options.len() >= 64 {
+                    continue;
+                }
+                let mut via = r["via"].clone();
+                via["quote"] = json!(candidate);
+                if span(source, &via, scope, b)?
+                    .is_some_and(|c| target.is_none_or(|t| !overlaps(c, t)))
+                {
+                    options.insert(candidate.to_owned());
+                }
+            }
+        }
+        if !options.is_empty() {
+            out.insert(j, options);
         }
     }
     Ok(out)
@@ -1580,6 +1658,37 @@ pub fn repair_choices(
             "repairable": listed,
         });
     }
+    if fields.iter().any(|f| f == "references") {
+        let claim = selection["claims"]
+            .as_array()
+            .and_then(|c| c.get(target))
+            .ok_or(ExtractionError("selection_repair_target"))?;
+        // D-072: same reference count; `to`/`target_kind` fixed; unflagged `via`
+        // quotes stay as emitted and flagged ones list only local token runs.
+        let repairs = reference_cue_choices(source, claim, b)?;
+        let mut via = BTreeSet::new();
+        let mut to = BTreeSet::new();
+        let mut kinds = BTreeSet::new();
+        for (j, r) in items(claim, "references").enumerate() {
+            if !repairs.contains_key(&j) {
+                via.insert(text(&r["via"]["quote"]).to_owned());
+            }
+            to.insert(text(&r["to"]["quote"]).to_owned());
+            kinds.insert(text(&r["target_kind"]).to_owned());
+        }
+        let mut listed = Vec::new();
+        for (j, options) in &repairs {
+            via.extend(options.iter().cloned());
+            listed.push(json!({ "reference": j, "via": options }));
+        }
+        choices["references"] = json!({
+            "count": items(claim, "references").count(),
+            "via": via,
+            "to": to,
+            "target_kind": kinds,
+            "repairable": listed,
+        });
+    }
     Ok(choices)
 }
 pub fn apply_repair(
@@ -1722,6 +1831,35 @@ pub fn apply_repair(
                             || (r.is_some_and(|r| r.omit_target) && after.get("target").is_none()),
                         "selection_repair_choice",
                     )?;
+                }
+                result["claims"][target][key] = value.clone();
+                continue;
+            }
+            if key == "references" {
+                // D-072: `to`, `target_kind` and any `via.within` stay fixed; an
+                // unflagged `via` stays byte-identical and a flagged unresolved
+                // `via.quote` may only narrow to one of its listed token runs.
+                let flagged = reference_cue_choices(source, old, b)?;
+                for (j, (before, after)) in previous.iter().zip(next).enumerate() {
+                    let mut restored = after.clone();
+                    restored["via"] = before["via"].clone();
+                    require(restored == *before, "selection_repair_structure_loss")?;
+                    if let Some(options) = flagged.get(&j) {
+                        let mut expected = before["via"].clone();
+                        expected["quote"] = after["via"]["quote"].clone();
+                        require(
+                            after["via"] == expected
+                                && after["via"]["quote"]
+                                    .as_str()
+                                    .is_some_and(|q| options.contains(q)),
+                            "selection_repair_choice",
+                        )?;
+                    } else {
+                        require(
+                            before["via"] == after["via"],
+                            "selection_repair_structure_loss",
+                        )?;
+                    }
                 }
                 result["claims"][target][key] = value.clone();
                 continue;
