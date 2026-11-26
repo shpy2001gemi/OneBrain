@@ -1377,3 +1377,113 @@ fn comparison_unresolved_target_dispatches_only_unspecified_downgrade() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn comparison_explicit_target_scope_dispatches_only_unspecified_downgrade() {
+    // D-069: a resolved explicit target outside the claim's evidence span, or
+    // inside another claim's term, may only become `target_kind: unspecified`
+    // with that target omitted; nothing invented, substituted or re-scoped.
+    let source = "Xe đỏ nhanh hơn, còn xe tải thì chậm.";
+    let selection = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","comparisons":[{"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe tải"}}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].comparisons: explicit_target_scope"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["comparisons".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["comparisons"],
+        json!({"count":1,"property":["nhanh"],"target_kind":["explicit","unspecified"],"targets":["xe tải"],"repairable":[{"comparison":0,"target_kind":"unspecified","omit_target":true}]})
+    );
+    let apply = |sel: &Value, comparisons: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"comparisons":comparisons}}),
+            &mut budget(),
+        )
+    };
+    let downgraded = json!([{"property":"nhanh","cue":"hơn","target_kind":"unspecified"}]);
+    let (_, draft, after) = apply(&selection, downgraded.clone()).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[0].comparisons: target_unspecified"]
+    );
+    assert_eq!(after.uncovered, validation.uncovered);
+    let cmp = &draft["statements"][0]["comparisons"][0];
+    assert!(cmp.get("target").is_none() && cmp.get("target_span").is_none());
+    // Rejected: no-op, kept target, target dropped without downgrade, other
+    // kind, substituted in-scope target, dropped comparison, changed cue.
+    let base = selection["claims"][0]["comparisons"].clone();
+    assert!(apply(&selection, base.clone()).is_err());
+    let mut kept_target = base.clone();
+    kept_target[0]["target_kind"] = json!("unspecified");
+    assert!(apply(&selection, kept_target).is_err());
+    let mut dropped_only = base.clone();
+    dropped_only[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, dropped_only).is_err());
+    let mut other_kind = base.clone();
+    other_kind[0]["target_kind"] = json!("implicit_candidate");
+    other_kind[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, other_kind).is_err());
+    let mut substituted = base.clone();
+    substituted[0]["target"] = json!({"quote":"Xe đỏ"});
+    assert!(apply(&selection, substituted).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+    let mut cue = downgraded.clone();
+    cue[0]["cue"] = json!("nhanh hơn");
+    assert!(apply(&selection, cue).is_err());
+
+    // Inside another claim's term (raised after all claim roles exist): only
+    // the flagged comparison downgrades; the other claim stays untouched.
+    let source = "Xe đỏ nhanh hơn xe xanh cũ.";
+    let selection = json!({"claims":[
+        {"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh cũ"],"comparisons":[{"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}}]},
+        {"subject":"xe xanh","predicate":"cũ"}
+    ]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert!(validation
+        .issues
+        .contains(&"selection[0].comparisons: explicit_target_scope".into()));
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["comparisons".into()]));
+    let (changed, _, after) = apply_repair(
+        source,
+        &selection,
+        target,
+        &fields,
+        &json!({"patch":{"comparisons":downgraded}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(!after
+        .issues
+        .contains(&"selection[0].comparisons: explicit_target_scope".into()));
+    assert_eq!(changed["claims"][1], selection["claims"][1]);
+    assert_eq!(changed["claims"][0]["arguments"], json!(["xe xanh cũ"]));
+
+    // Unrouted: an in-scope explicit target owned by no other claim.
+    let source = "Xe đỏ nhanh hơn xe xanh.";
+    let in_scope = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}}]}]});
+    let (_, v) = assemble(source, &in_scope, &mut budget()).unwrap();
+    assert!(v.issues.is_empty(), "{:?}", v.issues);
+    assert!(comparison_choices(source, &in_scope, 0, &mut budget())
+        .unwrap()
+        .is_empty());
+}

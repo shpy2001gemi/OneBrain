@@ -764,12 +764,13 @@ pub fn repair_target(
             "property_binding",
             "unexpected_target",
             "target_absent_or_ambiguous",
+            "explicit_target_scope",
         ]
         .iter()
         .any(|code| {
             v.issues
                 .contains(&format!("selection[{i}].comparisons: {code}"))
-        }) && !comparison_choices(source, claim, b)?.is_empty()
+        }) && !comparison_choices(source, selection, i, b)?.is_empty()
         {
             return Ok(Some((i, vec!["comparisons".into()])));
         }
@@ -861,28 +862,40 @@ fn token_extension(a: &str, b: &str) -> bool {
 /// its scope) may only be downgraded to `target_kind: unspecified` with that
 /// target omitted, leaving `target_unspecified` visible. No target is invented,
 /// substituted or marked explicit, and unrelated properties stay unrouted so
-/// futile repairs never dispatch.
+/// futile repairs never dispatch. D-069: an explicit target flagged
+/// `explicit_target_scope` (it resolves, but outside the claim's evidence span
+/// or inside a term owned by another claim) gets the same single downgrade.
 fn comparison_choices(
     source: &str,
-    claim: &Value,
+    selection: &Value,
+    i: usize,
     b: &mut WorkBudget,
 ) -> Result<BTreeMap<usize, ComparisonRepair>> {
+    let mut out = BTreeMap::new();
+    let Some(claim) = selection["claims"].as_array().and_then(|c| c.get(i)) else {
+        return Ok(out);
+    };
     let predicate = text(&claim["predicate"]);
     let scope = claim["anchor"].as_str().unwrap_or(source);
-    let mut out = BTreeMap::new();
+    let mut draft = None;
     for (j, cmp) in items(claim, "comparisons").enumerate() {
         let rebind = cmp["property"] != claim["predicate"]
             && token_extension(text(&cmp["property"]), predicate);
         let kind = text(&cmp["target_kind"]);
         let omit_target = kind == "unspecified" && cmp.get("target").is_some();
         let downgrade = kind != "unspecified"
-            && span(
+            && match span(
                 source,
                 &cmp["target"],
                 if kind == "explicit" { scope } else { source },
                 b,
-            )?
-            .is_none();
+            )? {
+                None => true,
+                Some(at) => {
+                    kind == "explicit"
+                        && explicit_out_of_scope(source, selection, i, at, &mut draft, b)?
+                }
+            };
         if rebind || omit_target || downgrade {
             out.insert(
                 j,
@@ -895,6 +908,50 @@ fn comparison_choices(
         }
     }
     Ok(out)
+}
+
+/// D-069: mirrors the `assemble` check behind `explicit_target_scope` for one
+/// resolved explicit target of claim `i`: it lies outside the claim's evidence
+/// span, or inside a term (resolved role or branch) owned by another claim. The
+/// host-assembled draft is built at most once per call and only when needed.
+fn explicit_out_of_scope(
+    source: &str,
+    selection: &Value,
+    i: usize,
+    at: (usize, usize),
+    draft: &mut Option<Value>,
+    b: &mut WorkBudget,
+) -> Result<bool> {
+    if draft.is_none() {
+        *draft = Some(assemble(source, selection, b)?.0);
+    }
+    let statements: Vec<Value> = draft
+        .as_ref()
+        .map(|d| items(d, "statements").cloned().collect())
+        .unwrap_or_default();
+    let Some(own) = statements.get(i) else {
+        return Ok(false);
+    };
+    if !span(source, &json!({ "quote": own["evidence"] }), source, b)?
+        .is_some_and(|s| contains(s, at))
+    {
+        return Ok(true);
+    }
+    let pair = |s: &Value| Some((s.get(0)?.as_u64()? as usize, s.get(1)?.as_u64()? as usize));
+    Ok(statements
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| *k != i)
+        .any(|(_, st)| {
+            items(st, "evidence_spans")
+                .filter_map(|e| Some((e["start"].as_u64()? as usize, e["end"].as_u64()? as usize)))
+                .chain(
+                    items(st, "alternatives")
+                        .flat_map(|g| items(g, "branches"))
+                        .filter_map(|br| pair(&br["span"])),
+                )
+                .any(|t| contains(t, at))
+        }))
 }
 
 /// D-064: OR groups flagged `incompatible_or_cue` (a known conjunction or
@@ -1310,7 +1367,8 @@ pub fn repair_choices(
         // D-065: same comparison count; property/kind/target only from existing values
         // plus the exact claim predicate for flagged property bindings.
         // D-067: plus `unspecified` for flagged unresolved targets.
-        let repairs = comparison_choices(source, claim, b)?;
+        // D-069: and for flagged out-of-scope explicit targets.
+        let repairs = comparison_choices(source, selection, target, b)?;
         let mut properties = BTreeSet::new();
         let mut kinds = BTreeSet::new();
         let mut targets = BTreeSet::new();
@@ -1475,8 +1533,9 @@ pub fn apply_repair(
                 // D-065: cue fixed; a flagged property may only become the exact
                 // claim predicate and a flagged stray target may only be omitted.
                 // D-067: kind fixed unless a flagged unresolved target is
-                // downgraded to `unspecified` together with omitting it.
-                let repairs = comparison_choices(source, old, b)?;
+                // downgraded to `unspecified` together with omitting it (D-069:
+                // likewise a flagged out-of-scope explicit target).
+                let repairs = comparison_choices(source, base, target, b)?;
                 for (j, (before, after)) in previous.iter().zip(next).enumerate() {
                     let r = repairs.get(&j);
                     require(

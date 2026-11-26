@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-069 — Bounded downgrade for an out-of-scope explicit comparison target (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue
+`explicit_target_scope` (an explicit target that resolves but lies outside the
+claim's evidence span or inside a term owned by another claim) dispatches the
+bounded `comparisons` repair. The only finite choice is D-067's downgrade to
+`target_kind: unspecified` with that target omitted; `target_unspecified` is the
+sole new issue revalidation admits. The target is never re-scoped, substituted
+or rebound; cues, other claims and in-scope comparisons stay fixed. Supersedes
+only D-067's "`explicit_target_scope` stays unrouted" clause. Deterministic tests
+only; no model run, no fidelity claim, user host stays v1.
+
 ## D-068 — Bounded omission for a self-referencing ellipsis (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: ellipsis issue

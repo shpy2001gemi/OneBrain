@@ -120,8 +120,15 @@ that `comparisons`-only repair (D-067). Its only finite choice is downgrading to
 `target_unspecified` issue is the sole new issue revalidation admits and stays
 visible for review. No target is added, substituted or re-resolved, no other kind
 is chosen, cues stay fixed, and a target cannot be dropped without the downgrade.
-An unresolved cue alone (`cue_ambiguous`) and `explicit_target_scope` stay
-unrouted.
+An unresolved cue alone (`cue_ambiguous`) stays unrouted.
+
+A comparison flagged `explicit_target_scope` (an explicit target that resolves
+in the claim scope but lies outside the claim's evidence span or inside a term
+owned by another claim) may join that `comparisons`-only repair (D-069) with the
+same single choice: downgrading to `target_kind: unspecified` with that target
+omitted, admitting only `target_unspecified` as a new issue. The target is not
+re-scoped, substituted or rebound, other claims and in-scope comparisons stay
+unchanged, and full revalidation still applies.
 
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
