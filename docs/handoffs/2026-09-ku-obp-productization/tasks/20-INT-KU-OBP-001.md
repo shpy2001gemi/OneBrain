@@ -6,7 +6,14 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — Desktop `/ku` lifecycle parity for D-057, D-058, D-059 and D-062 sender restart (t23, D-075 round 3, 2026-11-26)
+## Latest follow-up — CLI `onebrain ku summary` and `onebrain ku semantic` parity (t24, D-075 round 4, 2026-11-26)
+
+Selected as round 4 of 5 under D-075 on the CLI/Web/Desktop `/ku` parity track: added `onebrain ku summary` and `onebrain ku semantic --object-cid <64-hex>…` (1..64 CIDs) in [ku.rs](../../../../src/onebrain-cli/src/cli/ku.rs), projecting the already-registered `POST /api/vnext/ku/editor` actions `workspace_summary` and `saved_semantic` with zero new routes, DTOs or wire fields.
+
+- **Validation & scope:** typed 64-lowercase-hex `--object-cid` validation and 64-item ceiling run before any network call; reply checks enforce `event`, `claims_network_completion: false` (`summary`), `fidelity: "unassessed"` (`semantic`) and `authorizes_reward: false`; stderr prints explicit display-only scope notes.
+- **Tests & docs:** unit + real `ApiServer` workflow coverage in [tests.rs](../../../../src/onebrain-cli/src/cli/ku/tests.rs) (`summary` `0 → 2`, `semantic` statement text + unreadable CID `NotFound`, `describe` `"water"`); updated [CLI_REFERENCE.md](../../../../src/onebrain-cli/CLI_REFERENCE.md), [KU_LOCAL_EDITOR_PROFILE_V1.md](../../../specs/vnext/KU_LOCAL_EDITOR_PROFILE_V1.md) and [KU_LOCAL_CLI_PROJECTION_V1.md](../../../specs/vnext/KU_LOCAL_CLI_PROJECTION_V1.md).
+
+## Earlier follow-up — Desktop `/ku` lifecycle parity for D-057, D-058, D-059 and D-062 sender restart (t23, D-075 round 3, 2026-11-26)
 
 Selected after closing all 18 mechanical `SEM-F03` host repairs (D-075 round 3, switching to Desktop parity): locked Desktop host/API parity for `D-057`, `D-058`, `D-059` and `D-062` in [lifecycle.rs](../../../../src/onebrain-desktop/tests/lifecycle.rs) without changing DTOs, routes, consent or trust.
 

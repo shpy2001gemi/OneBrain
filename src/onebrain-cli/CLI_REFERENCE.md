@@ -125,17 +125,25 @@ intent `Acknowledged` → receiver `share list`/`share inspect`); the first-run
 bootstrap prints it in its `CLI hosts …` line, which CI runs on Linux, macOS and
 Windows (DEV-ONLY, not qualification).
 
-### Registry label for a CCID (D-058)
+### Registry label, workspace summary, and saved statement text
 
 ```powershell
-# Display-only reverse lookup in this host's active Registry (repeat --ccid, ≤64).
+# Display-only reverse lookup in this host's active Registry (repeat --ccid, ≤64; D-058).
 onebrain ku describe --ccid <32-hex-ccid> --ccid <32-hex-ccid>
+# Display-only private KU count and local share-network status (never network-gated).
+onebrain ku summary
+# Display-only statement projection for 1..64 readable ObjectCIDs (private or accepted Public).
+onebrain ku semantic --object-cid <64-hex-object-cid>
 ```
 
-Each item carries the host Registry canonical name, or `null` when the CCID is not
+Each `describe` item carries the host Registry canonical name, or `null` when the CCID is not
 in it. A label is a display aid only — not verification, fidelity, adoption or
 reward — and another host's Registry may name the CCID differently. The
 `--cli-share` check runs it on the receiver for the Public predicate CCID.
+`summary` projects `workspace_summary` (`private_saved` excludes accepted Public KUs;
+`claims_network_completion: false`, `authorizes_reward: false`), and `semantic` projects
+`saved_semantic` (`fidelity: "unassessed"`, `authorizes_reward: false`; any unreadable CID
+fails the whole request just like `get`).
 
 ## 1. Overview
 

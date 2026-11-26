@@ -42,12 +42,15 @@ Tests must cover parsing/validation, exact cancellation, response bounds,
 failure/reconcile projection and a real local API/node workflow using isolated
 test custody and Registry fixtures. No live owner data/model is required.
 
-## D-045 Public KU share projection (addendum)
+## D-045 Public KU share and read-only editor projections (addendum)
 
-`onebrain ku share prepare|confirm|intent|inspect|list` projects the already
-registered `POST /api/vnext/ku/editor` actions `share_prepare`, `share_confirm`,
+`onebrain ku share prepare|preview|confirm|intent|inspect|list` projects the already
+registered `POST /api/vnext/ku/editor` actions `share_prepare`, `share_preview`, `share_confirm`,
 `share_intent`, `share_inspect` and `share_list` (the same closed payloads `/ku`
-Web sends). No new service operation, DTO, authority or wire field is added.
+Web sends), and `onebrain ku describe`, `onebrain ku summary`, and `onebrain ku semantic`
+project the read-only `describe_ccids`, `workspace_summary`, and `saved_semantic` editor
+actions (`fidelity: "unassessed"`, `claims_network_completion: false`,
+`authorizes_reward: false`). No new service operation, DTO, authority or wire field is added.
 Typed IDs are 64 lowercase hex and validated before any request. `confirm`
 requires typing the exact `prepared_id` on stdin, then sends
 `confirm_public: true`; there is no flag bypass and a mismatch contacts no host.

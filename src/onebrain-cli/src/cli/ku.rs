@@ -77,6 +77,16 @@ enum KuCommand {
         #[arg(long = "ccid", required = true, value_parser = hex16)]
         ccids: Vec<String>,
     },
+    /// Show this host's owned private KU count and opt-in share network status
+    /// (display only; never network-gated, claims_network_completion=false).
+    Summary,
+    /// Show display-only statement text for 1..64 readable ObjectCIDs
+    /// (fidelity=unassessed; not verification, adoption or reward).
+    Semantic {
+        /// Authorized private or accepted Public ObjectCID (64 lowercase hex); repeat up to 64 times.
+        #[arg(long = "object-cid", required = true, value_parser = hex32)]
+        object_cids: Vec<String>,
+    },
 }
 
 /// Thin projection of the registered `POST /api/vnext/ku/editor` share actions
@@ -177,7 +187,7 @@ impl ShareCommand {
 }
 
 impl KuCommand {
-    /// Registered editor action for `share …` / `describe`; `None` otherwise.
+    /// Registered editor action for `share …` / `describe` / `summary` / `semantic`; `None` otherwise.
     fn editor_request(&self) -> Result<Option<(&'static str, Value)>, String> {
         match self {
             Self::Share(share) => Ok(Some(share.request())),
@@ -186,6 +196,16 @@ impl KuCommand {
                     return Err("at most 64 --ccid values".into());
                 }
                 Ok(Some(("describe_ccids", json!({ "ccids": ccids }))))
+            }
+            Self::Summary => Ok(Some(("workspace_summary", json!({})))),
+            Self::Semantic { object_cids } => {
+                if object_cids.len() > MAX_SAVED_SEMANTIC_CIDS {
+                    return Err("at most 64 --object-cid values".into());
+                }
+                Ok(Some((
+                    "saved_semantic",
+                    json!({ "object_cids": object_cids }),
+                )))
             }
             _ => Ok(None),
         }
@@ -197,7 +217,10 @@ const CANCEL_PROMPT: &str =
 const SHARE_CONFIRM_PROMPT: &str = "Confirm PUBLIC share of the exact previewed Public KU to the expected peer; a Public copy cannot be made private again. Type exact prepared_id";
 const SHARE_SCOPE: &str = "Public share scope: preview never enqueues or sends; confirm creates a durable pending intent only; Acknowledged is a transport receipt, not adoption, verification or reward. Private ObjectCID and source stay withheld. Fidelity remains unassessed; models are unqualified.";
 const DESCRIBE_SCOPE: &str = "Registry label scope: display-only canonical names from this host's active Registry (null = not in it); not verification, fidelity, adoption or reward.";
+const SUMMARY_SCOPE: &str = "Workspace summary scope: display-only owned private KU count and local share-network observation (claims_network_completion=false, authorizes_reward=false); accepted Public KUs are excluded from private_saved; not network absence, adoption or reward.";
+const SEMANTIC_SCOPE: &str = "Saved semantic scope: display-only statement projection for ObjectCIDs already readable via get (fidelity=unassessed, authorizes_reward=false); not verification, adoption, Use or reward.";
 const MAX_DESCRIBE_CCIDS: usize = 64;
+const MAX_SAVED_SEMANTIC_CIDS: usize = 64;
 
 #[derive(Debug, Args)]
 struct PayloadFile {
@@ -263,8 +286,11 @@ impl KuCommand {
     fn request(&self) -> Result<Option<(&'static str, Value)>, String> {
         let (name, payload) = match self {
             Self::Reserve | Self::Status { operation_id: None } => return Ok(None),
-            Self::Share(_) | Self::Describe { .. } => {
-                return Err("share/describe actions use the registered editor transport".into())
+            Self::Share(_) | Self::Describe { .. } | Self::Summary | Self::Semantic { .. } => {
+                return Err(
+                    "share/describe/summary/semantic actions use the registered editor transport"
+                        .into(),
+                )
             }
             Self::Prepare(file) => ("prepare", file_dto::<KuPrepareV1>(file)?),
             Self::Revise(file) => ("revise", file_dto::<KuReviseV1>(file)?),
@@ -436,6 +462,27 @@ fn validate_response(operation: &str, value: &Value) -> Result<(), String> {
             || !payload["items"].is_array()
         {
             return Err("invalid KU describe response".into());
+        }
+        return Ok(());
+    }
+    if operation == "workspace_summary" {
+        if payload["event"] != "workspace_summary"
+            || !payload["private_saved"].is_u64()
+            || !payload["network"]["enabled"].is_boolean()
+            || payload["claims_network_completion"] != false
+            || payload["authorizes_reward"] != false
+        {
+            return Err("invalid KU workspace summary response".into());
+        }
+        return Ok(());
+    }
+    if operation == "saved_semantic" {
+        if payload["event"] != "saved_semantic"
+            || !payload["items"].is_array()
+            || payload["fidelity"] != "unassessed"
+            || payload["authorizes_reward"] != false
+        {
+            return Err("invalid KU saved semantic response".into());
         }
         return Ok(());
     }
@@ -625,6 +672,14 @@ pub(crate) async fn execute(args: KuArgs) -> Result<(), String> {
     }
     if matches!(args.command, KuCommand::Describe { .. }) {
         eprintln!("{DESCRIBE_SCOPE}");
+        return Ok(());
+    }
+    if matches!(args.command, KuCommand::Summary) {
+        eprintln!("{SUMMARY_SCOPE}");
+        return Ok(());
+    }
+    if matches!(args.command, KuCommand::Semantic { .. }) {
+        eprintln!("{SEMANTIC_SCOPE}");
         return Ok(());
     }
     eprintln!("Local authorized scope only. Save is private; preparation is pending intent, not accepted KU. Partial/empty pages are not network absence. Fidelity remains unassessed unless evidenced; models are unqualified. No publication, delivery or reward is implied.");

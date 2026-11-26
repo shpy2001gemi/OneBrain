@@ -470,6 +470,98 @@ fn describe_parses_ccids_into_the_registered_editor_action_and_checks_the_reply(
     }
 }
 
+#[test]
+fn summary_and_semantic_parse_into_registered_editor_actions_and_check_replies() {
+    let summary = parse(&["summary"]).unwrap();
+    assert_eq!(
+        summary.command.editor_request().unwrap(),
+        Some(("workspace_summary", json!({})))
+    );
+    assert!(summary.command.request().is_err());
+    assert!(parse(&["summary", "--yes"]).is_err());
+
+    let (a, b) = ("ab".repeat(32), "cd".repeat(32));
+    let semantic = parse(&["semantic", "--object-cid", &a, "--object-cid", &b]).unwrap();
+    assert_eq!(
+        semantic.command.editor_request().unwrap(),
+        Some(("saved_semantic", json!({"object_cids": [a, b]})))
+    );
+    assert!(semantic.command.request().is_err());
+    for argv in [
+        vec!["semantic"],
+        vec!["semantic", "--object-cid", "abbreviated"],
+        vec!["semantic", "--object-cid", &"AB".repeat(32)],
+        vec!["semantic", "--object-cid", &"ab".repeat(16)],
+        vec!["semantic", "--object-cid", &a, "--yes"],
+    ] {
+        assert!(parse(&argv).is_err(), "{argv:?}");
+    }
+    let many: Vec<String> = (0..65).map(|_| "ab".repeat(32)).collect();
+    let mut argv = vec!["semantic"];
+    for cid in &many {
+        argv.extend(["--object-cid", cid.as_str()]);
+    }
+    assert!(parse(&argv).unwrap().command.editor_request().is_err());
+
+    let session =
+        json!({"process_generation":"11".repeat(32),"dataset_generation":"22".repeat(32)});
+    let env = |payload: Value| {
+        json!({"ok":true,"profile":onebrain_api::vnext_api::VNEXT_PRODUCT_PROFILE,
+            "data":{"session":session,"payload":payload,"model_qualified":false},"meta":{}})
+    };
+    for valid_summary in [
+        json!({
+            "event": "workspace_summary",
+            "private_saved": 0,
+            "network": { "enabled": false },
+            "claims_network_completion": false,
+            "authorizes_reward": false
+        }),
+        json!({
+            "event": "workspace_summary",
+            "private_saved": 2,
+            "network": { "enabled": true, "node_id": "22".repeat(32) },
+            "claims_network_completion": false,
+            "authorizes_reward": false
+        }),
+    ] {
+        assert!(validate_response("workspace_summary", &env(valid_summary)).is_ok());
+    }
+    for bad_summary in [
+        json!({"event":"workspace_summary","private_saved":0,"network":{"enabled":false},"claims_network_completion":true,"authorizes_reward":false}),
+        json!({"event":"workspace_summary","private_saved":0,"network":{"enabled":false},"claims_network_completion":false,"authorizes_reward":true}),
+        json!({"event":"workspace_summary","network":{"enabled":false},"claims_network_completion":false,"authorizes_reward":false}),
+        json!({"event":"public_objects","private_saved":0,"network":{"enabled":false},"claims_network_completion":false,"authorizes_reward":false}),
+    ] {
+        assert!(
+            validate_response("workspace_summary", &env(bad_summary.clone())).is_err(),
+            "{bad_summary}"
+        );
+    }
+
+    assert!(validate_response(
+        "saved_semantic",
+        &env(json!({
+            "event": "saved_semantic",
+            "items": [{"object_cid": "ab".repeat(32), "semantic": {"statements": [], "statement_count": 0}}],
+            "fidelity": "unassessed",
+            "authorizes_reward": false
+        }))
+    )
+    .is_ok());
+    for bad_semantic in [
+        json!({"event":"saved_semantic","items":[],"fidelity":"verified","authorizes_reward":false}),
+        json!({"event":"saved_semantic","items":[],"fidelity":"unassessed","authorizes_reward":true}),
+        json!({"event":"saved_semantic","fidelity":"unassessed","authorizes_reward":false}),
+        json!({"event":"ccid_labels","items":[],"fidelity":"unassessed","authorizes_reward":false}),
+    ] {
+        assert!(
+            validate_response("saved_semantic", &env(bad_semantic.clone())).is_err(),
+            "{bad_semantic}"
+        );
+    }
+}
+
 #[cfg(feature = "base-v1")]
 #[path = "fixture.rs"]
 mod fixture;
@@ -555,6 +647,20 @@ async fn api_backed_cli_workflow_preserves_private_save_paging_and_reconcile() {
         run(&args(&["list"])).await.unwrap()["data"]["payload"]["items"],
         json!([])
     );
+    let initial_summary = run(&args(&["summary"])).await.unwrap();
+    assert_eq!(initial_summary["data"]["payload"]["private_saved"], 0);
+    assert_eq!(
+        initial_summary["data"]["payload"]["network"],
+        json!({ "enabled": false })
+    );
+    assert_eq!(
+        initial_summary["data"]["payload"]["claims_network_completion"],
+        false
+    );
+    assert_eq!(
+        initial_summary["data"]["payload"]["authorizes_reward"],
+        false
+    );
     let ids = prepared["data"]["payload"]["object_cids"].clone();
     std::fs::write(
         &path,
@@ -619,6 +725,38 @@ async fn api_backed_cli_workflow_preserves_private_save_paging_and_reconcile() {
     assert_eq!(
         get["data"]["payload"]["canonical_bytes"],
         prepared["data"]["payload"]["artifacts"][0]["canonical_preview"]
+    );
+    let post_save_summary = run(&args(&["summary"])).await.unwrap();
+    assert_eq!(post_save_summary["data"]["payload"]["private_saved"], 2);
+    let saved_sem = run(&args(&[
+        "semantic",
+        "--object-cid",
+        ids[0].as_str().unwrap(),
+    ]))
+    .await
+    .unwrap();
+    assert_eq!(saved_sem["data"]["payload"]["event"], "saved_semantic");
+    assert_eq!(saved_sem["data"]["payload"]["fidelity"], "unassessed");
+    assert_eq!(saved_sem["data"]["payload"]["authorizes_reward"], false);
+    assert_eq!(
+        saved_sem["data"]["payload"]["items"][0]["object_cid"],
+        ids[0]
+    );
+    assert!(
+        saved_sem["data"]["payload"]["items"][0]["semantic"]["statement_count"]
+            .as_u64()
+            .unwrap()
+            >= 1
+    );
+    assert!(run(&args(&["semantic", "--object-cid", &"ff".repeat(32)]))
+        .await
+        .is_err());
+    let described = run(&args(&["describe", "--ccid", &"07".repeat(16)]))
+        .await
+        .unwrap();
+    assert_eq!(
+        described["data"]["payload"]["items"][0]["label"],
+        json!("water")
     );
     let new = run(&args(&["reserve"])).await.unwrap();
     let next = new["data"]["payload"]["operation_id"].as_str().unwrap();

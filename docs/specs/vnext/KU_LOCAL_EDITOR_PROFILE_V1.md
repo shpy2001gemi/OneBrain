@@ -131,9 +131,10 @@ only, empty when unknown) so the Web can prefill step-4 inspection.
 text literal arguments, at most 16 statements plus exact `statement_count`; `null` for
 non-semantic objects) for 1..64 ObjectCIDs the session can already read through `get`; any
 unreadable CID fails the whole request with the same error as `get`, so it grants no new
-access, verification, fidelity or adoption;
+access, verification, fidelity or adoption (`onebrain ku semantic --object-cid …` projects the
+same action);
 `workspace_summary` (not network-gated, recovery-admitted read) returns display-only header
-counts for the `/ku` Web: `private_saved` is the exact number of the principal's owned private
+counts for the `/ku` Web and `onebrain ku summary`: `private_saved` is the exact number of the principal's owned private
 artifacts (accepted Public KUs are not counted) and `network` is `{enabled:false}` without a live
 opt-in runtime, otherwise this host's loopback NodeID, listen address and session/record counters
 (transport observation only, `claims_network_completion: false`); the Web header on `/ku` shows

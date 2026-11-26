@@ -45,6 +45,16 @@ VPS/NAT, `D-063` two physical machines, operator Registry release signing
   surviving full sender Desktop `Supervisor::shutdown()` + restart on a new
   process generation and ephemeral port before `Network`-lane fence and single
   confirmation). Native WebView click-through remains optional.
+- **Round 4 (Task 06/09/20 CLI `/ku` read-only editor parity, `t24`):** added
+  `onebrain ku summary` (`workspace_summary`) and `onebrain ku semantic
+  --object-cid <64-hex>…` (`saved_semantic`, 1..64 CIDs) in
+  `src/onebrain-cli/src/cli/ku.rs`, projecting the existing registered
+  `POST /api/vnext/ku/editor` actions so CLI users have the same display-only
+  workspace/share-network summary (`claims_network_completion: false`,
+  `authorizes_reward: false`) and readable statement-text projection
+  (`fidelity: "unassessed"`, `authorizes_reward: false`, unreadable CIDs fail
+  closed like `get`) as `/ku` Web and Desktop, with no new route, DTO or wire
+  field.
 
 ## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
 
