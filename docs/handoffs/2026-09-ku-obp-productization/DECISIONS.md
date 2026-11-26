@@ -1,5 +1,22 @@
 # Decisions and claim boundary
 
+## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: alternatives issue
+`argument_binding` (`group.quote` equals none of the claim's `arguments`)
+dispatches the bounded `alternatives` repair when finite local choices exist. A
+flagged group whose emitted `quote`, `cue`, ordered disjoint `branches` and any
+`borrowed` reconstructions resolve cleanly may only rebind `group.quote` to an
+exact bound `argument` of the same claim that is a contiguous whitespace-bounded
+token extension of the emitted `group.quote`, is not already bound by another
+group of the claim, and preserves unique `cue`, branch and `borrowed` resolution
+with no new issue or coverage loss. Unflagged group quotes, group count, cues,
+exclusivity, branches and borrowed text stay fixed; unbound quotes and sub-word
+slices are rejected; full host revalidation applies. Groups without a valid
+bound-argument rebind do not dispatch. Supersedes only the fixed-`quote` rule of
+earlier `alternatives` repairs for flagged repairable groups. Deterministic tests
+only; no model run, no fidelity claim, user host stays v1.
+
 ## D-072 — Bounded narrowing for an unresolved reference cue (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: references issue

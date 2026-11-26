@@ -1898,3 +1898,220 @@ fn references_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn alternatives_argument_binding_dispatches_only_bound_argument_rebind() {
+    // D-073: an OR group flagged `argument_binding` whose emitted `quote`,
+    // `cue`, ordered disjoint `branches` and `borrowed` reconstructions resolve
+    // cleanly may only rebind `group.quote` to a bound `argument` of the same
+    // claim that is a whitespace-bounded token extension and preserves unique
+    // resolution without new issues or coverage loss.
+    let mut selection = rocket();
+    selection["claims"][0]["alternatives"][0]["quote"] = json!("sử dụng nhiên liệu lỏng hoặc rắn");
+    let (_, validation) = assemble(ROCKET, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[0].alternatives: argument_binding",
+            "selection[0].alternatives: unrepresented_choice_cue",
+            "selection[1].comparisons: target_unspecified",
+            "selection[1].references: target_absent_ambiguous_or_self"
+        ]
+    );
+    assert!(
+        validation.uncovered.is_empty(),
+        "{:?}",
+        validation.uncovered
+    );
+    let (target, fields) = repair_target(ROCKET, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    // Unrelated bound argument "có thể" is excluded; reconstructed "nhiên liệu" kept.
+    assert_eq!(
+        choices["alternatives"],
+        json!({
+            "groups": 1,
+            "repairable": [],
+            "borrowed": ["nhiên liệu"],
+            "argument_binding": [{"group": 0, "quote": ["nhiên liệu lỏng hoặc rắn"]}],
+            "quote": ["nhiên liệu lỏng hoặc rắn"]
+        })
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let alt = &wire["properties"]["patch"]["properties"]["alternatives"];
+    assert_eq!(
+        (alt["minItems"].clone(), alt["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(
+        alt["items"]["properties"]["quote"]["enum"],
+        json!(["nhiên liệu lỏng hoặc rắn"])
+    );
+    let apply = |sel: &Value, alternatives: Value| {
+        apply_repair(
+            ROCKET,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+    };
+    let base = selection["claims"][0]["alternatives"].clone();
+    let mut rebound = base.clone();
+    rebound[0]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    let (changed, draft, after) = apply(&selection, rebound).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(
+        changed["claims"][0]["alternatives"][0]["branches"],
+        base[0]["branches"]
+    );
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-0-group-0"
+    );
+
+    // Rejected: no-op, unrelated argument, sub-word/out-of-choice quote,
+    // altered cue/exclusivity/branch/borrowed, or dropped group.
+    assert!(apply(&selection, base.clone()).is_err());
+    for bad_quote in [
+        "có thể",
+        "lỏng hoặc rắn",
+        "nhiên liệu lỏng hoặc rắ",
+        "Tên lửa có thể sử dụng nhiên liệu lỏng hoặc rắn",
+    ] {
+        let mut bad = base.clone();
+        bad[0]["quote"] = json!(bad_quote);
+        assert!(apply(&selection, bad).is_err());
+    }
+    let mut bad_cue = base.clone();
+    bad_cue[0]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    bad_cue[0]["cue"] = json!("lỏng");
+    assert!(apply(&selection, bad_cue).is_err());
+    let mut bad_excl = base.clone();
+    bad_excl[0]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    bad_excl[0]["exclusivity"] = json!("exclusive");
+    assert!(apply(&selection, bad_excl).is_err());
+    let mut bad_branch = base.clone();
+    bad_branch[0]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    bad_branch[0]["branches"][0]["surface"]["quote"] = json!("lỏng");
+    assert!(apply(&selection, bad_branch).is_err());
+    let mut bad_borrowed = base.clone();
+    bad_borrowed[0]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    bad_borrowed[0]["branches"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("borrowed");
+    assert!(apply(&selection, bad_borrowed).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+
+    // Unflagged sibling group keeps its exact quote, and an unrelated bound
+    // argument ("trong nhà") is excluded; only the flagged group rebinds.
+    let source2 = "Máy dùng pin hoặc điện, nước hay gió trong nhà.";
+    let mixed = json!({"claims":[{"subject":"Máy","predicate":"dùng","arguments":["pin hoặc điện","nước hay gió","trong nhà"],"alternatives":[
+        {"quote":"dùng pin hoặc điện","cue":"hoặc","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện"}}]},
+        {"quote":"nước hay gió","cue":"hay","exclusivity":"unspecified","branches":[{"surface":{"quote":"nước"}},{"surface":{"quote":"gió"}}]}
+    ]}]});
+    let (_, v2) = assemble(source2, &mixed, &mut budget()).unwrap();
+    assert_eq!(
+        v2.issues,
+        vec![
+            "selection[0].alternatives: argument_binding",
+            "selection[0].alternatives: unrepresented_choice_cue"
+        ]
+    );
+    let choices2 = repair_choices(source2, &mixed, 0, &fields, &v2, &mut budget()).unwrap();
+    assert_eq!(
+        choices2["alternatives"]["quote"],
+        json!(["nước hay gió", "pin hoặc điện"])
+    );
+    let groups = mixed["claims"][0]["alternatives"].clone();
+    let mut ok = groups.clone();
+    ok[0]["quote"] = json!("pin hoặc điện");
+    let apply2 = |alternatives: Value| {
+        apply_repair(
+            source2,
+            &mixed,
+            0,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+    };
+    let (_, _, after2) = apply2(ok.clone()).unwrap();
+    assert!(after2.issues.is_empty(), "{:?}", after2.issues);
+    assert!(after2.uncovered.is_empty(), "{:?}", after2.uncovered);
+    let mut swapped = ok;
+    swapped[1]["quote"] = json!("pin hoặc điện");
+    assert!(apply2(swapped).is_err());
+
+    // Unrouted: under-quoted group whose bound argument has uncovered tokens,
+    // sub-word mismatch, or a resolved group reference tied to the old span.
+    let mut uncovered_rebind = rocket();
+    uncovered_rebind["claims"][0]["alternatives"][0]["quote"] = json!("lỏng hoặc rắn");
+    uncovered_rebind["claims"][0]["alternatives"][0]["branches"] =
+        json!([{"surface":{"quote":"lỏng"}},{"surface":{"quote":"rắn"}}]);
+    let (_, uv) = assemble(ROCKET, &uncovered_rebind, &mut budget()).unwrap();
+    assert!(uv
+        .issues
+        .contains(&"selection[0].alternatives: argument_binding".to_owned()));
+    assert!(
+        argument_binding_choices(ROCKET, &uncovered_rebind, 0, &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(repair_target(ROCKET, &uncovered_rebind, &uv, &mut budget())
+        .unwrap()
+        .is_none());
+
+    let mut subword = rocket();
+    subword["claims"][0]["arguments"] = json!(["sử dụng nhiên liệu lỏng hoặc rắn"]);
+    subword["claims"][0]["alternatives"][0]["quote"] = json!("ụng nhiên liệu lỏng hoặc rắn");
+    let (_, sv) = assemble(ROCKET, &subword, &mut budget()).unwrap();
+    assert!(sv
+        .issues
+        .contains(&"selection[0].alternatives: argument_binding".to_owned()));
+    assert!(argument_binding_choices(ROCKET, &subword, 0, &mut budget())
+        .unwrap()
+        .is_empty());
+    assert!(repair_target(ROCKET, &subword, &sv, &mut budget())
+        .unwrap()
+        .is_none());
+
+    let mut ref_locked = selection.clone();
+    ref_locked["claims"][1]["references"][0]["to"] =
+        json!({"quote":"sử dụng nhiên liệu lỏng hoặc rắn"});
+    let (_, rv) = assemble(ROCKET, &ref_locked, &mut budget()).unwrap();
+    assert_eq!(
+        rv.issues,
+        vec![
+            "selection[0].alternatives: argument_binding",
+            "selection[0].alternatives: unrepresented_choice_cue",
+            "selection[1].comparisons: target_unspecified"
+        ]
+    );
+    assert!(
+        argument_binding_choices(ROCKET, &ref_locked, 0, &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(repair_target(ROCKET, &ref_locked, &rv, &mut budget())
+        .unwrap()
+        .is_none());
+}

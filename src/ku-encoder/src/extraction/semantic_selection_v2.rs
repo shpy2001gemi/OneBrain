@@ -268,6 +268,14 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             .map_or(0, |d| d.len() as u64);
         alt["minItems"] = json!(groups.saturating_sub(drops));
         alt["maxItems"] = json!(groups);
+        // D-073: flagged unbound group quotes rebind only to listed bound arguments.
+        if let Some(group_quotes) = choices["alternatives"].get("quote") {
+            let group_quotes = group_quotes
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!group_quotes.is_empty(), "selection_repair_choice")?;
+            alt["items"]["properties"]["quote"]["enum"] = json!(group_quotes);
+        }
         // D-071: flagged unresolved cues narrow only to listed local token runs.
         if let Some(cues) = choices["alternatives"].get("cue") {
             let cues = cues
@@ -804,6 +812,12 @@ pub fn repair_target(
             return Ok(Some((i, vec!["alternatives".into()])));
         }
         if v.issues
+            .contains(&format!("selection[{i}].alternatives: argument_binding"))
+            && !argument_binding_choices(source, selection, i, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["alternatives".into()])));
+        }
+        if v.issues
             .contains(&format!("selection[{i}].references: cue_ambiguous"))
             && !reference_cue_choices(source, claim, b)?.is_empty()
         {
@@ -1136,6 +1150,159 @@ fn alternative_cue_choices(
                 {
                     options.insert(candidate.to_owned());
                 }
+            }
+        }
+        if !options.is_empty() {
+            out.insert(g, options);
+        }
+    }
+    Ok(out)
+}
+
+/// D-073: OR groups flagged `argument_binding` (`group.quote` equals none of
+/// the claim's `arguments`) whose emitted `quote`, `cue`, ordered disjoint
+/// `branches` and any `borrowed` reconstructions already resolve cleanly in
+/// the claim scope may rebind `group.quote` only to an exact bound `argument`
+/// of the same claim that is a contiguous whitespace-bounded token extension
+/// of the emitted `group.quote`, is not already owned by another group of the
+/// claim, and preserves unique `cue`/branch/`borrowed` resolution with no new
+/// issue or coverage loss. Unrepairable groups get no choice so futile repairs
+/// never dispatch.
+fn argument_binding_choices(
+    source: &str,
+    selection: &Value,
+    target: usize,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, BTreeSet<String>>> {
+    let mut out = BTreeMap::new();
+    let Some(claim) = selection["claims"].as_array().and_then(|c| c.get(target)) else {
+        return Ok(out);
+    };
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut baseline: Option<Validation> = None;
+    let positions = |v: &Validation| -> BTreeSet<usize> {
+        v.uncovered
+            .iter()
+            .flat_map(|q| quote_positions(source, q))
+            .flat_map(|(s, e)| s..e)
+            .collect()
+    };
+    for (g, group) in items(claim, "alternatives").enumerate() {
+        let emitted = text(&group["quote"]);
+        if items(claim, "arguments").any(|q| text(q) == emitted) || incompatible_cue(group) {
+            continue;
+        }
+        let Some(group_span) = span(source, &json!({ "quote": emitted }), scope, b)? else {
+            continue;
+        };
+        let Some(emitted_cue) = span(
+            source,
+            &json!({ "quote": group["cue"], "within": emitted }),
+            scope,
+            b,
+        )?
+        else {
+            continue;
+        };
+        let mut prior_emitted = group_span.0;
+        let mut emitted_branches = Vec::new();
+        let mut clean_emitted = true;
+        for branch in items(group, "branches") {
+            let Some(at) = span(source, &branch["surface"], emitted, b)?.filter(|at| {
+                contains(group_span, *at) && at.0 >= prior_emitted && !overlaps(*at, emitted_cue)
+            }) else {
+                clean_emitted = false;
+                break;
+            };
+            prior_emitted = at.1;
+            emitted_branches.push(at);
+        }
+        if !clean_emitted {
+            continue;
+        }
+        for (j, branch) in items(group, "branches").enumerate() {
+            if let Some(borrowed) = branch.get("borrowed") {
+                let valid = span(source, borrowed, emitted, b)?.is_some_and(|at| {
+                    emitted_branches
+                        .iter()
+                        .enumerate()
+                        .any(|(k, s)| k != j && contains(*s, at))
+                });
+                if !valid {
+                    clean_emitted = false;
+                    break;
+                }
+            }
+        }
+        if !clean_emitted {
+            continue;
+        }
+        let mut options = BTreeSet::new();
+        for arg_val in items(claim, "arguments") {
+            let arg = text(arg_val);
+            if !token_extension(emitted, arg)
+                || items(claim, "alternatives")
+                    .enumerate()
+                    .any(|(k, other)| k != g && text(&other["quote"]) == arg)
+            {
+                continue;
+            }
+            let Some(arg_span) = span(source, &json!({ "quote": arg }), scope, b)? else {
+                continue;
+            };
+            let Some(cue_span) = span(
+                source,
+                &json!({ "quote": group["cue"], "within": arg }),
+                scope,
+                b,
+            )?
+            else {
+                continue;
+            };
+            let mut prior_end = arg_span.0;
+            let mut branch_spans = Vec::new();
+            let mut ok = true;
+            for branch in items(group, "branches") {
+                let Some(at) = span(source, &branch["surface"], arg, b)?.filter(|at| {
+                    contains(arg_span, *at) && at.0 >= prior_end && !overlaps(*at, cue_span)
+                }) else {
+                    ok = false;
+                    break;
+                };
+                prior_end = at.1;
+                branch_spans.push(at);
+            }
+            if !ok {
+                continue;
+            }
+            for (j, branch) in items(group, "branches").enumerate() {
+                if let Some(borrowed) = branch.get("borrowed") {
+                    let valid = span(source, borrowed, arg, b)?.is_some_and(|at| {
+                        branch_spans
+                            .iter()
+                            .enumerate()
+                            .any(|(k, s)| k != j && contains(*s, at))
+                    });
+                    if !valid {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if !ok {
+                continue;
+            }
+            let before = match &baseline {
+                Some(v) => v,
+                None => baseline.insert(assemble(source, selection, b)?.1),
+            };
+            let mut trial = selection.clone();
+            trial["claims"][target]["alternatives"][g]["quote"] = json!(arg);
+            let (_, after) = assemble(source, &trial, b)?;
+            if after.issues.iter().all(|s| before.issues.contains(s))
+                && positions(&after).is_subset(&positions(before))
+            {
+                options.insert(arg.to_owned());
             }
         }
         if !options.is_empty() {
@@ -1567,6 +1734,23 @@ pub fn repair_choices(
             alt_choices["cue_narrowing"] = json!(cue_listed);
             alt_choices["cue"] = json!(cues);
         }
+        let quote_repairs = argument_binding_choices(source, selection, target, b)?;
+        if !quote_repairs.is_empty() {
+            // D-073: unflagged group quotes stay as emitted; flagged unbound group
+            // quotes list only their valid bound-argument rebinds.
+            let mut group_quotes: BTreeSet<String> = items(claim, "alternatives")
+                .enumerate()
+                .filter(|(g, _)| !quote_repairs.contains_key(g))
+                .map(|(_, group)| text(&group["quote"]).to_owned())
+                .collect();
+            let mut quote_listed = Vec::new();
+            for (g, options) in &quote_repairs {
+                group_quotes.extend(options.iter().cloned());
+                quote_listed.push(json!({ "group": g, "quote": options }));
+            }
+            alt_choices["argument_binding"] = json!(quote_listed);
+            alt_choices["quote"] = json!(group_quotes);
+        }
         choices["alternatives"] = alt_choices;
     }
     if fields.iter().any(|f| f == "comparisons") {
@@ -1730,6 +1914,7 @@ pub fn apply_repair(
         let scope_by_group: BTreeMap<usize, &GroupScopeRepair> =
             scope_repairs.iter().map(|sr| (sr.group, sr)).collect();
         let cue_repairs = alternative_cue_choices(source, old, b)?;
+        let quote_repairs = argument_binding_choices(source, base, target, b)?;
         for (key, value) in patch {
             let previous = old[key]
                 .as_array()
@@ -1866,6 +2051,19 @@ pub fn apply_repair(
             }
             for (g, (before, after)) in previous.iter().zip(next).enumerate() {
                 if key == "alternatives" {
+                    // D-073: quote fixed unless a flagged unbound group quote
+                    // rebinds to one of its listed bound arguments.
+                    if let Some(quotes) = quote_repairs.get(&g) {
+                        require(
+                            after["quote"].as_str().is_some_and(|q| quotes.contains(q)),
+                            "selection_repair_choice",
+                        )?;
+                    } else {
+                        require(
+                            before["quote"] == after["quote"],
+                            "selection_repair_structure_loss",
+                        )?;
+                    }
                     // D-071: cue fixed unless a flagged unresolved cue narrows to
                     // one of its listed local token runs.
                     if let Some(cues) = cue_repairs.get(&g) {
@@ -1881,7 +2079,7 @@ pub fn apply_repair(
                     }
                 }
                 let retained: &[&str] = match key.as_str() {
-                    "alternatives" => &["quote", "exclusivity"],
+                    "alternatives" => &["exclusivity"],
                     "comparisons" => &["property", "cue", "target_kind"],
                     "references" => &["via", "target_kind"],
                     _ => return Err(ExtractionError("selection_repair_scope")),

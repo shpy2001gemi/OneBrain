@@ -151,6 +151,18 @@ full revalidation (no new issues, no coverage loss) applies. Groups without a
 unique local token run (such as an absent cue or a repeated single-token cue)
 stay unrouted in `needs_review`.
 
+An OR group flagged `argument_binding` (`group.quote` equals none of the claim's
+`arguments`) whose emitted `quote`, `cue`, ordered disjoint `branches` and any
+`borrowed` reconstructions resolve cleanly may dispatch an `alternatives`-only
+repair when finite local choices exist (D-073). A flagged group may only rebind
+`quote` to an exact bound `argument` of the same claim that is a contiguous
+whitespace-bounded token extension of the emitted `quote`, is not already bound
+by another group of the claim, and preserves unique `cue`, branch and `borrowed`
+resolution with no new issue or coverage loss. Unflagged group quotes, group
+count, cues, exclusivity, branches and borrowed text stay unchanged, no unbound
+quote or sub-word slice is accepted, and full revalidation applies. Groups
+without a valid bound-argument rebind stay unrouted in `needs_review`.
+
 A reference flagged `cue_ambiguous` (`via` does not resolve uniquely in the claim
 scope) may dispatch a `references`-only repair when finite local choices exist
 (D-072). A flagged reference may only narrow `via.quote` to one contiguous
