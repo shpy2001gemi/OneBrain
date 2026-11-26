@@ -1,6 +1,16 @@
 .ku-workflow {
   max-width: 1100px;
   margin-inline: auto;
+  /* Dark native controls (select popups, disabled fields) on the dark theme. */
+  color-scheme: dark;
+}
+.ku-workflow select.input option {
+  background: var(--ob-bg-secondary);
+  color: var(--ob-text-primary);
+}
+.ku-workflow .input:disabled {
+  background: var(--ob-surface);
+  color: var(--ob-text-muted);
 }
 .ku-review-claim { border: 1px solid var(--ob-glass-border); border-radius: 12px; padding: 16px; margin-block: 12px; }
 .ku-review-claim dt { font-weight: 600; margin-top: 8px; }

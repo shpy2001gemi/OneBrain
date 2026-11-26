@@ -82,13 +82,14 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
   return <section className="glass-card ku-review-draft" aria-labelledby="review-draft-title">
     <h2 id="review-draft-title">Knowledge draft · background job</h2>
     <p>AI picks the meaning components; the host builds the draft and checks it against the source. Only the parts that need repair are sent back to AI. You can keep working while it runs. A draft is not a saved KU or verified knowledge.</p>
-    {recent.length>0 && <label>Recent jobs<select value={operation} onChange={e=>void run(()=>read(e.target.value))}><option value="" disabled>Choose a job</option>{recent.map(r=><option key={r.operation_id} value={r.operation_id}>{r.model} · {labels[r.state] ?? r.state} · {r.operation_id.slice(0,8)}</option>)}</select></label>}
+    {recent.length>0 && <label>Recent jobs<select className="input" value={operation} onChange={e=>void run(()=>read(e.target.value))}><option value="" disabled>Choose a job</option>{recent.map(r=><option key={r.operation_id} value={r.operation_id}>{r.model} · {labels[r.state] ?? r.state} · {r.operation_id.slice(0,8)}</option>)}</select></label>}
     <label htmlFor="review-model">Ollama model</label>
-    <select id="review-model" value={model} onChange={e => setModel(e.target.value)} disabled={busy}>
+    <select id="review-model" className="input" value={model} onChange={e => setModel(e.target.value)} disabled={busy || models.models.length === 0}>
+      {models.models.length === 0 && <option value="">No Ollama model admitted on this host</option>}
       {models.models.map(m => <option key={m.model} value={m.model}>{m.model}</option>)}
     </select>
     <label htmlFor="review-source">Source text</label>
-    <textarea id="review-source" rows={4} value={text} onChange={e=>setText(e.target.value)} disabled={busy}/>
+    <textarea id="review-source" className="input" rows={4} value={text} onChange={e=>setText(e.target.value)} disabled={busy}/>
     <p>{bytes} / 8192 UTF-8 bytes</p>
     <label><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} disabled={busy}/> I allow this host to process the source text with the selected model and to keep the source and draft versions private until I delete the dataset.</label>
     <button className="btn btn-primary" disabled={busy || !consent || !text.trim() || bytes>8192 || !model} onClick={()=>void run(start)}>Start background draft</button>
@@ -129,7 +130,7 @@ export function KuReviewDraft({client, models, session}: {client: KuClient; mode
     </div>}
     <details><summary>Reopen a job by ID</summary>
       <p>After reopening the browser, enter the job ID to read recorded progress. Reading does not call AI.</p>
-      <label htmlFor="review-recovery">Job ID</label><input id="review-recovery" value={recovery} onChange={e=>setRecovery(e.target.value)}/>
+      <label htmlFor="review-recovery">Job ID</label><input id="review-recovery" className="input" value={recovery} onChange={e=>setRecovery(e.target.value)}/>
       <button className="btn" disabled={busy || !/^[0-9a-f]{64}$/.test(recovery)} onClick={()=>void run(()=>read(recovery))}>Read recorded draft</button>
     </details>
   </section>;

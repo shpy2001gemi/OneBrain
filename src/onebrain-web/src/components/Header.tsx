@@ -41,7 +41,7 @@ function KuBadges() {
   return (
     <>
       <span className="badge badge-cyan">
-        {n} private KU{n === 1 ? '' : 's'} saved
+        {`${n} private KU${n === 1 ? '' : 's'} saved`}
       </span>
       {network.enabled ? (
         <span
@@ -52,8 +52,7 @@ function KuBadges() {
               : `Private-LAN NodeID ${network.node_id} · listen ${network.listen_addr}. DEV-ONLY opt-in (D-063): devices on this LAN can reach the share listener; no NAT traversal; not network completion.`
           }
         >
-          {loopback ? 'Loopback' : 'Private-LAN (DEV-ONLY)'} peer network · {network.active_sessions} active session
-          {network.active_sessions === 1 ? '' : 's'}
+          {`${loopback ? 'Loopback' : 'Private-LAN (DEV-ONLY)'} peer network · ${network.active_sessions} active session${network.active_sessions === 1 ? '' : 's'}`}
         </span>
       ) : (
         <span className="badge" title="Start the host with an opt-in loopback network to share Public KUs.">

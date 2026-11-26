@@ -188,6 +188,8 @@ export function KuWorkflowPage({
   const [resolved, setResolved] = useState(false);
   const [prepared, setPrepared] = useState<Prepared>();
   const [pending, setPending] = useState<Pending>();
+  /** Whether the pending operation came from the Ollama flow (help text only). */
+  const [pendingAi, setPendingAi] = useState(false);
   const [receipt, setReceipt] = useState<Receipt>();
   const [uncertain, setUncertain] = useState(false);
   const [page, setPage] = useState<Page>();
@@ -263,16 +265,16 @@ export function KuWorkflowPage({
   }
   async function refresh() {
     const result = await client.status();
-    if (
-      pending &&
-      session &&
+    const restarted =
+      !!session &&
       (session.process_generation !== result.data.session.process_generation ||
-        session.dataset_generation !== result.data.session.dataset_generation)
-    )
-      setUncertain(true);
+        session.dataset_generation !== result.data.session.dataset_generation);
+    if (pending && restarted) setUncertain(true);
     setSession(result.data.session);
     setStatus(result.data.payload);
     setMetadata(result.meta);
+    // A restarted host may listen on a new share port: refresh the NodeID line.
+    if (restarted) void refreshKuHeaderSummary(client, result.data.session);
     return result.data.session;
   }
   useEffect(() => {
@@ -461,6 +463,7 @@ export function KuWorkflowPage({
       idempotency_key: op as unknown as Preparation["idempotency_key"],
     };
     setPending(work);
+    setPendingAi(ai);
     setPrepared(undefined);
     setReceipt(undefined);
     canceled.current = false;
@@ -585,9 +588,10 @@ export function KuWorkflowPage({
               {isLoopbackListen(headerSummary.network.listen_addr)
                 ? "loopback"
                 : "private-LAN (DEV-ONLY, D-063)"}{" "}
-              NodeID: {headerSummary.network.node_id} ·
-              listen {headerSummary.network.listen_addr}. Give this NodeID and
-              address to a sender for step 1 below.
+              NodeID: {headerSummary.network.node_id} · listen{" "}
+              {headerSummary.network.listen_addr}. To receive a share, give
+              this NodeID and address to the sender (their step 1). To send,
+              enter the recipient&apos;s NodeID and address in step 1 below.
             </p>
           ) : (
             <p>
@@ -603,7 +607,9 @@ export function KuWorkflowPage({
                 ...metadata.limitations,
                 ...(status?.limitations ?? []),
               ]),
-            ].join(" · ")}
+            ]
+              .filter((l) => l !== metadata.coverage)
+              .join(" · ")}
           </p>
         )}
         <button
@@ -882,11 +888,20 @@ export function KuWorkflowPage({
             onClick={() =>
               void run(async () => {
                 const result = await client.resolve(session!, label);
-                setCandidates(
-                  result.data.payload.candidates.map((c) => c.ccid),
-                );
+                const found = result.data.payload.candidates.map((c) => c.ccid);
+                setCandidates(found);
                 setResolved(true);
                 setSelection("");
+                // D-058 display-only labels for the candidates (best effort).
+                const wanted = found
+                  .filter(
+                    (c) =>
+                      /^[0-9a-f]{32}$/.test(c) && !labelAttempted.current.has(c),
+                  )
+                  .slice(0, 64);
+                wanted.forEach((c) => labelAttempted.current.add(c));
+                const labels = await fetchCcidLabels(client, session!, wanted);
+                setCcidLabels((prev) => ({ ...prev, ...labels }));
               })
             }
           >
@@ -902,6 +917,9 @@ export function KuWorkflowPage({
             <option value="">Unresolved — no selection</option>
             {candidates.map((c) => (
               <option key={c} value={c}>
+                {typeof ccidLabels[c] === "string"
+                  ? `“${ccidLabels[c]}” · `
+                  : ""}
                 {c}
                 {draftOrigin?.predicate_ccid === c
                   ? " — matches the Public KU predicate"
@@ -970,8 +988,10 @@ export function KuWorkflowPage({
             Operation ID: {pending.operation_id}
             <br />
             Keep this ID for recovery before closing this page. Private draft
-            and session are held in this page's memory. Submitted AI source and
-            consent are retained privately by the host.
+            and session are held in this page&apos;s memory.
+            {pendingAi
+              ? " Submitted AI source and consent are retained privately by the host."
+              : ""}
           </p>
         )}
         {(pending || uncertain) && (
@@ -1043,6 +1063,15 @@ export function KuWorkflowPage({
                 setReceipt(result.data.payload);
                 setMetadata(result.meta);
                 void refreshKuHeaderSummary(client, result.data.session);
+                if (result.data.payload.state === "committed") {
+                  // Show the new item without a manual Search / list. Best
+                  // effort: a failed read never marks the save uncertain.
+                  try {
+                    await readPage();
+                  } catch {
+                    /* Search / list retries. */
+                  }
+                }
               }, true)
             }
           >
@@ -1331,7 +1360,8 @@ export function KuWorkflowPage({
               {sharePrepared.namespace}
             </p>
             <p>
-              Expires at (Unix s): {sharePrepared.expires_at} · Enqueued:{" "}
+              Expires: {new Date(sharePrepared.expires_at * 1000).toLocaleString()}{" "}
+              (Unix s: {sharePrepared.expires_at}) · Enqueued:{" "}
               {String(sharePrepared.enqueued)} · Payload sent:{" "}
               {String(sharePrepared.payload_sent)} · Support:{" "}
               {sharePrepared.support} · Fidelity:{" "}
@@ -1594,8 +1624,10 @@ export function KuWorkflowPage({
                           );
                         }
                       }}
+                      aria-label={`Use ${item.object_cid} in step 4`}
+                      title={`Use ${item.object_cid} in step 4`}
                     >
-                      Use {item.object_cid} in step 4
+                      Use {item.object_cid.slice(0, 8)}… in step 4
                     </button>
                     {(() => {
                       const seed = publicDraftSeed(item.semantic);
@@ -1643,8 +1675,10 @@ export function KuWorkflowPage({
                               editorRef.current?.focus(),
                             );
                           }}
+                          aria-label={`Start a new private draft from ${item.object_cid}`}
                         >
-                          Start a new private draft from {item.object_cid}
+                          Start a new private draft from{" "}
+                          {item.object_cid.slice(0, 8)}…
                         </button>
                         </>
                       );

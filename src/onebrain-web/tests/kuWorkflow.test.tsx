@@ -871,6 +871,34 @@ describe("local KU component journey", () => {
     await waitFor(() => expect(summaries()).toHaveLength(2));
     expect(summaries()[1].body.request.payload).toEqual({});
   });
+  it("labels concept candidates (display only) and re-lists saved knowledge after a committed save", async () => {
+    const f = fixture({ ccidLabels: true });
+    render(<KuWorkflowPage client={f.client} />);
+    await fill();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Look up Registry concepts" }),
+    );
+    // D-058 label next to the candidate CCID; the value stays the CCID.
+    await screen.findByRole("option", { name: `“water” · ${ccid}` });
+    fireEvent.change(screen.getByLabelText("Explicit concept selection"), {
+      target: { value: ccid },
+    });
+    await preview();
+    const lists = () =>
+      f.calls.filter((c) => c.body?.request?.operation === "list");
+    const before = lists().length;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save exact preview privately" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("committed"),
+    );
+    // No manual Search / list click: the saved list is read again once.
+    await waitFor(() => expect(lists().length).toBe(before + 1));
+    expect(
+      f.calls.filter((c) => c.body?.request?.operation === "save"),
+    ).toHaveLength(1);
+  });
   it("requires explicit preview/save, projects exact IDs and revisions with keyboard-labelled controls", async () => {
     const f = fixture();
     render(<KuWorkflowPage client={f.client} />);

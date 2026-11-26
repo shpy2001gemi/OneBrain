@@ -6,7 +6,44 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — opt-in private-LAN share network for two real machines (D-063, t19, 2026-11-26)
+## Latest follow-up — browser click-test of `/ku` for D-057/D-058/D-062 and Web UX fixes (t20, 2026-11-26)
+
+After t19 the owner chose the recommended backlog item: click the `/ku` flows in a real browser
+on loopback and fix the UI problems found. Web-only fixes; no host, API, DTO, consent, trust or
+decision change.
+
+- **Setup:** fresh DEV-ONLY bootstrap (`--dev-demo-registry --with-receiver --port 4380`) under
+  `%TEMP%/ku t20 click demo`; two `ku_local_web` hosts (sender 4380, receiver 4381, loopback
+  share network). Browser agent, only the two loopback origins.
+- **Click results (all passed):** sender save → Public share prepare (D-058 label `“water”` in the
+  preview) → **sender host restarted** → confirm in the same tab without reload succeeded on the
+  restored preparation (D-062) → intent `Acknowledged`, section-2 Delivery line updated. Receiver
+  browse/filter shows the Public KU with label and observed selector, `Use … in step 4` + inspect
+  show the sender NodeID, fidelity unassessed, reward false; D-057 prefill copies only the text,
+  marks the matching candidate, explicit preview/save gives a separate `LOCAL_ONLY` KU. Repeated with
+  a second KU (`ice`) and a second sender restart. No console errors.
+- **Fixes ([KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx),
+  [KuReviewDraft.tsx](../../../../src/onebrain-web/src/pages/KuReviewDraft.tsx),
+  [Header.tsx](../../../../src/onebrain-web/src/components/Header.tsx), `kuWorkflow.css`,
+  `index.html`):** `Saved local knowledge` re-lists automatically after a committed save
+  (best effort; a failed read never marks the save uncertain); concept candidates show the D-058
+  display-only label (`“ice” · <ccid>`); the NodeID/listen line refreshes when a host restart is
+  detected (new share port); the NodeID line explains both send and receive; Coverage no longer
+  repeats `local_only`; the AI source/consent sentence appears only for AI operations; share expiry
+  shows local date/time plus Unix seconds; `Use …`/`Start a new private draft from …` buttons show a
+  short CID (full CID in accessible name/title); dark native controls (`color-scheme: dark`, disabled
+  inputs) and full-width review-draft controls with a "No Ollama model admitted" option; header
+  badges render as single text nodes; page title `OneBrain`.
+- **Test:** vitest `labels concept candidates (display only) and re-lists saved knowledge after a
+  committed save`.
+
+Not fixed (small, left for later): raw scope enum `accepted_public_store_only` in browse, no
+filter count/clear, step `2.` heading disappears after confirm, verbose Delivery line, D-057 banner
+stays after save, one `status: 0` editor request retried after restart (succeeded). Not covered:
+LAN badge in a browser (D-063 checked by script only), two physical machines, Desktop click (D-057),
+real Registry. DEV-ONLY, no qualification.
+
+## Earlier follow-up — opt-in private-LAN share network for two real machines (D-063, t19, 2026-11-26)
 
 After t18 the owner picked the task 20 backlog item “non-loopback” in its recommended narrow
 form, recorded as D-063: DEV-ONLY private-LAN bind with a second explicit opt-in; no NAT
