@@ -34,6 +34,17 @@ trust, wire, DTO, mobile-authority or claim-boundary change).
   claim that is a contiguous whitespace-bounded token extension of the emitted
   `group.quote`, unowned by sibling groups, resolving `cue`, ordered disjoint
   `branches` and `borrowed` uniquely with no new issue or coverage loss.
+- **Slice 4 (`alternatives: incompatible_or_cue` in mixed quotes):** a bound,
+  uniquely resolved OR group flagged `incompatible_or_cue` whose `group.quote`
+  also contains a lexical OR cue (`hoặc`/`or`) and whose ordered disjoint
+  `branches` and any `borrowed` reconstructions resolve cleanly joins D-071's
+  bounded `alternatives` cue repair when finite local choices exist, replacing
+  `group.cue` only with an exact whitespace-bounded lexical OR token of
+  `group.quote` that resolves uniquely inside `group.quote` strictly between
+  adjacent branches with no branch overlap, new issue or coverage loss; group
+  count, `quote`, `exclusivity`, `branches` and `borrowed` stay fixed (narrows
+  only D-064's "quotes with an OR cue stay unrouted" clause for cleanly
+  branch-split mixed quotes).
 
 ## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
 

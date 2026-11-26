@@ -95,14 +95,25 @@ unambiguous cue stay unrouted in `needs_review`.
 
 An OR group whose cue is a known conjunction/contrast cue (`incompatible_or_cue`)
 may dispatch an `alternatives`-only repair whose only finite choice is omitting
-that whole group (D-064). This is the sole exception to keeping previous branches:
-the group's branches only carried an OR operator the cue does not support, and the
-exact group quote stays the claim's bound argument. Kept groups stay byte-identical
-and in order; a relabelled cue, partial branch removal or substituted group is
-rejected, and full revalidation (no new issues, no coverage loss) still applies.
-Omission asserts no conjunction or contrast operator. Groups whose quote also
-contains an OR cue, whose quote is not a bound argument, which do not resolve
-uniquely, or which contain a resolved reference target stay unrouted.
+that whole group when `group.quote` contains no lexical OR cue (D-064). This is
+the sole exception to keeping previous branches: the group's branches only
+carried an OR operator the cue does not support, and the exact group quote stays
+the claim's bound argument. Kept groups stay byte-identical and in order; a
+relabelled cue, partial branch removal or substituted group is rejected, and
+full revalidation (no new issues, no coverage loss) still applies. Omission
+asserts no conjunction or contrast operator. Groups without an OR cue whose
+quote is not a bound argument, which do not resolve uniquely, or which contain a
+resolved reference target stay unrouted. When a bound, uniquely resolved OR
+group flagged `incompatible_or_cue` also contains a lexical OR cue (`hoặc`/`or`)
+inside `group.quote` and its ordered disjoint `branches` and any `borrowed`
+reconstructions already resolve cleanly, it may instead dispatch an
+`alternatives`-only cue repair when finite local choices exist (D-074): its
+only finite choice is replacing `cue` with an exact whitespace-bounded lexical
+OR token of `group.quote` that resolves uniquely inside `group.quote` strictly
+between adjacent branches without overlapping any branch, adding issues or
+losing coverage (group count, `quote`, `exclusivity`, `branches` and `borrowed`
+stay unchanged; mixed quotes split on the conjunction or with ambiguous OR
+tokens stay unrouted).
 
 Comparison binding errors may dispatch a `comparisons`-only repair (D-065). A
 comparison flagged `property_binding` whose property and the claim predicate are

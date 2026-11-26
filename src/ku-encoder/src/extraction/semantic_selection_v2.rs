@@ -801,13 +801,14 @@ pub fn repair_target(
         }
         if v.issues
             .contains(&format!("selection[{i}].alternatives: incompatible_or_cue"))
-            && !incompatible_cue_drops(source, selection, i, b)?.is_empty()
+            && (!incompatible_cue_drops(source, selection, i, b)?.is_empty()
+                || !alternative_cue_choices(source, selection, i, b)?.is_empty())
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
         if v.issues
             .contains(&format!("selection[{i}].alternatives: cue_ambiguous"))
-            && !alternative_cue_choices(source, claim, b)?.is_empty()
+            && !alternative_cue_choices(source, selection, i, b)?.is_empty()
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
@@ -1121,26 +1122,119 @@ fn overlaps(a: (usize, usize), b: (usize, usize)) -> bool {
 /// D-071: OR groups flagged `cue_ambiguous` (`cue` does not resolve uniquely
 /// inside `group.quote`) may only narrow `cue` to a contiguous
 /// whitespace-bounded token run of the emitted `cue` itself that resolves
-/// uniquely inside `group.quote` and overlaps no located branch span. Groups
-/// whose quote does not resolve, or without a valid run (an absent cue or a
-/// repeated single-token cue), get no choice so unrepairable cues never dispatch.
+/// uniquely inside `group.quote` and overlaps no located branch span.
+/// D-074 (slice 4): a bound OR group flagged `incompatible_or_cue` whose
+/// `group.quote` also contains a lexical OR cue (`hoặc`/`or`) and whose
+/// ordered disjoint `branches` and any `borrowed` reconstructions already
+/// resolve cleanly may re-cue `group.cue` only to a whitespace-bounded lexical
+/// OR token of `group.quote` that resolves uniquely inside `group.quote`
+/// strictly between adjacent branches without overlapping any branch, new
+/// issue or coverage loss. Unrepairable groups get no choice so futile repairs
+/// never dispatch.
 fn alternative_cue_choices(
     source: &str,
-    claim: &Value,
+    selection: &Value,
+    target: usize,
     b: &mut WorkBudget,
 ) -> Result<BTreeMap<usize, BTreeSet<String>>> {
-    let scope = claim["anchor"].as_str().unwrap_or(source);
     let mut out = BTreeMap::new();
+    let Some(claim) = selection["claims"].as_array().and_then(|c| c.get(target)) else {
+        return Ok(out);
+    };
+    let drop_first = !incompatible_cue_drops(source, selection, target, b)?.is_empty();
+    let or = or_cue()?;
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut baseline: Option<Validation> = None;
+    let positions = |v: &Validation| -> BTreeSet<usize> {
+        v.uncovered
+            .iter()
+            .flat_map(|q| quote_positions(source, q))
+            .flat_map(|(s, e)| s..e)
+            .collect()
+    };
     for (g, group) in items(claim, "alternatives").enumerate() {
         let Some(group_span) = span(source, &json!({ "quote": group["quote"] }), scope, b)? else {
             continue;
         };
         let cue = text(&group["cue"]);
+        let quote = text(&group["quote"]);
         let within = |q: &str| json!({ "quote": q, "within": group["quote"] });
+        if incompatible_cue(group) {
+            if drop_first
+                || !or.is_match(quote)
+                || !items(claim, "arguments").any(|q| *q == group["quote"])
+            {
+                continue;
+            }
+            let mut prior_end = group_span.0;
+            let mut branch_spans = Vec::new();
+            let mut clean = true;
+            for branch in items(group, "branches") {
+                let Some(at) = span(source, &branch["surface"], quote, b)?
+                    .filter(|at| contains(group_span, *at) && at.0 >= prior_end)
+                else {
+                    clean = false;
+                    break;
+                };
+                prior_end = at.1;
+                branch_spans.push(at);
+            }
+            if !clean || branch_spans.len() < 2 {
+                continue;
+            }
+            for (j, branch) in items(group, "branches").enumerate() {
+                if let Some(borrowed) = branch.get("borrowed") {
+                    let valid = span(source, borrowed, quote, b)?.is_some_and(|at| {
+                        branch_spans
+                            .iter()
+                            .enumerate()
+                            .any(|(k, s)| k != j && contains(*s, at))
+                    });
+                    if !valid {
+                        clean = false;
+                        break;
+                    }
+                }
+            }
+            if !clean {
+                continue;
+            }
+            let mut options = BTreeSet::new();
+            for tok in quote.split_whitespace().take(64) {
+                if !matches!(tok.to_lowercase().as_str(), "hoặc" | "or") {
+                    continue;
+                }
+                let Some(cs) = span(source, &within(tok), scope, b)? else {
+                    continue;
+                };
+                if branch_spans.iter().any(|at| overlaps(cs, *at))
+                    || !branch_spans
+                        .windows(2)
+                        .any(|w| w[0].1 <= cs.0 && cs.1 <= w[1].0)
+                {
+                    continue;
+                }
+                let before = match &baseline {
+                    Some(v) => v,
+                    None => baseline.insert(assemble(source, selection, b)?.1),
+                };
+                let mut trial = selection.clone();
+                trial["claims"][target]["alternatives"][g]["cue"] = json!(tok);
+                let (_, after) = assemble(source, &trial, b)?;
+                if after.issues.iter().all(|s| before.issues.contains(s))
+                    && positions(&after).is_subset(&positions(before))
+                {
+                    options.insert(tok.to_owned());
+                }
+            }
+            if !options.is_empty() {
+                out.insert(g, options);
+            }
+            continue;
+        }
         if span(source, &within(cue), scope, b)?.is_some() {
             continue;
         }
-        let quote = text(&group["quote"]);
         let mut located = Vec::new();
         for branch in items(group, "branches") {
             if let Some(at) =
@@ -1888,7 +1982,7 @@ pub fn repair_choices(
                 alt_choices["surfaces"] = json!(surfaces);
             }
         }
-        let cue_repairs = alternative_cue_choices(source, claim, b)?;
+        let cue_repairs = alternative_cue_choices(source, selection, target, b)?;
         if !cue_repairs.is_empty() {
             // D-071: unflagged group cues stay as emitted; flagged unresolved cues
             // list only their local token runs.
@@ -2101,7 +2195,7 @@ pub fn apply_repair(
         let scope_repairs = branch_scope_choices(source, old, b)?;
         let scope_by_group: BTreeMap<usize, &GroupScopeRepair> =
             scope_repairs.iter().map(|sr| (sr.group, sr)).collect();
-        let cue_repairs = alternative_cue_choices(source, old, b)?;
+        let cue_repairs = alternative_cue_choices(source, base, target, b)?;
         let quote_repairs = argument_binding_choices(source, base, target, b)?;
         for (key, value) in patch {
             let previous = old[key]

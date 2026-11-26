@@ -1734,11 +1734,9 @@ fn alternatives_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
     ] {
         let (_, v) = assemble(src, &sel, &mut budget()).unwrap();
         assert_eq!(v.issues, vec!["selection[0].alternatives: cue_ambiguous"]);
-        assert!(
-            alternative_cue_choices(src, &sel["claims"][0], &mut budget())
-                .unwrap()
-                .is_empty()
-        );
+        assert!(alternative_cue_choices(src, &sel, 0, &mut budget())
+            .unwrap()
+            .is_empty());
         assert!(repair_target(src, &sel, &v, &mut budget())
             .unwrap()
             .is_none());
@@ -2678,4 +2676,181 @@ fn alternatives_group_ambiguous_dispatches_only_bound_argument_rebind() {
     assert!(argument_binding_choices(ROCKET, &subword, 0, &mut budget())
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn incompatible_or_cue_in_mixed_quote_dispatches_only_between_branch_or_recue() {
+    // D-074 (slice 4): a bound OR group flagged `incompatible_or_cue` whose
+    // `group.quote` also carries a lexical OR cue (`hoặc`/`or`) and whose
+    // ordered disjoint `branches` and `borrowed` reconstructions resolve
+    // cleanly may only re-cue `group.cue` to a whitespace-bounded lexical OR
+    // token of `group.quote` resolving uniquely strictly between adjacent
+    // branches with no new issue or coverage loss; whole-group omission stays
+    // forbidden because `group.quote` contains an OR cue.
+    let source = "Hệ thống hỗ trợ pin và cáp hoặc điện dự phòng.";
+    let selection = json!({"claims":[{
+        "subject": "Hệ thống",
+        "predicate": "hỗ trợ",
+        "arguments": ["pin và cáp hoặc điện dự phòng"],
+        "alternatives": [{
+            "quote": "pin và cáp hoặc điện dự phòng",
+            "cue": "và",
+            "exclusivity": "unspecified",
+            "branches": [
+                {"surface": {"quote": "pin và cáp"}},
+                {"surface": {"quote": "điện dự phòng"}}
+            ]
+        }]
+    }]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].alternatives: incompatible_or_cue"]
+    );
+    assert_eq!(validation.uncovered, vec!["hoặc"]);
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"],
+        json!({
+            "groups": 1,
+            "repairable": [],
+            "borrowed": [],
+            "cue_narrowing": [{"group": 0, "cue": ["hoặc"]}],
+            "cue": ["hoặc"]
+        })
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let alt = &wire["properties"]["patch"]["properties"]["alternatives"];
+    assert_eq!(
+        (alt["minItems"].clone(), alt["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(alt["items"]["properties"]["cue"]["enum"], json!(["hoặc"]));
+    let apply = |sel: &Value, alternatives: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+    };
+    let base = selection["claims"][0]["alternatives"].clone();
+    let mut recued = base.clone();
+    recued[0]["cue"] = json!("hoặc");
+    let (changed, draft, after) = apply(&selection, recued).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(
+        changed["claims"][0]["alternatives"][0]["branches"],
+        base[0]["branches"]
+    );
+    assert!(draft["statements"][0]["alternatives"][0]["cue_span"].is_array());
+
+    // Rejected: no-op, whole-group drop (would raise `unrepresented_choice_cue`),
+    // non-OR token, altered quote/exclusivity/branches.
+    assert!(apply(&selection, base.clone()).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+    for bad_cue in ["cáp", "or", "điện"] {
+        let mut bad = base.clone();
+        bad[0]["cue"] = json!(bad_cue);
+        assert!(apply(&selection, bad).is_err());
+    }
+    let mut bad_excl = base.clone();
+    bad_excl[0]["cue"] = json!("hoặc");
+    bad_excl[0]["exclusivity"] = json!("exclusive");
+    assert!(apply(&selection, bad_excl).is_err());
+    let mut bad_branch = base.clone();
+    bad_branch[0]["cue"] = json!("hoặc");
+    bad_branch[0]["branches"][0]["surface"]["quote"] = json!("pin");
+    assert!(apply(&selection, bad_branch).is_err());
+
+    // English mixed quote (`and` -> `or`) also preserves unflagged sibling cue.
+    let en_source = "The device supports mouse and keyboard or touch, plus wifi or wired.";
+    let en_sel = json!({"claims":[{
+        "subject": "The device",
+        "predicate": "supports",
+        "arguments": ["mouse and keyboard or touch", "plus wifi or wired"],
+        "alternatives": [
+            {
+                "quote": "mouse and keyboard or touch",
+                "cue": "and",
+                "exclusivity": "unspecified",
+                "branches": [
+                    {"surface": {"quote": "mouse and keyboard"}},
+                    {"surface": {"quote": "touch"}}
+                ]
+            },
+            {
+                "quote": "plus wifi or wired",
+                "cue": "or",
+                "exclusivity": "unspecified",
+                "branches": [
+                    {"surface": {"quote": "plus wifi"}},
+                    {"surface": {"quote": "wired"}}
+                ]
+            }
+        ]
+    }]});
+    let (_, en_v) = assemble(en_source, &en_sel, &mut budget()).unwrap();
+    assert_eq!(
+        en_v.issues,
+        vec!["selection[0].alternatives: incompatible_or_cue"]
+    );
+    let mut en_ok = en_sel["claims"][0]["alternatives"].clone();
+    en_ok[0]["cue"] = json!("or");
+    let (_, _, en_after) = apply_repair(
+        en_source,
+        &en_sel,
+        0,
+        &fields,
+        &json!({"patch":{"alternatives":en_ok}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(en_after.issues.is_empty(), "{:?}", en_after.issues);
+    assert!(en_after.uncovered.is_empty(), "{:?}", en_after.uncovered);
+
+    // Unrouted: branches split on `và` (OR token lies outside/inside branches),
+    // uncovered `và` when re-cued, or repeated `hoặc` inside `group.quote`.
+    for (src, sel) in [
+        (
+            "Hộp chứa bi xanh và bi đỏ hoặc bi vàng.",
+            json!({"claims":[{"subject":"Hộp","predicate":"chứa","arguments":["bi xanh và bi đỏ hoặc bi vàng"],"alternatives":[{"quote":"bi xanh và bi đỏ hoặc bi vàng","cue":"và","exclusivity":"unspecified","branches":[{"surface":{"quote":"bi xanh"}},{"surface":{"quote":"bi đỏ"}}]}]}]}),
+        ),
+        (
+            "Hệ thống hỗ trợ pin và cáp hoặc điện dự phòng.",
+            json!({"claims":[{"subject":"Hệ thống","predicate":"hỗ trợ","arguments":["pin và cáp hoặc điện dự phòng"],"alternatives":[{"quote":"pin và cáp hoặc điện dự phòng","cue":"và","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin"}},{"surface":{"quote":"điện dự phòng"}}]}]}]}),
+        ),
+        (
+            "Hệ thống hỗ trợ pin và cáp hoặc điện hoặc gió.",
+            json!({"claims":[{"subject":"Hệ thống","predicate":"hỗ trợ","arguments":["pin và cáp hoặc điện hoặc gió"],"alternatives":[{"quote":"pin và cáp hoặc điện hoặc gió","cue":"và","exclusivity":"unspecified","branches":[{"surface":{"quote":"pin và cáp"}},{"surface":{"quote":"điện"}},{"surface":{"quote":"gió"}}]}]}]}),
+        ),
+    ] {
+        let (_, v) = assemble(src, &sel, &mut budget()).unwrap();
+        assert!(v
+            .issues
+            .contains(&"selection[0].alternatives: incompatible_or_cue".to_owned()));
+        assert!(alternative_cue_choices(src, &sel, 0, &mut budget())
+            .unwrap()
+            .is_empty());
+        assert!(repair_target(src, &sel, &v, &mut budget())
+            .unwrap()
+            .is_none());
+    }
 }
