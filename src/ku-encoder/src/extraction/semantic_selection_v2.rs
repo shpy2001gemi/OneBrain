@@ -817,9 +817,14 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
-        if v.issues
-            .contains(&format!("selection[{i}].references: cue_ambiguous"))
-            && !reference_cue_choices(source, claim, b)?.is_empty()
+        if ["cue_ambiguous", "target_absent_ambiguous_or_self"]
+            .iter()
+            .any(|code| {
+                v.issues
+                    .contains(&format!("selection[{i}].references: {code}"))
+            })
+            && (!reference_cue_choices(source, claim, b)?.is_empty()
+                || !reference_target_choices(source, selection, i, b)?.is_empty())
         {
             return Ok(Some((i, vec!["references".into()])));
         }
@@ -1375,6 +1380,143 @@ fn reference_cue_choices(
     Ok(out)
 }
 
+/// D-074 (slice 2): references flagged `target_absent_ambiguous_or_self` (`to`
+/// does not resolve to one unique addressable target of `target_kind` in
+/// another claim) may only narrow `to.quote` to a contiguous whitespace-bounded
+/// token run of the emitted `to.quote` itself that resolves uniquely (any
+/// emitted `to.within` kept) without overlapping a resolved `via` span, matches
+/// exactly one addressable target of the emitted `target_kind` owned by another
+/// claim (group/branch targets must belong to a bound, structurally valid OR
+/// group so a repair never locks onto an unbound or malformed group), and
+/// creates no reference `cycle`. Unrepairable targets get no choice so futile
+/// repairs never dispatch.
+fn reference_target_choices(
+    source: &str,
+    selection: &Value,
+    target: usize,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, BTreeSet<String>>> {
+    let mut out = BTreeMap::new();
+    let Some(claims) = selection["claims"].as_array() else {
+        return Ok(out);
+    };
+    let Some(claim) = claims.get(target) else {
+        return Ok(out);
+    };
+    if items(claim, "references").next().is_none() {
+        return Ok(out);
+    }
+    let (draft, _) = assemble(source, selection, b)?;
+    let statements: Vec<&Value> = items(&draft, "statements").collect();
+    let Some(own_out) = statements.get(target) else {
+        return Ok(out);
+    };
+    let pair = |s: &Value| Some((s.get(0)?.as_u64()? as usize, s.get(1)?.as_u64()? as usize));
+    let mut targets: Vec<(usize, &str, (usize, usize), bool)> = Vec::new();
+    let mut other_edges: Vec<(usize, usize)> = Vec::new();
+    for (k, st) in statements.iter().enumerate() {
+        let raw_claim = &claims[k];
+        for e in items(st, "evidence_spans") {
+            if let (Some(s), Some(end)) = (e["start"].as_u64(), e["end"].as_u64()) {
+                targets.push((k, "term", (s as usize, end as usize), true));
+            }
+        }
+        if let Some(at) = span(source, &json!({ "quote": st["evidence"] }), source, b)? {
+            targets.push((k, "claim", at, true));
+        }
+        for (g, grp) in items(st, "alternatives").enumerate() {
+            let raw_grp = &raw_claim["alternatives"][g];
+            let clean_group = items(raw_claim, "arguments").any(|q| *q == raw_grp["quote"])
+                && !incompatible_cue(raw_grp)
+                && grp.get("cue_span").is_some()
+                && items(grp, "branches").all(|br| br.get("span").is_some());
+            if let Some(gs) = pair(&grp["span"]) {
+                targets.push((k, "group", gs, clean_group));
+            }
+            for br in items(grp, "branches") {
+                if let Some(bs) = pair(&br["span"]) {
+                    targets.push((k, "term", bs, clean_group));
+                }
+            }
+        }
+        if k != target {
+            for r_out in items(st, "references") {
+                if let Some(tid) = r_out["target_id"].as_str() {
+                    if let Some(rest) = tid.strip_prefix("claim-") {
+                        let digits = rest.split('-').next().unwrap_or("");
+                        if let Ok(dest) = digits.parse::<usize>() {
+                            other_edges.push((k, dest));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let reaches_target = |start: usize, b: &mut WorkBudget| -> Result<bool> {
+        let mut queue = vec![start];
+        let mut seen = BTreeSet::new();
+        while let Some(at) = queue.pop() {
+            b.charge(1)?;
+            if at == target {
+                return Ok(true);
+            }
+            if seen.insert(at) {
+                queue.extend(other_edges.iter().filter(|e| e.0 == at).map(|e| e.1));
+            }
+        }
+        Ok(false)
+    };
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    for (j, r) in items(claim, "references").enumerate() {
+        if own_out["references"][j].get("target_id").is_some() {
+            continue;
+        }
+        let via_span = span(source, &r["via"], scope, b)?;
+        let kind = text(&r["target_kind"]);
+        let emitted = text(&r["to"]["quote"]);
+        let tokens: Vec<(usize, usize)> = emitted
+            .split_whitespace()
+            .take(32)
+            .map(|t| {
+                let start = t.as_ptr() as usize - emitted.as_ptr() as usize;
+                (start, start + t.len())
+            })
+            .collect();
+        let mut options = BTreeSet::new();
+        for s in 0..tokens.len() {
+            for e in s..tokens.len().min(s + 16) {
+                let candidate = &emitted[tokens[s].0..tokens[e].1];
+                if candidate == emitted || candidate.len() > 2048 || options.len() >= 64 {
+                    continue;
+                }
+                let mut cand_to = r["to"].clone();
+                cand_to["quote"] = json!(candidate);
+                let Some(cand_span) = span(source, &cand_to, source, b)? else {
+                    continue;
+                };
+                if via_span.is_some_and(|vs| overlaps(cand_span, vs)) {
+                    continue;
+                }
+                let matches: Vec<_> = targets
+                    .iter()
+                    .filter(|t| t.1 == kind && t.2 == cand_span)
+                    .collect();
+                if matches.len() == 1
+                    && matches[0].0 != target
+                    && matches[0].3
+                    && !reaches_target(matches[0].0, b)?
+                {
+                    options.insert(candidate.to_owned());
+                }
+            }
+        }
+        if !options.is_empty() {
+            out.insert(j, options);
+        }
+    }
+    Ok(out)
+}
+
 struct GroupScopeRepair {
     group: usize,
     group_span: (usize, usize),
@@ -1860,23 +2002,40 @@ pub fn repair_choices(
             .as_array()
             .and_then(|c| c.get(target))
             .ok_or(ExtractionError("selection_repair_target"))?;
-        // D-072: same reference count; `to`/`target_kind` fixed; unflagged `via`
-        // quotes stay as emitted and flagged ones list only local token runs.
-        let repairs = reference_cue_choices(source, claim, b)?;
+        // D-072 / D-074 (slice 2): same reference count; `target_kind` fixed;
+        // unflagged `via` and `to` quotes stay as emitted and flagged ones list
+        // only local token runs.
+        let via_repairs = reference_cue_choices(source, claim, b)?;
+        let to_repairs = reference_target_choices(source, selection, target, b)?;
         let mut via = BTreeSet::new();
         let mut to = BTreeSet::new();
         let mut kinds = BTreeSet::new();
         for (j, r) in items(claim, "references").enumerate() {
-            if !repairs.contains_key(&j) {
+            if !via_repairs.contains_key(&j) {
                 via.insert(text(&r["via"]["quote"]).to_owned());
             }
-            to.insert(text(&r["to"]["quote"]).to_owned());
+            if !to_repairs.contains_key(&j) {
+                to.insert(text(&r["to"]["quote"]).to_owned());
+            }
             kinds.insert(text(&r["target_kind"]).to_owned());
         }
+        let flagged: BTreeSet<usize> = via_repairs
+            .keys()
+            .chain(to_repairs.keys())
+            .copied()
+            .collect();
         let mut listed = Vec::new();
-        for (j, options) in &repairs {
-            via.extend(options.iter().cloned());
-            listed.push(json!({ "reference": j, "via": options }));
+        for j in flagged {
+            let mut entry = json!({ "reference": j });
+            if let Some(options) = via_repairs.get(&j) {
+                via.extend(options.iter().cloned());
+                entry["via"] = json!(options);
+            }
+            if let Some(options) = to_repairs.get(&j) {
+                to.extend(options.iter().cloned());
+                entry["to"] = json!(options);
+            }
+            listed.push(entry);
         }
         choices["references"] = json!({
             "count": items(claim, "references").count(),
@@ -2034,15 +2193,19 @@ pub fn apply_repair(
                 continue;
             }
             if key == "references" {
-                // D-072: `to`, `target_kind` and any `via.within` stay fixed; an
-                // unflagged `via` stays byte-identical and a flagged unresolved
-                // `via.quote` may only narrow to one of its listed token runs.
-                let flagged = reference_cue_choices(source, old, b)?;
+                // D-072 / D-074 (slice 2): `target_kind` and any `within`
+                // scopes stay fixed; unflagged `via`/`to` selectors stay
+                // byte-identical and flagged ones may only narrow their `quote`
+                // to a listed local token run without overlapping `via` and `to`.
+                let via_flagged = reference_cue_choices(source, old, b)?;
+                let to_flagged = reference_target_choices(source, base, target, b)?;
+                let scope = old["anchor"].as_str().unwrap_or(source);
                 for (j, (before, after)) in previous.iter().zip(next).enumerate() {
                     let mut restored = after.clone();
                     restored["via"] = before["via"].clone();
+                    restored["to"] = before["to"].clone();
                     require(restored == *before, "selection_repair_structure_loss")?;
-                    if let Some(options) = flagged.get(&j) {
+                    if let Some(options) = via_flagged.get(&j) {
                         let mut expected = before["via"].clone();
                         expected["quote"] = after["via"]["quote"].clone();
                         require(
@@ -2057,6 +2220,30 @@ pub fn apply_repair(
                             before["via"] == after["via"],
                             "selection_repair_structure_loss",
                         )?;
+                    }
+                    if let Some(options) = to_flagged.get(&j) {
+                        let mut expected = before["to"].clone();
+                        expected["quote"] = after["to"]["quote"].clone();
+                        require(
+                            after["to"] == expected
+                                && after["to"]["quote"]
+                                    .as_str()
+                                    .is_some_and(|q| options.contains(q)),
+                            "selection_repair_choice",
+                        )?;
+                    } else {
+                        require(
+                            before["to"] == after["to"],
+                            "selection_repair_structure_loss",
+                        )?;
+                    }
+                    if before["via"] != after["via"] || before["to"] != after["to"] {
+                        if let (Some(vs), Some(ts)) = (
+                            span(source, &after["via"], scope, b)?,
+                            span(source, &after["to"], source, b)?,
+                        ) {
+                            require(!overlaps(vs, ts), "selection_repair_choice")?;
+                        }
                     }
                 }
                 result["claims"][target][key] = value.clone();

@@ -2318,3 +2318,208 @@ fn ellipsis_absent_or_ambiguous_dispatches_only_omission() {
     )
     .is_err());
 }
+
+#[test]
+fn references_unresolved_target_dispatches_only_local_token_run_narrowing() {
+    // D-074 (slice 2): a reference flagged `target_absent_ambiguous_or_self`
+    // may only narrow `to.quote` to a contiguous whitespace-bounded token run
+    // of the emitted `to.quote` that resolves uniquely (any emitted `to.within`
+    // kept) without overlapping `via` to one addressable target of the same
+    // `target_kind` in another claim without creating a `cycle`.
+    let mut selection = rocket();
+    selection["claims"][1]["references"][0]["to"] =
+        json!({"quote":"sử dụng nhiên liệu lỏng hoặc rắn"});
+    let (_, validation) = assemble(ROCKET, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[1].comparisons: target_unspecified",
+            "selection[1].references: target_absent_ambiguous_or_self"
+        ]
+    );
+    assert!(
+        validation.uncovered.is_empty(),
+        "{:?}",
+        validation.uncovered
+    );
+    let (target, fields) = repair_target(ROCKET, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["references".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    // Only the exact `group` span of claim 0 matches `target_kind: "group"`.
+    assert_eq!(
+        choices["references"],
+        json!({
+            "count": 1,
+            "via": ["Trong đó"],
+            "to": ["nhiên liệu lỏng hoặc rắn"],
+            "target_kind": ["group"],
+            "repairable": [{"reference": 0, "to": ["nhiên liệu lỏng hoặc rắn"]}]
+        })
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let refs = &wire["properties"]["patch"]["properties"]["references"];
+    assert_eq!(
+        (refs["minItems"].clone(), refs["maxItems"].clone()),
+        (json!(1), json!(1))
+    );
+    assert_eq!(
+        refs["items"]["properties"]["to"]["properties"]["quote"]["enum"],
+        json!(["nhiên liệu lỏng hoặc rắn"])
+    );
+    assert_eq!(
+        refs["items"]["properties"]["via"]["properties"]["quote"]["enum"],
+        json!(["Trong đó"])
+    );
+    let apply = |sel: &Value, references: Value| {
+        apply_repair(
+            ROCKET,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"references":references}}),
+            &mut budget(),
+        )
+    };
+    let base = selection["claims"][1]["references"].clone();
+    let mut narrowed = base.clone();
+    narrowed[0]["to"]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    let (changed, draft, after) = apply(&selection, narrowed).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0], selection["claims"][0]);
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-0-group-0"
+    );
+
+    // Rejected: no-op, term/sub-word/out-of-choice `to.quote`, altered `via` or
+    // `target_kind`, added `to.within`, or dropped reference.
+    assert!(apply(&selection, base.clone()).is_err());
+    for bad in [
+        "nhiên liệu lỏng",
+        "rắn",
+        "nhiên liệu lỏng hoặc rắ",
+        "Tên lửa",
+    ] {
+        let mut r = base.clone();
+        r[0]["to"]["quote"] = json!(bad);
+        assert!(apply(&selection, r).is_err());
+    }
+    let mut revia = base.clone();
+    revia[0]["to"]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    revia[0]["via"] = json!({"quote":"sẽ"});
+    assert!(apply(&selection, revia).is_err());
+    let mut rekind = base.clone();
+    rekind[0]["to"]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    rekind[0]["target_kind"] = json!("term");
+    assert!(apply(&selection, rekind).is_err());
+    let mut scoped = base.clone();
+    scoped[0]["to"] = json!({
+        "quote": "nhiên liệu lỏng hoặc rắn",
+        "within": "Tên lửa có thể sử dụng nhiên liệu lỏng hoặc rắn"
+    });
+    assert!(apply(&selection, scoped).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+
+    // Emitted `to.within` is preserved: keeping it succeeds, dropping it fails.
+    let mut within = rocket();
+    within["claims"][1]["references"][0]["to"] = json!({
+        "quote": "sử dụng nhiên liệu lỏng hoặc rắn",
+        "within": "Tên lửa có thể sử dụng nhiên liệu lỏng hoặc rắn"
+    });
+    let (_, wv) = assemble(ROCKET, &within, &mut budget()).unwrap();
+    assert!(wv
+        .issues
+        .contains(&"selection[1].references: target_absent_ambiguous_or_self".to_owned()));
+    let mut kept = within["claims"][1]["references"].clone();
+    kept[0]["to"]["quote"] = json!("nhiên liệu lỏng hoặc rắn");
+    assert!(apply(&within, kept).is_ok());
+    let mut dropped = within["claims"][1]["references"].clone();
+    dropped[0]["to"] = json!({"quote":"nhiên liệu lỏng hoặc rắn"});
+    assert!(apply(&within, dropped).is_err());
+
+    // Unflagged sibling reference keeps its exact `to`; only the flagged one narrows.
+    let mut mixed = rocket();
+    mixed["claims"][1]["references"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "via": {"quote": "sẽ"},
+            "to": {"quote": "chiếc Tên lửa"},
+            "target_kind": "term"
+        }));
+    let (_, mv) = assemble(ROCKET, &mixed, &mut budget()).unwrap();
+    assert!(mv
+        .issues
+        .contains(&"selection[1].references: target_absent_ambiguous_or_self".to_owned()));
+    let mc = repair_choices(ROCKET, &mixed, 1, &fields, &mv, &mut budget()).unwrap();
+    assert_eq!(
+        mc["references"]["to"],
+        json!(["Tên lửa", "nhiên liệu lỏng hoặc rắn"])
+    );
+    let refs = mixed["claims"][1]["references"].clone();
+    let mut ok = refs.clone();
+    ok[1]["to"]["quote"] = json!("Tên lửa");
+    let (_, mdraft, _) = apply(&mixed, ok.clone()).unwrap();
+    assert_eq!(
+        mdraft["statements"][1]["references"][1]["target_id"],
+        "claim-0-role-0"
+    );
+    let mut swapped = ok;
+    swapped[0]["to"]["quote"] = json!("Tên lửa");
+    assert!(apply(&mixed, swapped).is_err());
+
+    // Unrouted: self-target only, cycle-inducing target, or `via`-overlapping target.
+    let self_only = json!({"claims":[
+        {"subject":"A","predicate":"chạy","anchor":"A chạy"},
+        {"subject":"B","predicate":"dừng","anchor":"B dừng","references":[{"via":{"quote":"dừng"},"to":{"quote":"lúc B"},"target_kind":"term"}]}
+    ]});
+    let (_, sv) = assemble("A chạy. B dừng.", &self_only, &mut budget()).unwrap();
+    assert!(sv
+        .issues
+        .contains(&"selection[1].references: target_absent_ambiguous_or_self".to_owned()));
+    assert!(
+        reference_target_choices("A chạy. B dừng.", &self_only, 1, &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        repair_target("A chạy. B dừng.", &self_only, &sv, &mut budget())
+            .unwrap()
+            .is_none()
+    );
+
+    let cyclic = json!({"claims":[
+        {"subject":"A","predicate":"chạy","anchor":"A chạy","references":[{"via":{"quote":"chạy"},"to":{"quote":"B"},"target_kind":"term"}]},
+        {"subject":"B","predicate":"dừng","anchor":"B dừng","references":[{"via":{"quote":"dừng"},"to":{"quote":"ông A"},"target_kind":"term"}]}
+    ]});
+    let (_, cyv) = assemble("A chạy. B dừng.", &cyclic, &mut budget()).unwrap();
+    assert!(cyv
+        .issues
+        .contains(&"selection[1].references: target_absent_ambiguous_or_self".to_owned()));
+    assert!(
+        reference_target_choices("A chạy. B dừng.", &cyclic, 1, &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        repair_target("A chạy. B dừng.", &cyclic, &cyv, &mut budget())
+            .unwrap()
+            .is_none()
+    );
+}

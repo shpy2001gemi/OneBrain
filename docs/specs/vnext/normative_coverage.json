@@ -1129,6 +1129,10 @@
           "needle": "ellipsis_absent_or_ambiguous_dispatches_only_omission"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "references_unresolved_target_dispatches_only_local_token_run_narrowing"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

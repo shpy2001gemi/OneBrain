@@ -17,6 +17,15 @@ trust, wire, DTO, mobile-authority or claim-boundary change).
   role as an explicit quote with no reconstruction asserted; `role_binding`
   surface rebinds require `borrowed` to resolve uniquely; ellipses whose bound
   role quote itself does not resolve uniquely do not dispatch).
+- **Slice 2 (`references: target_absent_ambiguous_or_self`):** a reference whose
+  `to` selector does not resolve to one unique addressable target of the emitted
+  `target_kind` in another claim joins the bounded `references` repair when
+  finite local choices exist, narrowing `to.quote` only to a contiguous
+  whitespace-bounded token run of the emitted `to.quote` itself (keeping any
+  emitted `to.within`) that resolves uniquely outside any resolved `via` span to
+  a single target of that `target_kind` in another claim (group/branch targets
+  must belong to a bound, structurally valid OR group) without creating a
+  reference `cycle`; unflagged `to`/`via`, `target_kind` and count stay fixed.
 
 ## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
 

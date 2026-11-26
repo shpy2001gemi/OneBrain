@@ -174,6 +174,20 @@ token or sub-word slice is accepted, and full revalidation (no new issues, no
 coverage loss) applies. References without a unique local token run (such as an
 absent cue or a repeated single-token cue) stay unrouted in `needs_review`.
 
+A reference flagged `target_absent_ambiguous_or_self` (`to` does not resolve to
+one unique addressable target of `target_kind` in another claim) may join that
+`references`-only repair when finite local choices exist (D-074). A flagged
+reference may only narrow `to.quote` to one contiguous whitespace-bounded token
+run of the emitted `to.quote` itself that resolves uniquely (any emitted
+`to.within` kept), overlaps no resolved `via` span, matches a single addressable
+target of the emitted `target_kind` owned by another claim (any group or branch
+target must belong to a bound, structurally valid OR group), and creates no
+reference `cycle`. Unflagged `to` selectors, reference count, unflagged `via`
+selectors and target kinds stay unchanged, no token outside the emitted
+`to.quote`, self-target, unbound/malformed group target, cyclic target or
+sub-word slice is accepted, and full revalidation applies. References without a
+valid cross-claim target token run stay unrouted in `needs_review`.
+
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound
