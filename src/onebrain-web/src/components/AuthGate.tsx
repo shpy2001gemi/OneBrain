@@ -86,6 +86,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <input
           className="input"
           type="password"
+          aria-label="API token"
           placeholder="API Token"
           value={input}
           onChange={e => setInput(e.target.value)}

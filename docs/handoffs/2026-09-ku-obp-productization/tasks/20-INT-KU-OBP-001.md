@@ -6,7 +6,40 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — five small `/ku` UX fixes left by the t20 click-test (t21, 2026-11-26)
+## Latest follow-up — browser click-test of t21 and the private-LAN badge, share selector/namespace guidance (t22, 2026-11-26)
+
+Owner chose the recommended item: click the t21 changes and the D-063 LAN badge in a real browser
+and fix small problems found. Web-only fixes; no host, API, DTO, consent, trust or decision change.
+
+- **Setup:** fresh DEV-ONLY bootstrap `--dev-demo-registry --with-receiver --port 4480 --lan-ip
+  192.168.1.62` under `%TEMP%/ku t22 lan click demo`; two `ku_local_web` hosts (sender 4480,
+  receiver 4481), share network on the Wi-Fi private-LAN address of one machine. Browser agent,
+  only the two loopback origins.
+- **Click results (all passed):** both headers show `Private-LAN (DEV-ONLY) peer network · 0 active
+  sessions` with the NodeID/listen tooltip and the D-063 warning; sender save → prepare to the
+  receiver's LAN address → confirm → heading `2. Public share confirmed — intent recorded`, Delivery
+  fact list (Outbox / Delivery / Delivery at confirmation / Reward) → `Acknowledged`. Receiver browse
+  shows the scope sentence + `host scope:`, `Showing 1 accepted Public KU (no filter).`, filter `zzz`
+  → 0, `Clear filter and show all` → 1 again; step-4 inspect shows the sender NodeID; D-057 banner
+  appears on prefill and is gone after the committed private save. No console errors, no failed
+  requests.
+- **Found and fixed ([KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx),
+  [AuthGate.tsx](../../../../src/onebrain-web/src/components/AuthGate.tsx)):** a first-time user had
+  no hint what `Selector CID` / `Namespace commitment` are, and `Prepare public share preview` stayed
+  disabled. Now a help paragraph explains they are opaque non-zero 64-hex identifiers agreed outside
+  OneBrain, shown in the public preview and reused by the recipient to inspect, plus a button
+  `Fill DEV-ONLY demo selector and namespace` (the `2…`/`3…` values of `check_ku_public_share_demo.py`;
+  fills on explicit click only, prepares nothing). The NodeID line now says to enter the agreed
+  selector and namespace too. The sign-in token field got the accessible name `API token`.
+- **Test:** vitest `explains share selector/namespace and fills DEV-ONLY demo values only on explicit
+  click without preparing`.
+
+Left as is: audit enum values (`LOCAL_ONLY`, `accepted_known`, `fidelity_unassessed`, …) stay visible
+on purpose; `Use … in step 4` (inspect) vs `Start a new private draft from …` (D-057) is clear once
+both are seen. Not covered: two physical machines, firewall prompts, Desktop click (D-057), real
+Registry. DEV-ONLY, no qualification.
+
+## Earlier follow-up — five small `/ku` UX fixes left by the t20 click-test (t21, 2026-11-26)
 
 Owner chose the recommended item: fix the five small UX nits recorded at the end of t20 in one
 Web-only change ([KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx),

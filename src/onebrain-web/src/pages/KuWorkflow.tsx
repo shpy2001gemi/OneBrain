@@ -37,6 +37,10 @@ import {
 import { DesktopLifecycle } from "../components/DesktopLifecycle";
 
 const defaultClient = createKuClient(getPrivateApiConnection);
+// DEV-ONLY demo share identifiers, identical to SELECTOR / NAMESPACE in
+// scripts/base/check_ku_public_share_demo.py. Filled only on explicit click.
+const DEV_DEMO_SHARE_SELECTOR = "2".repeat(64);
+const DEV_DEMO_SHARE_NAMESPACE = "3".repeat(64);
 type Pending = {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
@@ -624,7 +628,8 @@ export function KuWorkflowPage({
               NodeID: {headerSummary.network.node_id} · listen{" "}
               {headerSummary.network.listen_addr}. To receive a share, give
               this NodeID and address to the sender (their step 1). To send,
-              enter the recipient&apos;s NodeID and address in step 1 below.
+              enter the recipient&apos;s NodeID and address plus the agreed
+              selector and namespace in step 1 below.
             </p>
           ) : (
             <p>
@@ -1340,6 +1345,28 @@ export function KuWorkflowPage({
               setShareConfirmed(undefined);
             }}
           />
+          <p id="ku-share-target-help" className="ku-help">
+            Selector CID and namespace commitment are opaque 64-hex share
+            identifiers that sender and recipient agree on outside OneBrain
+            (any non-zero value). They appear in the public preview; the
+            recipient later uses the same selector to inspect the received KU.
+            For the DEV-ONLY demo you can fill the demo values used by the
+            two-node check script.
+          </p>
+          <button
+            type="button"
+            className="btn"
+            aria-describedby="ku-share-target-help"
+            onClick={() => {
+              setShareSelector(DEV_DEMO_SHARE_SELECTOR);
+              setShareNamespace(DEV_DEMO_SHARE_NAMESPACE);
+              setSharePrepared(undefined);
+              setShareConfirmPublic(false);
+              setShareConfirmed(undefined);
+            }}
+          >
+            Fill DEV-ONLY demo selector and namespace
+          </button>
           <button
             className="btn btn-primary"
             disabled={

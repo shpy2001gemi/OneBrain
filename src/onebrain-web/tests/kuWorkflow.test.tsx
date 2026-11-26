@@ -1138,6 +1138,36 @@ describe("local KU component journey", () => {
       ).toBe(false);
     },
   );
+  it("explains share selector/namespace and fills DEV-ONLY demo values only on explicit click without preparing", async () => {
+    const f = fixture({ emptyCatalog: true });
+    render(<KuWorkflowPage client={f.client} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: `Inspect ${object}` }),
+    );
+    await screen.findByRole("heading", { name: "Inspect saved artifact" });
+    const selectorInput = screen.getByLabelText(
+      "Selector CID (64 lowercase hex)",
+    ) as HTMLInputElement;
+    const namespaceInput = screen.getByLabelText(
+      "Namespace commitment (64 lowercase hex)",
+    ) as HTMLInputElement;
+    expect(selectorInput.value).toBe("");
+    expect(namespaceInput.value).toBe("");
+    expect(
+      screen.getByText(/opaque 64-hex share identifiers that sender and recipient agree on/),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Fill DEV-ONLY demo selector and namespace",
+      }),
+    );
+    expect(selectorInput.value).toBe("2".repeat(64));
+    expect(namespaceInput.value).toBe("3".repeat(64));
+    expect(
+      f.calls.some((c) => c.body?.request?.action === "share_prepare"),
+    ).toBe(false);
+  });
+
   it("projects D-045 Public KU share preview, separate confirmation, disabled-network preservation, intent status and receiver inspection without exposing private CIDs", async () => {
     const options = { emptyCatalog: true, shareNetworkDisabled: true };
     const f = fixture(options);
