@@ -37,8 +37,9 @@ const REGISTRY_SETUP_ERROR: &str = "ku_registry_unavailable: local KU host canno
 
 const NETWORK_CONFIG_ERROR: &str = "ku_network_config_invalid: when network is present, \
     set network.network_opt_in to true and network.bind_addr to a loopback socket address \
-    such as 127.0.0.1:0; omit network for local-only operation. Retain the existing \
-    data_dir and Vault key when retrying.";
+    such as 127.0.0.1:0 (or, DEV-ONLY with network.allow_private_lan true, a private LAN \
+    address such as 192.168.1.20:0; never 0.0.0.0 or a public address); omit network for \
+    local-only operation. Retain the existing data_dir and Vault key when retrying.";
 
 #[cfg(not(feature = "vnext-network-runtime"))]
 const NETWORK_RUNTIME_UNAVAILABLE_ERROR: &str = "ku_network_runtime_unavailable: network is \
@@ -48,9 +49,9 @@ const NETWORK_RUNTIME_UNAVAILABLE_ERROR: &str = "ku_network_runtime_unavailable:
 
 #[cfg(feature = "vnext-network-runtime")]
 const NETWORK_STARTUP_ERROR: &str = "ku_network_startup_failed: cannot start the opt-in \
-    loopback VNextNetworkRuntime. Check that network.bind_addr is an available local \
-    loopback UDP address (for example 127.0.0.1:0) and that data_dir is writable; \
-    retain the existing data_dir and Vault key when retrying.";
+    VNextNetworkRuntime. Check that network.bind_addr is an available address on this \
+    machine (for example 127.0.0.1:0, or this machine's own private LAN address) and that \
+    data_dir is writable; retain the existing data_dir and Vault key when retrying.";
 
 #[derive(Debug)]
 enum InputReadError {
@@ -295,11 +296,20 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "vnext-network-runtime")]
     if let Some(runtime) = &_network_runtime {
         let status = runtime.status();
-        println!(
-            "Opt-in loopback OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
-            onebrain_base_contract::ku_payload::hex(&status.principal),
-            status.listen_addr
-        );
+        if status.listen_addr.ip().is_loopback() {
+            println!(
+                "Opt-in loopback OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
+                onebrain_base_contract::ku_payload::hex(&status.principal),
+                status.listen_addr
+            );
+        } else {
+            println!(
+                "Opt-in private-LAN OBP-RP (DEV-ONLY, D-063): node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
+                onebrain_base_contract::ku_payload::hex(&status.principal),
+                status.listen_addr
+            );
+            eprintln!("{}", onebrain_api::ku_host::LAN_SHARE_WARNING);
+        }
     }
     ApiServer::new(host.node, host.token, config.port)
         .with_web_dir(config.web_dir)
@@ -1021,14 +1031,22 @@ mod tests {
             KuHostNetworkConfig {
                 network_opt_in: false,
                 bind_addr: "127.0.0.1:0".parse().unwrap(),
+                allow_private_lan: false,
             },
             KuHostNetworkConfig {
                 network_opt_in: true,
                 bind_addr: "0.0.0.0:0".parse().unwrap(),
+                allow_private_lan: true,
             },
             KuHostNetworkConfig {
                 network_opt_in: true,
                 bind_addr: "192.0.2.10:4280".parse().unwrap(),
+                allow_private_lan: true,
+            },
+            KuHostNetworkConfig {
+                network_opt_in: true,
+                bind_addr: "10.9.8.7:4280".parse().unwrap(),
+                allow_private_lan: false,
             },
         ] {
             let cfg = Config {
@@ -1070,6 +1088,7 @@ mod tests {
                 network: Some(KuHostNetworkConfig {
                     network_opt_in: true,
                     bind_addr: "127.0.0.1:0".parse().unwrap(),
+                    allow_private_lan: false,
                 }),
                 web_dir: root.path().join("web"),
                 port: 0,

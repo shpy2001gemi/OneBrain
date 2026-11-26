@@ -1,6 +1,6 @@
 # Danh sách task và trạng thái OneBrain
 
-**Cập nhật: 25/11/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
+**Cập nhật: 26/11/2026 · Ưu tiên: MVP chạy được để kiểm chứng ý tưởng và mời cộng đồng.**
 
 Đây là bảng xem nhanh ngay trong task index có sẵn, tổng hợp từ
 [PROGRESS](../PROGRESS.md). PROGRESS vẫn là sổ trạng thái chính;
@@ -130,6 +130,7 @@ trong [task 20](20-INT-KU-OBP-001.md#manual-provisioning-integration-review--202
 | 56 | INT-KU-OBP-001 / follow-up — action chỉ đọc `share_preview`: CLI confirm hiện lại preview đã chuẩn bị trước khi gõ `prepared_id` (D-059, t16) | Đã commit/push theo D-050 | Node lưu nguyên preview cạnh prepared share; `share_preview {prepared_id}` trả lại đúng preview `share_prepared` (kiểm lại quyền caller trên KU đã lưu; hết hạn/không có/đã confirm → `prepared_share_missing`; không tiêu thụ, không enqueue/gửi). `onebrain ku share confirm` in preview ra stderr rồi mới hỏi gõ id, đọc lại lỗi thì dừng; thêm `onebrain ku share preview`. Check hai node so preview đọc lại và (dưới `--cli-share`) yêu cầu confirm hiện preview. DTO cũ và Web giữ nguyên. Kết quả kiểm tra: PROGRESS |
 | 57 | INT-KU-OBP-001 / follow-up — prepared Public KU share còn nguyên sau khi restart host (D-062, t17) | Đã commit/push theo D-050 | `KuStore` niêm phong (Vault) input prepare + digest preview chính xác vào bảng journal `ku_public_share_prepared_v1` trước khi trả preview; sau restart `share_preview`/`share_confirm` dựng lại từ KU đã lưu (kiểm lại quyền), chỉ nhận khi chưa hết hạn và digest khớp. Hạn 900 s, giới hạn 16, confirm một lần (xóa bản ghi trước khi confirm) và cử chỉ confirm rõ ràng giữ nguyên; restart không tự confirm/gửi. Web chỉ đổi lời giải thích. Peer demo vẫn trong bộ nhớ. Kết quả kiểm tra: PROGRESS |
 | 58 | INT-KU-OBP-001 / follow-up — check hai node restart sender thật giữa prepare và confirm (D-062, t18) | Đã commit/push theo D-050 | `check_ku_public_share_demo.py` dừng sender ngay sau `share_prepare` + `share_preview`, khởi động lại cùng config, yêu cầu cùng NodeID, `share_preview` đọc lại y hệt với cùng `prepared_id`, chưa có intent; refusal/confirm chạy trên preparation đã khôi phục; replay `share_confirm` → `prepared_share_missing`. Không đổi workflow, hành vi hay DTO. Live Windows: CLI/CLI 63/63, Web/Web 53/53. Kết quả kiểm tra: PROGRESS |
+| 59 | INT-KU-OBP-001 / follow-up — bind mạng share vào địa chỉ LAN riêng cho hai máy thật (D-063, t19) | Đã commit/push theo D-050 | Opt-in thứ hai `--ku-network-allow-lan` / `"allow_private_lan": true`: chỉ RFC 1918 hoặc IPv6 `fc00::/7`, không `0.0.0.0`/public; chỉ host đã opt-in mới prepare share tới peer LAN (khác: loopback, kể cả sau restart). Host in cảnh báo DEV-ONLY; badge `/ku` ghi `Private-LAN (DEV-ONLY)`; bootstrap `--lan-ip`. API/Web vẫn `127.0.0.1`; không NAT/relay. Live một máy qua 192.168.1.62: Web/Web 53/53, CLI/CLI 55/55. Kết quả kiểm tra: PROGRESS |
 **Không chờ qualification model, reviewer độc lập, bộ bằng chứng hay ma trận
 kiểm thử lớn để làm các bước này.** Model có thể trả bản nháp cần review;
 luồng manual/resolved vẫn là đường lưu đáng tin cậy. Không gọi bản nháp chưa

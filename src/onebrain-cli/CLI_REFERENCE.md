@@ -80,6 +80,17 @@ built with `--features vnext-network-runtime`, or `ku_local_web` with
 `"network"`); otherwise confirm/intent/inspect return `503 capability_disabled`
 (`ku_public_share_network_unavailable`) and the preview is kept.
 
+DEV-ONLY (D-063): to try two machines on the same private network, add
+`--ku-network-allow-lan` and bind to this machine's own private LAN address
+(`--ku-network-bind 192.168.1.20:0`; RFC 1918 or IPv6 `fc00::/7` only, never
+`0.0.0.0` or a public address; `ku_local_web`: `"allow_private_lan": true`).
+Only such a host may prepare a share to a private-LAN `--address`; others stay
+loopback-only. The host prints a warning: devices on that LAN can reach the
+listener and attempt handshakes; only explicitly confirmed Public KUs are sent.
+The API/Web stay on `127.0.0.1`; no NAT traversal or network qualification.
+`python scripts/base/bootstrap_ku_dev_demo.py … --with-receiver --lan-ip <ip>`
+writes such configs.
+
 ```powershell
 # Sender: preview only (never enqueues or sends); copy prepared_id from stdout.
 onebrain ku share prepare --object-cid <saved-private-object-cid> `

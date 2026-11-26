@@ -1,5 +1,24 @@
 # Decisions and claim boundary
 
+## D-063 — Opt-in private-LAN bind for the `/ku` share network (DEV-ONLY)
+
+On 2026-11-26 the owner chose the recommended task 20 backlog item: let two real
+machines on the same private network try the D-045 Public KU share. A normal host
+may bind its `/ku` OBP-RP listener to a private LAN address only with a second
+explicit opt-in (`--ku-network-allow-lan` / `network.allow_private_lan: true`) on
+top of `--ku-network-bind` / `network_opt_in`. Allowed: loopback (unchanged) or,
+with the LAN opt-in, an IPv4 RFC 1918 address (10/8, 172.16/12, 192.168/16) or an
+IPv6 unique-local address (fc00::/7). Unspecified (`0.0.0.0`, `::`), public,
+link-local, multicast and other addresses stay refused. Only a host whose live
+share runtime was started with the LAN opt-in may prepare a share to a private-LAN
+peer address; every other host (and the isolated `ku_peer_demo`) keeps the
+loopback-only peer rule. The authenticated HTTP API/Web stay on `127.0.0.1`.
+Hosts print a DEV-ONLY warning: devices on that LAN can reach the listener and
+attempt OBP-RP handshakes; only explicitly confirmed Public KUs are sent. No NAT
+traversal, relay, public-Internet exposure, firewall change, platform/network
+qualification, consent, trust, wire or DTO change. Supersedes only the
+"loopback-only" wording of the D-045 normal-host share network.
+
 ## D-062 — Prepared Public KU share survives normal-host restart
 
 On 2026-11-26 the owner chose the recommended task 20 backlog item: persist the

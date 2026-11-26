@@ -1074,7 +1074,7 @@ describe("local KU component journey", () => {
         screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
         { target: { value: "12".repeat(32) } },
       );
-      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      fireEvent.change(screen.getByLabelText("Peer address"), {
         target: { value: "127.0.0.1:42001" },
       });
       fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
@@ -1128,7 +1128,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
@@ -1270,7 +1270,7 @@ describe("local KU component journey", () => {
         screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
         { target: { value: peer } },
       );
-      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      fireEvent.change(screen.getByLabelText("Peer address"), {
         target: { value: "127.0.0.1:41999" },
       });
       fireEvent.change(
@@ -1365,7 +1365,7 @@ describe("local KU component journey", () => {
         screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
         { target: { value: peer } },
       );
-      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      fireEvent.change(screen.getByLabelText("Peer address"), {
         target: { value: "127.0.0.1:41999" },
       });
       fireEvent.change(
@@ -1448,7 +1448,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: "12".repeat(32) } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(
@@ -1533,7 +1533,7 @@ describe("local KU component journey", () => {
         screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
         { target: { value: "12".repeat(32) } },
       );
-      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      fireEvent.change(screen.getByLabelText("Peer address"), {
         target: { value: "127.0.0.1:41999" },
       });
       fireEvent.change(
@@ -1585,7 +1585,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(
@@ -1695,7 +1695,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(
@@ -1842,7 +1842,7 @@ describe("local KU component journey", () => {
       "invalid_public_ku_intent",
       "Outbound Public KU transfer intent could not be constructed",
       "OutboundTransferIntent validation rejected constructing the outbound Public transfer intent",
-      "Verify the recipient NodeID, loopback peer address (127.0.0.1:<port>), selector CID and namespace commitment",
+      "Verify the recipient NodeID, peer address (loopback 127.0.0.1:<port>, or private LAN on a LAN-enabled host), selector CID and namespace commitment",
     ],
     [
       "invalid_peer",
@@ -1852,9 +1852,9 @@ describe("local KU component journey", () => {
     ],
     [
       "invalid_peer_address",
-      "Peer loopback address is invalid",
-      "peer socket address could not be parsed as a valid loopback IP:port address",
-      "Enter a valid loopback peer address in 127.0.0.1:<port> format",
+      "Peer address is invalid",
+      "peer socket address could not be parsed as a valid IP:port address",
+      "Enter a valid peer address in 127.0.0.1:<port> format",
     ],
     [
       "invalid_selector",
@@ -1900,7 +1900,7 @@ describe("local KU component journey", () => {
         screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
         { target: { value: peer } },
       );
-      fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+      fireEvent.change(screen.getByLabelText("Peer address"), {
         target: { value: "127.0.0.1:41999" },
       });
       fireEvent.change(
@@ -1951,7 +1951,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(
@@ -2151,7 +2151,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
@@ -2299,7 +2299,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: peer } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {
@@ -2366,7 +2366,7 @@ describe("local KU component journey", () => {
       screen.queryByRole("article", { name: "Confirmed public share intent" }),
     ).toBeNull();
     await prepareAndConfirm();
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:42000" },
     });
     expect(
@@ -2883,7 +2883,7 @@ describe("local KU component journey", () => {
       screen.getByLabelText("Recipient NodeID (64 lowercase hex)"),
       { target: { value: "12".repeat(32) } },
     );
-    fireEvent.change(screen.getByLabelText("Peer loopback address"), {
+    fireEvent.change(screen.getByLabelText("Peer address"), {
       target: { value: "127.0.0.1:41999" },
     });
     fireEvent.change(screen.getByLabelText("Selector CID (64 lowercase hex)"), {

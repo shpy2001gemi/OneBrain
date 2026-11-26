@@ -52,11 +52,11 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
   unsupported_public_ku: {
     title: "KU is not eligible for D-045 Public share",
     explanation:
-      "D-045 supports only a single manual statement with one resolved Registry predicate and one text literal, with no object references, source spans, constraints, qualifiers, extensions or resource limits, and requires a non-zero recipient NodeID, selector, namespace and loopback peer address. The host fails closed rather than stripping private or meaning-bearing content.",
+      "D-045 supports only a single manual statement with one resolved Registry predicate and one text literal, with no object references, source spans, constraints, qualifiers, extensions or resource limits, and requires a non-zero recipient NodeID, selector, namespace and a loopback peer address (or a private-LAN peer address when this host enabled the DEV-ONLY LAN share network, D-063). The host fails closed rather than stripping private or meaning-bearing content.",
     context:
       "No public preview, public object or outbound transfer intent was created, and the saved private artifact remains unchanged.",
     recovery:
-      "Inspect a supported accepted LOCAL_ONLY manual KU (one resolved predicate and one text literal) and verify the recipient NodeID, loopback address (127.0.0.1:<port>), selector and namespace before clicking Prepare public share preview.",
+      "Inspect a supported accepted LOCAL_ONLY manual KU (one resolved predicate and one text literal) and verify the recipient NodeID, peer address (loopback 127.0.0.1:<port>, or the recipient's private-LAN address on a LAN-enabled host), selector and namespace before clicking Prepare public share preview.",
   },
   prepared_limit: {
     title: "Public KU share preparation limit reached",
@@ -155,7 +155,7 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
     context:
       "No public preview, public object or outbound transfer intent was created, and the saved private artifact remains unchanged.",
     recovery:
-      "Verify the recipient NodeID, loopback peer address (127.0.0.1:<port>), selector CID and namespace commitment, then click Prepare public share preview again.",
+      "Verify the recipient NodeID, peer address (loopback 127.0.0.1:<port>, or private LAN on a LAN-enabled host), selector CID and namespace commitment, then click Prepare public share preview again.",
   },
   invalid_peer: {
     title: "Recipient NodeID is not a valid 32-byte hex identifier",
@@ -167,13 +167,13 @@ const SHARE_ERROR_FEEDBACK: Record<string, ShareErrorFeedback> = {
       "Enter the recipient peer's 64-character lowercase hex NodeID before clicking Prepare public share preview.",
   },
   invalid_peer_address: {
-    title: "Peer loopback address is invalid",
+    title: "Peer address is invalid",
     explanation:
-      "The host rejected share preparation because the peer socket address could not be parsed as a valid loopback IP:port address.",
+      "The host rejected share preparation because the peer socket address could not be parsed as a valid IP:port address.",
     context:
       "No public preview, public object or outbound transfer intent was created, and the saved private artifact remains unchanged.",
     recovery:
-      "Enter a valid loopback peer address in 127.0.0.1:<port> format before clicking Prepare public share preview.",
+      "Enter a valid peer address in 127.0.0.1:<port> format (or the recipient's private-LAN IP:port on a LAN-enabled host) before clicking Prepare public share preview.",
   },
   invalid_selector: {
     title: "Selector CID is not a valid 32-byte hex digest",
@@ -388,7 +388,7 @@ const SHARE_INTENT_STATE_FEEDBACK: Record<string, ShareIntentStateFeedback> = {
     title: "Retry exhausted — delivery stopped at the retry limit",
     meaning:
       "This host got no terminal receipt within its retry limit: transport attempts to the recorded peer address kept failing, or the recipient kept deferring validation. The intent is terminal and will not be retried; a new peer address does not replenish its retry allowance.",
-    next: "Check that the recipient host is running with networking enabled at the loopback address and NodeID you entered. The Public disclosure is not withdrawn, and this page offers no resend for a terminal intent.",
+    next: "Check that the recipient host is running with networking enabled at the address and NodeID you entered. The Public disclosure is not withdrawn, and this page offers no resend for a terminal intent.",
     terminal: true,
   },
 };

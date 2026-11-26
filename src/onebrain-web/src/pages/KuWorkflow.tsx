@@ -29,6 +29,7 @@ import {
 } from "./kuFeedback";
 import { KuReviewDraft } from "./KuReviewDraft";
 import {
+  isLoopbackListen,
   refreshKuHeaderSummary,
   setKuHeaderSummary,
   useKuHeaderSummary,
@@ -580,14 +581,18 @@ export function KuWorkflowPage({
         {headerSummary &&
           (headerSummary.network.enabled ? (
             <p className="ku-id">
-              This host's loopback NodeID: {headerSummary.network.node_id} ·
+              This host's{" "}
+              {isLoopbackListen(headerSummary.network.listen_addr)
+                ? "loopback"
+                : "private-LAN (DEV-ONLY, D-063)"}{" "}
+              NodeID: {headerSummary.network.node_id} ·
               listen {headerSummary.network.listen_addr}. Give this NodeID and
               address to a sender for step 1 below.
             </p>
           ) : (
             <p>
               Peer network: off on this host (local only). Public KU share
-              needs the opt-in loopback network.
+              needs the opt-in loopback (or DEV-ONLY private-LAN) network.
             </p>
           ))}
         {metadata && (
@@ -1227,7 +1232,7 @@ export function KuWorkflowPage({
               setShareConfirmed(undefined);
             }}
           />
-          <label htmlFor="ku-share-address">Peer loopback address</label>
+          <label htmlFor="ku-share-address">Peer address</label>
           <input
             id="ku-share-address"
             className="input"

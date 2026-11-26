@@ -21,6 +21,12 @@ export function useKuHeaderSummary(): KuHeaderSummary | undefined {
   return useSyncExternalStore(subscribe, () => current);
 }
 
+/** D-063: display scope of the host's share listener, from its listen address.
+ *  Anything other than 127.0.0.0/8 or [::1] is the DEV-ONLY private-LAN bind. */
+export function isLoopbackListen(listenAddr: string): boolean {
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/.test(listenAddr) || /^\[::1\]:\d+$/.test(listenAddr);
+}
+
 function parse(value: unknown): KuHeaderSummary | undefined {
   if (!value || typeof value !== "object") return undefined;
   const view = value as Partial<WorkspaceSummaryView>;

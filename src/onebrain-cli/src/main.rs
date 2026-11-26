@@ -126,11 +126,19 @@ enum Commands {
         )]
         ku_sources: Vec<(String, PathBuf)>,
         /// Opt-in loopback OBP-RP listener for `/ku` D-045 Public KU share,
-        /// browse and inspect, e.g. 127.0.0.1:0. Off by default (local/private
+        /// browse and inspect, e.g. 127.0.0.1:0 (a private LAN address only
+        /// with --ku-network-allow-lan, D-063). Off by default (local/private
         /// only). Requires --ku-vault-key-file and a binary built with
         /// --features vnext-network-runtime; not combinable with vNext lanes.
-        #[arg(long, value_name = "LOOPBACK_ADDR", requires = "ku_vault_key_file")]
+        #[arg(long, value_name = "ADDR", requires = "ku_vault_key_file")]
         ku_network_bind: Option<SocketAddr>,
+        /// DEV-ONLY (D-063): also allow --ku-network-bind to be this machine's
+        /// private LAN address (10/8, 172.16/12, 192.168/16 or IPv6 fc00::/7)
+        /// so two machines on the same private network can share Public KUs.
+        /// Never 0.0.0.0 or a public address; no NAT traversal. API/Web stay
+        /// on 127.0.0.1.
+        #[arg(long, requires = "ku_network_bind")]
+        ku_network_allow_lan: bool,
         /// Experimental local Ollama for `/ku` AI text intake and background
         /// drafts: path to the installed `ollama` executable. Off by default.
         /// Requires --ku-vault-key-file, --ku-ollama-models-dir and at least one
@@ -246,6 +254,7 @@ async fn main() {
             ku_vault_key_file,
             ku_sources,
             ku_network_bind,
+            ku_network_allow_lan,
             ku_ollama_executable,
             ku_ollama_models_dir,
             ku_ollama_models,
@@ -263,7 +272,11 @@ async fn main() {
             // dependency preparation) touches data_dir, as `ku_local_web` does.
             #[cfg(feature = "base-v1")]
             let ku_network = match ku_network_bind {
-                Some(bind_addr) => match validate_start_ku_network(bind_addr, vnext.requested()) {
+                Some(bind_addr) => match validate_start_ku_network(
+                    bind_addr,
+                    ku_network_allow_lan,
+                    vnext.requested(),
+                ) {
                     Ok(network) => Some(network),
                     Err(error) => {
                         eprintln!("{error}");
@@ -493,7 +506,7 @@ async fn main() {
             };
             match network_start {
                 None if ku_network_bind.is_some() => println!(
-                    "  Node networking: off (no vNext lane requested; legacy TCP listener disabled); /ku opt-in loopback OBP-RP starts below"
+                    "  Node networking: off (no vNext lane requested; legacy TCP listener disabled); /ku opt-in OBP-RP starts below"
                 ),
                 None => println!(
                     "  Networking: off (no vNext lane requested; legacy TCP listener disabled)"
@@ -635,15 +648,24 @@ async fn main() {
                     }
                     #[cfg(feature = "vnext-network-runtime")]
                     if let Some(status) = ku_network_status {
+                        let lan = !status.listen_addr.ip().is_loopback();
+                        let scope = if lan {
+                            "private-LAN (DEV-ONLY, D-063)"
+                        } else {
+                            "loopback"
+                        };
                         println!(
-                            "  ✓ Local KU: http://127.0.0.1:{}/ku — explicit D-045 Public share over opt-in loopback; AI unqualified",
+                            "  ✓ Local KU: http://127.0.0.1:{}/ku — explicit D-045 Public share over opt-in {scope}; AI unqualified",
                             api_port
                         );
                         println!(
-                            "  ✓ Opt-in loopback OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
+                            "  ✓ Opt-in {scope} OBP-RP: node_id={} listen_addr={} — explicit D-045 share only; no reward/NAT qualification",
                             onebrain_base_contract::ku_payload::hex(&status.principal),
                             status.listen_addr
                         );
+                        if lan {
+                            eprintln!("  ⚠ {}", onebrain_api::ku_host::LAN_SHARE_WARNING);
+                        }
                     }
                     if let Some(reason) = ku_issue {
                         eprintln!("  ⚠ {}", ku_source_warning(reason));
@@ -900,8 +922,9 @@ fn start_ku_ollama(
 
 #[cfg(feature = "base-v1")]
 const KU_NETWORK_CONFIG_INVALID: &str = "ku_network_config_invalid: --ku-network-bind must be a \
-    loopback socket address such as 127.0.0.1:0; omit it for local/private-only /ku. Retain the \
-    existing data_dir and Vault key when retrying.";
+    loopback socket address such as 127.0.0.1:0 (or, DEV-ONLY with --ku-network-allow-lan, this \
+    machine's private LAN address such as 192.168.1.20:0; never 0.0.0.0 or a public address); \
+    omit it for local/private-only /ku. Retain the existing data_dir and Vault key when retrying.";
 
 #[cfg(feature = "base-v1")]
 const KU_NETWORK_CONFLICTS_VNEXT: &str = "ku_network_config_invalid: --ku-network-bind cannot be \
@@ -915,20 +938,23 @@ const KU_NETWORK_RUNTIME_UNAVAILABLE: &str = "ku_network_runtime_unavailable: --
 
 #[cfg(all(feature = "base-v1", feature = "vnext-network-runtime"))]
 const KU_NETWORK_STARTUP_FAILED: &str = "ku_network_startup_failed: cannot start the opt-in \
-    loopback VNextNetworkRuntime for /ku. Check that --ku-network-bind is an available local \
-    address and that no other process uses this data_dir; retain the existing data_dir and Vault \
+    VNextNetworkRuntime for /ku. Check that --ku-network-bind is an available address on this \
+    machine and that no other process uses this data_dir; retain the existing data_dir and Vault \
     key when retrying.";
 
-/// Validate the opt-in `/ku` loopback network before any Registry, Vault key
-/// or dataset access, with the same `KuHostNetworkConfig` rule as `ku_local_web`.
+/// Validate the opt-in `/ku` network (loopback, or D-063 private LAN with
+/// `allow_lan`) before any Registry, Vault key or dataset access, with the same
+/// `KuHostNetworkConfig` rule as `ku_local_web`.
 #[cfg(feature = "base-v1")]
 fn validate_start_ku_network(
     bind_addr: SocketAddr,
+    allow_lan: bool,
     vnext_requested: bool,
 ) -> Result<onebrain_api::ku_host::KuHostNetworkConfig, &'static str> {
     let network = onebrain_api::ku_host::KuHostNetworkConfig {
         network_opt_in: true,
         bind_addr,
+        allow_private_lan: allow_lan,
     };
     network.validate().map_err(|_| KU_NETWORK_CONFIG_INVALID)?;
     // The vNext product runtime owns the same network stores for data_dir.
@@ -1669,16 +1695,53 @@ mod start_ku_tests {
         // Non-loopback or vNext-lane combinations fail closed before any I/O.
         for addr in ["0.0.0.0:0", "192.168.1.10:4500", "[::]:0"] {
             assert_eq!(
-                validate_start_ku_network(addr.parse().unwrap(), false).err(),
+                validate_start_ku_network(addr.parse().unwrap(), false, false).err(),
                 Some(KU_NETWORK_CONFIG_INVALID),
                 "{addr}"
             );
         }
+        // D-063: a private LAN bind needs --ku-network-allow-lan; unspecified or
+        // public addresses stay refused even with it.
+        for addr in ["0.0.0.0:0", "[::]:0", "8.8.8.8:4500", "169.254.1.1:0"] {
+            assert_eq!(
+                validate_start_ku_network(addr.parse().unwrap(), true, false).err(),
+                Some(KU_NETWORK_CONFIG_INVALID),
+                "{addr}"
+            );
+        }
+        let lan = validate_start_ku_network("192.168.1.10:4500".parse().unwrap(), true, false);
+        #[cfg(feature = "vnext-network-runtime")]
+        assert!(lan.unwrap().allow_private_lan);
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        assert_eq!(lan.err(), Some(KU_NETWORK_RUNTIME_UNAVAILABLE));
+        assert!(start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-network-allow-lan"
+        ])
+        .is_err());
+        let parsed_lan = start_args(&[
+            "--api",
+            "--ku-vault-key-file",
+            "vault.key",
+            "--ku-network-bind",
+            "192.168.1.10:0",
+            "--ku-network-allow-lan",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed_lan.command,
+            Some(Commands::Start {
+                ku_network_allow_lan: true,
+                ..
+            })
+        ));
         assert_eq!(
-            validate_start_ku_network("127.0.0.1:0".parse().unwrap(), true).err(),
+            validate_start_ku_network("127.0.0.1:0".parse().unwrap(), false, true).err(),
             Some(KU_NETWORK_CONFLICTS_VNEXT)
         );
-        let loopback = validate_start_ku_network("[::1]:0".parse().unwrap(), false);
+        let loopback = validate_start_ku_network("[::1]:0".parse().unwrap(), false, false);
         #[cfg(feature = "vnext-network-runtime")]
         assert!(loopback.unwrap().network_opt_in);
         #[cfg(not(feature = "vnext-network-runtime"))]

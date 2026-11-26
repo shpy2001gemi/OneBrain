@@ -35,6 +35,7 @@ against it are demo data only.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -55,6 +56,30 @@ SAMPLE_OPERATOR = "dev-demo-contributor"
 PUBLIC_KEY_RE = re.compile(r"^[0-9a-f]{64}$")
 RELEASE_RE = re.compile(r"^ku_dev_demo_registry_ready release_id=([A-Za-z0-9._-]{1,96})$", re.M)
 NETWORK_BLOCK = {"network_opt_in": True, "bind_addr": "127.0.0.1:0"}
+PRIVATE_LAN_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
+
+
+def private_lan_bind(value: str) -> str:
+    """D-063: ``<ip>:0`` / ``[<ip>]:0`` for an RFC 1918 or IPv6 ULA address only."""
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        ip = None
+    if ip is None or not any(ip.version == net.version and ip in net
+                             for net in PRIVATE_LAN_NETWORKS):
+        raise BootstrapError(
+            "ku_dev_demo_lan_ip_invalid: --lan-ip must be this machine's private LAN address "
+            "(10/8, 172.16/12, 192.168/16 or IPv6 fc00::/7); never 0.0.0.0, loopback or a "
+            "public address (D-063, DEV-ONLY).")
+    return f"[{ip}]:0" if ip.version == 6 else f"{ip}:0"
+
+
+def network_block(plan: "Plan") -> dict:
+    if plan.lan_ip is None:
+        return dict(NETWORK_BLOCK)
+    return {"network_opt_in": True, "bind_addr": private_lan_bind(plan.lan_ip),
+            "allow_private_lan": True}
 
 Runner = Callable[[Sequence[str]], "subprocess.CompletedProcess[str]"]
 
@@ -81,6 +106,7 @@ class Plan:
     with_receiver: bool
     receiver_port: int
     hosts: list[str] = field(default_factory=list)
+    lan_ip: str | None = None
 
 
 def default_runner(argv: Sequence[str]) -> "subprocess.CompletedProcess[str]":
@@ -171,6 +197,12 @@ def build_plan(args: argparse.Namespace) -> Plan:
     receiver_port = args.receiver_port if args.receiver_port is not None else args.port + 1
     if args.with_receiver and receiver_port == args.port:
         raise BootstrapError("ku_dev_demo_port_invalid: sender and receiver ports must differ.")
+    lan_ip = getattr(args, "lan_ip", None)
+    if lan_ip is not None:
+        if not args.with_receiver:
+            raise BootstrapError("ku_dev_demo_lan_ip_requires_receiver: --lan-ip configures the "
+                                 "share network, so pass it together with --with-receiver.")
+        private_lan_bind(lan_ip)
 
     demo_root = _outside_repo(args.demo_root, "--demo-root")
     if os.path.lexists(demo_root):
@@ -193,7 +225,8 @@ def build_plan(args: argparse.Namespace) -> Plan:
         public_key_file = demo_root / "trust" / "registry-public-key.txt"
     return Plan(demo_root=demo_root, dev_registry=not real, registry_root=registry_root,
                 public_key_file=public_key_file, port=args.port,
-                with_receiver=args.with_receiver, receiver_port=receiver_port)
+                with_receiver=args.with_receiver, receiver_port=receiver_port,
+                lan_ip=lan_ip)
 
 
 def _run_step(runner: Runner, step: str, argv: Sequence[str], guidance: str) -> str:
@@ -245,7 +278,7 @@ def host_config(plan: Plan, public_key: str, role: str, *, sources: list[dict]) 
         "port": plan.port if role == "sender" else plan.receiver_port,
     }
     if plan.with_receiver:
-        config["network"] = dict(NETWORK_BLOCK)
+        config["network"] = network_block(plan)
     return config
 
 
@@ -364,6 +397,8 @@ def cli_host_command(config: dict, posix: bool | None = None) -> str:
             "--ku-vault-key-file", config["vault_key_file"]]
     if config.get("network"):
         args += ["--ku-network-bind", config["network"]["bind_addr"]]
+        if config["network"].get("allow_private_lan"):
+            args.append("--ku-network-allow-lan")
     for source in config.get("sources", []):
         args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
     if config.get("web_dir"):
@@ -389,6 +424,14 @@ def print_next_steps(plan: Plan, posix: bool | None = None) -> None:
               "CCIDs incompatible with real releases; saved KUs are demo data).")
         print("  Concepts: water, liquid, solid, gas, ice, sun, earth, cat, tree "
               "(+ Vietnamese labels).")
+    if plan.lan_ip is not None:
+        print(f"  Share network: private LAN {private_lan_bind(plan.lan_ip)} (DEV-ONLY, D-063). "
+              "Devices on this LAN can reach the share listener and attempt handshakes; only "
+              "Public KUs you explicitly confirm are sent. No NAT traversal; /ku Web and API stay "
+              "on 127.0.0.1. Your OS firewall may ask to allow UDP for the host binary.")
+        print("  Two machines: run this bootstrap on each machine with its own --lan-ip, start "
+              "one host per machine, then on the sender's /ku enter the receiver's printed "
+              "node_id and listen_addr.")
     shell = "POSIX shell" if posix else "PowerShell"
     print(f"\nNext steps ({shell}, from the repository root):")
     step = 1
@@ -453,6 +496,10 @@ def main(argv: Sequence[str] | None = None, runner: Runner = default_runner) -> 
                         help="also write receiver.json + opt-in loopback network blocks for the "
                         "D-045 share check")
     parser.add_argument("--receiver-port", type=int, help="receiver port (default --port + 1)")
+    parser.add_argument("--lan-ip",
+                        help="DEV-ONLY (D-063): with --with-receiver, bind the share network to "
+                        "this machine's private LAN address (RFC 1918 / IPv6 ULA) instead of "
+                        "127.0.0.1, for two machines on the same private network")
     args = parser.parse_args(argv)
 
     print("Prerequisites:", flush=True)

@@ -54,24 +54,43 @@ pub struct Ollama {
     pub memory_limit_bytes: u64,
 }
 
-/// Optional opt-in loopback `VNextNetworkRuntime` configuration for a normal
-/// local KU host. Omitted by default so local hosts remain offline unless the
-/// operator explicitly enables loopback networking.
+/// Optional opt-in `VNextNetworkRuntime` configuration for a normal local KU
+/// host. Omitted by default so local hosts remain offline unless the operator
+/// explicitly enables loopback networking; D-063 additionally allows a
+/// private-LAN bind (DEV-ONLY) only with `allow_private_lan`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct KuHostNetworkConfig {
     pub network_opt_in: bool,
     pub bind_addr: std::net::SocketAddr,
+    /// D-063 second explicit opt-in for an RFC 1918 / IPv6 ULA bind address.
+    #[serde(default)]
+    pub allow_private_lan: bool,
 }
 
+/// D-063 startup warning printed by every host whose share listener is bound to
+/// a private LAN address.
+pub const LAN_SHARE_WARNING: &str = "WARNING (DEV-ONLY, D-063): the /ku share listener is \
+    bound to a private LAN address. Devices on this network can reach it and attempt OBP-RP \
+    handshakes; only Public KUs you explicitly confirm are sent. No NAT traversal, relay or \
+    Internet exposure is provided or qualified. The /ku Web and API stay on 127.0.0.1.";
+
 impl KuHostNetworkConfig {
-    /// Enforce explicit opt-in and loopback-only binding before touching
-    /// Registry, custody inputs, or dataset directories.
+    /// Enforce explicit opt-in and a loopback bind (or, with the D-063 LAN
+    /// opt-in, a private-LAN bind) before touching Registry, custody inputs,
+    /// or dataset directories. Unspecified/public addresses are refused.
     pub fn validate(&self) -> Result<(), &'static str> {
-        if !self.network_opt_in || !self.bind_addr.ip().is_loopback() {
+        let ip = self.bind_addr.ip();
+        let lan = self.allow_private_lan && onebrain_node::ku_product::is_private_lan_ip(ip);
+        if !self.network_opt_in || !(ip.is_loopback() || lan) {
             return Err("ku_network_config_invalid");
         }
         Ok(())
+    }
+
+    /// Whether this config binds the share listener to a private LAN address.
+    pub fn is_private_lan(&self) -> bool {
+        !self.bind_addr.ip().is_loopback()
     }
 }
 
@@ -244,8 +263,9 @@ pub fn attach_live_public_reader(
     CanonicalPublicReader::register_live_runtime_for_data_dir(data_dir, runtime);
 }
 
-/// Start an opt-in loopback `VNextNetworkRuntime` for `data_dir` and bind it to
-/// the normal host's canonical public reader when `network` is configured.
+/// Start an opt-in `VNextNetworkRuntime` (loopback, or D-063 private LAN) for
+/// `data_dir` and bind it to the normal host's canonical public reader when
+/// `network` is configured. Only a LAN-opted runtime may share to LAN peers.
 #[cfg(feature = "vnext-network-runtime")]
 pub async fn start_host_loopback_network_runtime(
     data_dir: &Path,
@@ -261,6 +281,9 @@ pub async fn start_host_loopback_network_runtime(
         .await
         .map_err(|_| "ku_network_startup_failed")?,
     );
+    if network.allow_private_lan && network.is_private_lan() {
+        onebrain_node::ku_public_share::register_private_lan_share_runtime(&runtime);
+    }
     attach_live_public_reader(data_dir, &runtime);
     Ok(runtime)
 }
@@ -342,6 +365,47 @@ mod tests {
 
     fn budget() -> ResourceBudgetV1 {
         ResourceBudgetV1::try_new(256, 1_032_192, 1_000_000).unwrap()
+    }
+
+    #[test]
+    fn network_config_is_loopback_unless_explicit_private_lan_opt_in() {
+        let config = |opt_in, addr: &str, lan| KuHostNetworkConfig {
+            network_opt_in: opt_in,
+            bind_addr: addr.parse().unwrap(),
+            allow_private_lan: lan,
+        };
+        for addr in ["127.0.0.1:0", "[::1]:0"] {
+            assert_eq!(config(true, addr, false).validate(), Ok(()), "{addr}");
+            assert_eq!(config(true, addr, true).validate(), Ok(()), "{addr}");
+            assert!(!config(true, addr, true).is_private_lan());
+            assert!(config(false, addr, true).validate().is_err(), "{addr}");
+        }
+        for addr in [
+            "192.168.1.20:0",
+            "10.1.2.3:4500",
+            "172.20.0.9:0",
+            "[fd00::5]:0",
+        ] {
+            assert!(config(true, addr, false).validate().is_err(), "{addr}");
+            assert_eq!(config(true, addr, true).validate(), Ok(()), "{addr}");
+            assert!(config(true, addr, true).is_private_lan());
+            assert!(config(false, addr, true).validate().is_err(), "{addr}");
+        }
+        for addr in [
+            "0.0.0.0:0",
+            "[::]:0",
+            "192.0.2.10:4280",
+            "169.254.3.4:0",
+            "[fe80::1]:0",
+        ] {
+            assert!(config(true, addr, true).validate().is_err(), "{addr}");
+        }
+        // Existing configs without the new field keep the loopback-only rule.
+        let old: KuHostNetworkConfig =
+            serde_json::from_str(r#"{"network_opt_in":true,"bind_addr":"192.168.1.20:0"}"#)
+                .unwrap();
+        assert!(!old.allow_private_lan);
+        assert!(old.validate().is_err());
     }
 
     async fn setup_normal_host(

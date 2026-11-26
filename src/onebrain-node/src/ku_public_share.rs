@@ -15,6 +15,7 @@ use onebrain_base_contract::ResourceBudgetV1;
 use onebrain_protocol::ReconcileManifestKind;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::ku_product::KuServices;
 pub use crate::ku_product::{
@@ -26,6 +27,68 @@ use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
 
 pub const PUBLIC_CONSEQUENCE: &str = "This new object and its semantic content become Public. The recipient may retain and forward it permanently. The private source and original private object are not included. Provenance is authenticated transport only, not original-source, author or fidelity verification.";
 pub const MAX_PREPARED_PUBLIC_KU_SHARES: usize = 16;
+
+/// D-063: which peer addresses a host may prepare a Public KU share to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PeerAddressScope {
+    /// D-045 default (and the isolated peer demo): loopback peers only.
+    #[default]
+    LoopbackOnly,
+    /// D-063 DEV-ONLY: loopback or a private-LAN peer; only for a host whose
+    /// live share runtime was started with the explicit LAN opt-in.
+    PrivateLan,
+}
+
+pub use crate::ku_product::is_private_lan_ip;
+
+impl PeerAddressScope {
+    /// A non-zero port and a loopback address, or (LAN scope only) a
+    /// private-LAN address.
+    pub fn allows(self, address: SocketAddr) -> bool {
+        address.port() != 0
+            && (address.ip().is_loopback()
+                || (self == Self::PrivateLan && is_private_lan_ip(address.ip())))
+    }
+}
+
+type LanRuntimes = Mutex<Vec<Weak<VNextNetworkRuntime>>>;
+static PRIVATE_LAN_SHARE_RUNTIMES: OnceLock<LanRuntimes> = OnceLock::new();
+
+/// D-063: mark a share runtime the host started with the explicit LAN opt-in.
+/// Ignored unless the runtime is actually bound to a private-LAN address.
+pub fn register_private_lan_share_runtime(runtime: &Arc<VNextNetworkRuntime>) {
+    if !is_private_lan_ip(runtime.local_addr().ip()) {
+        return;
+    }
+    if let Ok(mut list) = PRIVATE_LAN_SHARE_RUNTIMES
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+    {
+        list.retain(|weak| weak.strong_count() > 0);
+        list.push(Arc::downgrade(runtime));
+    }
+}
+
+/// D-063: the peer scope for a host's current live share runtime; loopback
+/// only unless that exact runtime was registered with the LAN opt-in.
+pub fn peer_scope_for_runtime(runtime: Option<&Arc<VNextNetworkRuntime>>) -> PeerAddressScope {
+    let Some(runtime) = runtime else {
+        return PeerAddressScope::LoopbackOnly;
+    };
+    let registered = PRIVATE_LAN_SHARE_RUNTIMES
+        .get()
+        .and_then(|list| list.lock().ok())
+        .is_some_and(|list| {
+            list.iter()
+                .filter_map(Weak::upgrade)
+                .any(|lan| Arc::ptr_eq(&lan, runtime))
+        });
+    if registered {
+        PeerAddressScope::PrivateLan
+    } else {
+        PeerAddressScope::LoopbackOnly
+    }
+}
 
 /// No Clone/Serialize/Debug: possession of this host-local prepared capability
 /// cannot be fabricated from a response or used twice. The struct itself is
@@ -85,13 +148,15 @@ impl PreparedPublicKu {
 
 /// MVP support is deliberately one resolved predicate + one text literal.
 /// Unknown extensions, dependencies, spans and advanced semantics fail closed
-/// rather than being stripped from a saved object.
+/// rather than being stripped from a saved object. The peer address must be
+/// allowed by `scope` (D-045 loopback; D-063 private LAN only when opted in).
 pub fn prepare_public_ku(
     view: &KuViewV1,
     expected_peer: NodeId,
     address: SocketAddr,
     selector: SelectorCid,
     namespace: NamespaceCommitment,
+    scope: PeerAddressScope,
     now: u64,
 ) -> Result<PreparedPublicKu, &'static str> {
     if view.disclosure_class != ArtifactDisclosure::LOCALONLY
@@ -100,8 +165,7 @@ pub fn prepare_public_ku(
         || expected_peer.as_bytes() == &[0; 32]
         || selector.as_bytes() == &[0; 32]
         || namespace.as_bytes() == &[0; 32]
-        || !address.ip().is_loopback()
-        || address.port() == 0
+        || !scope.allows(address)
     {
         return Err("unsupported_public_ku");
     }
@@ -268,11 +332,19 @@ fn share_preview_json(
 pub struct PublicKuShareCoordinator {
     /// prepared_id -> (private ObjectCID, proposal, exact preview returned by prepare).
     prepared: BTreeMap<String, (String, PreparedPublicKu, serde_json::Value)>,
+    /// D-063 peer address scope for new/restored preparations (default loopback).
+    peer_scope: PeerAddressScope,
 }
 
 impl PublicKuShareCoordinator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// D-063: set by the normal host from its live share runtime before each
+    /// prepare/restore; never widens an already prepared share.
+    pub fn set_peer_scope(&mut self, scope: PeerAddressScope) {
+        self.peer_scope = scope;
     }
 
     /// Whether a live (unconsumed) entry with this id is held in memory.
@@ -315,9 +387,16 @@ impl PublicKuShareCoordinator {
         let (peer, selector_id, namespace_id) =
             share_targets(expected_node_id, selector, namespace)
                 .map_err(|_| "prepared_share_missing")?;
-        let proposal =
-            prepare_public_ku(view, peer, address, selector_id, namespace_id, prepared_at)
-                .map_err(|_| "saved_access_changed")?;
+        let proposal = prepare_public_ku(
+            view,
+            peer,
+            address,
+            selector_id,
+            namespace_id,
+            self.peer_scope,
+            prepared_at,
+        )
+        .map_err(|_| "saved_access_changed")?;
         let preview = share_preview_json(
             prepared_id,
             &proposal,
@@ -358,7 +437,15 @@ impl PublicKuShareCoordinator {
         self.check_capacity(now)?;
         let (peer, selector_id, namespace_id) =
             share_targets(expected_node_id, selector, namespace)?;
-        let proposal = prepare_public_ku(view, peer, address, selector_id, namespace_id, now)?;
+        let proposal = prepare_public_ku(
+            view,
+            peer,
+            address,
+            selector_id,
+            namespace_id,
+            self.peer_scope,
+            now,
+        )?;
         let mut nonce = [0; 32];
         getrandom::fill(&mut nonce).map_err(|_| "consent_randomness_unavailable")?;
         let prepared_id = hex(&nonce);
@@ -609,14 +696,119 @@ mod tests {
         }
     }
     fn prepare(view: &KuViewV1, now: u64) -> Result<PreparedPublicKu, &'static str> {
+        prepare_at(view, "127.0.0.1:43000", PeerAddressScope::LoopbackOnly, now)
+    }
+    fn prepare_at(
+        view: &KuViewV1,
+        address: &str,
+        scope: PeerAddressScope,
+        now: u64,
+    ) -> Result<PreparedPublicKu, &'static str> {
         prepare_public_ku(
             view,
             NodeId::from_bytes([1; 32]),
-            "127.0.0.1:43000".parse().unwrap(),
+            address.parse().unwrap(),
             SelectorCid::from_bytes([2; 32]),
             NamespaceCommitment::from_bytes([3; 32]),
+            scope,
             now,
         )
+    }
+
+    #[test]
+    fn peer_address_scope_is_loopback_unless_private_lan_opt_in() {
+        let view = view();
+        use PeerAddressScope::{LoopbackOnly, PrivateLan};
+        for addr in ["127.0.0.1:43000", "[::1]:43000"] {
+            assert!(prepare_at(&view, addr, LoopbackOnly, 100).is_ok(), "{addr}");
+            assert!(prepare_at(&view, addr, PrivateLan, 100).is_ok(), "{addr}");
+        }
+        for addr in [
+            "10.0.0.5:43000",
+            "172.16.4.2:43000",
+            "172.31.255.1:43000",
+            "192.168.1.20:43000",
+            "[fd12:3456::1]:43000",
+        ] {
+            assert_eq!(
+                prepare_at(&view, addr, LoopbackOnly, 100).err(),
+                Some("unsupported_public_ku"),
+                "{addr}"
+            );
+            assert!(prepare_at(&view, addr, PrivateLan, 100).is_ok(), "{addr}");
+        }
+        for addr in [
+            "0.0.0.0:43000",
+            "[::]:43000",
+            "8.8.8.8:43000",
+            "172.32.0.1:43000",
+            "169.254.1.1:43000",
+            "224.0.0.1:43000",
+            "255.255.255.255:43000",
+            "[fe80::1]:43000",
+            "[2001:db8::1]:43000",
+            "[::ffff:192.168.1.20]:43000",
+            "192.168.1.20:0",
+            "127.0.0.1:0",
+        ] {
+            assert_eq!(
+                prepare_at(&view, addr, PrivateLan, 100).err(),
+                Some("unsupported_public_ku"),
+                "{addr}"
+            );
+        }
+        // Without a live runtime the scope is loopback only.
+        assert_eq!(peer_scope_for_runtime(None), LoopbackOnly);
+        // The coordinator applies its scope; restore re-derives with the scope
+        // current at restore time, so a host restarted without the LAN opt-in
+        // fails closed instead of widening.
+        let private_cid = hex(&view.object_cid.0);
+        let (peer, selector, namespace) = ("01".repeat(32), "02".repeat(32), "03".repeat(32));
+        let lan: SocketAddr = "192.168.1.20:43000".parse().unwrap();
+        let mut coord = PublicKuShareCoordinator::new();
+        assert_eq!(
+            coord.prepare_view(&private_cid, &view, &peer, lan, &selector, &namespace, 100),
+            Err("unsupported_public_ku")
+        );
+        coord.set_peer_scope(PrivateLan);
+        let preview = coord
+            .prepare_view(&private_cid, &view, &peer, lan, &selector, &namespace, 100)
+            .unwrap();
+        assert_eq!(preview["address"], "192.168.1.20:43000");
+        let id = preview["prepared_id"].as_str().unwrap().to_owned();
+        let digest = prepared_preview_digest(&preview).unwrap();
+        let mut restarted = PublicKuShareCoordinator::new();
+        assert_eq!(
+            restarted.restore_view(
+                &id,
+                &private_cid,
+                &view,
+                &peer,
+                lan,
+                &selector,
+                &namespace,
+                100,
+                digest,
+                200
+            ),
+            Err("saved_access_changed")
+        );
+        restarted.set_peer_scope(PrivateLan);
+        restarted
+            .restore_view(
+                &id,
+                &private_cid,
+                &view,
+                &peer,
+                lan,
+                &selector,
+                &namespace,
+                100,
+                digest,
+                200,
+            )
+            .unwrap();
+        assert_eq!(restarted.prepared_preview(&id, 200).unwrap().1, &preview);
     }
 
     #[test]

@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Settings, Coins } from 'lucide-react';
 import type { StatusResponse } from '../api/types';
 import { formatObt } from '../utils/format';
-import { useKuHeaderSummary } from '../pages/kuHeaderSummary';
+import { isLoopbackListen, useKuHeaderSummary } from '../pages/kuHeaderSummary';
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -31,12 +31,13 @@ interface HeaderProps {
 }
 
 /** `/ku` badges come from the KU workspace (owned private store and opt-in
- *  loopback runtime), never from the legacy node counters. */
+ *  loopback or D-063 private-LAN runtime), never from the legacy node counters. */
 function KuBadges() {
   const summary = useKuHeaderSummary();
   if (!summary) return null;
   const n = summary.private_saved;
   const network = summary.network;
+  const loopback = network.enabled && isLoopbackListen(network.listen_addr);
   return (
     <>
       <span className="badge badge-cyan">
@@ -44,10 +45,14 @@ function KuBadges() {
       </span>
       {network.enabled ? (
         <span
-          className="badge badge-green"
-          title={`Loopback NodeID ${network.node_id} · listen ${network.listen_addr}. Opt-in loopback only; not network completion.`}
+          className={loopback ? 'badge badge-green' : 'badge badge-amber'}
+          title={
+            loopback
+              ? `Loopback NodeID ${network.node_id} · listen ${network.listen_addr}. Opt-in loopback only; not network completion.`
+              : `Private-LAN NodeID ${network.node_id} · listen ${network.listen_addr}. DEV-ONLY opt-in (D-063): devices on this LAN can reach the share listener; no NAT traversal; not network completion.`
+          }
         >
-          Loopback peer network · {network.active_sessions} active session
+          {loopback ? 'Loopback' : 'Private-LAN (DEV-ONLY)'} peer network · {network.active_sessions} active session
           {network.active_sessions === 1 ? '' : 's'}
         </span>
       ) : (

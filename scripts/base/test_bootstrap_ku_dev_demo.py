@@ -139,6 +139,49 @@ class BootstrapKuDevDemoTests(unittest.TestCase):
         self.assertIn("--skip-cli-client --seed-sample-ku", out)
         self.assertNotIn(TOKEN_CANARY, out + err)
 
+    def test_lan_ip_writes_explicit_private_lan_network_and_cli_flag(self):
+        from scripts.base import check_ku_public_share_demo as demo
+        root = self.tmp / "demo"
+        code, out, err = run_main([
+            "--demo-root", str(root), "--dev-demo-registry", "--with-receiver",
+            "--lan-ip", "192.168.1.20"], FakeRunner())
+        self.assertEqual(code, 0, err)
+        expected = {"network_opt_in": True, "bind_addr": "192.168.1.20:0",
+                    "allow_private_lan": True}
+        for name in ("host.json", "receiver.json"):
+            cfg = json.loads((root / name).read_text("utf-8"))
+            self.assertEqual(cfg["network"], expected)
+        sender = json.loads((root / "host.json").read_text("utf-8"))
+        self.assertIn("--ku-network-bind 192.168.1.20:0 --ku-network-allow-lan",
+                      boot.cli_host_command(sender, posix=True))
+        argv = demo.build_cli_host_args(Path("onebrain"), sender)
+        self.assertEqual(argv[argv.index("--ku-network-bind") + 2], "--ku-network-allow-lan")
+        self.assertIn("DEV-ONLY, D-063", out)
+        self.assertNotIn(TOKEN_CANARY, out + err)
+        self.assertEqual(boot.private_lan_bind("fd00::5"), "[fd00::5]:0")
+        self.assertEqual(boot.private_lan_bind("172.31.0.9"), "172.31.0.9:0")
+        for bad in ("0.0.0.0", "127.0.0.1", "8.8.8.8", "172.32.0.1", "169.254.1.1",
+                    "fe80::1", "::", "not-an-ip"):
+            with self.assertRaises(boot.BootstrapError, msg=bad):
+                boot.private_lan_bind(bad)
+        # Loopback default is unchanged and old configs need no new field.
+        loop = self.tmp / "loop"
+        code, _, err = run_main(["--demo-root", str(loop), "--dev-demo-registry",
+                                 "--with-receiver"], FakeRunner())
+        self.assertEqual(code, 0, err)
+        cfg = json.loads((loop / "host.json").read_text("utf-8"))
+        self.assertNotIn("allow_private_lan", cfg["network"])
+        self.assertNotIn("--ku-network-allow-lan", boot.cli_host_command(cfg))
+        # --lan-ip needs --with-receiver and a private address; nothing is written otherwise.
+        for name, extra, code_name in (
+                ("d2", ["--lan-ip", "192.168.1.20"], "ku_dev_demo_lan_ip_requires_receiver"),
+                ("d3", ["--with-receiver", "--lan-ip", "8.8.8.8"], "ku_dev_demo_lan_ip_invalid")):
+            code, _, err = run_main(["--demo-root", str(self.tmp / name), "--dev-demo-registry",
+                                     *extra], FakeRunner())
+            self.assertNotEqual(code, 0)
+            self.assertIn(code_name, err)
+            self.assertFalse((self.tmp / name).exists())
+
     def test_cli_host_command_matches_share_check_argv(self):
         from scripts.base import check_ku_public_share_demo as demo
         root = self.tmp / "demo"

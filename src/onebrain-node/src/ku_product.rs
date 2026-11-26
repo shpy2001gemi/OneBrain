@@ -406,6 +406,16 @@ fn public_share_error(code: &'static str) -> BaseServiceError {
     BaseServiceError::new(base_code, code)
 }
 
+/// D-063: IPv4 RFC 1918 (10/8, 172.16/12, 192.168/16) or IPv6 unique-local
+/// (fc00::/7). Loopback, unspecified, link-local, public and IPv4-mapped IPv6
+/// addresses are not private-LAN addresses here.
+pub fn is_private_lan_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.is_private(),
+        std::net::IpAddr::V6(v6) => (v6.segments()[0] & 0xfe00) == 0xfc00,
+    }
+}
+
 impl KuStore {
     #[cfg(feature = "vnext-network-runtime")]
     fn live_network_runtime(
@@ -426,6 +436,12 @@ impl KuStore {
             return Ok(runtime);
         }
         Err(public_share_network_unavailable())
+    }
+    /// D-063: private-LAN peers only when the current live share runtime was
+    /// started with the explicit LAN opt-in; otherwise loopback only.
+    #[cfg(feature = "vnext-network-runtime")]
+    fn share_peer_scope(&self) -> crate::ku_public_share::PeerAddressScope {
+        crate::ku_public_share::peer_scope_for_runtime(self.live_network_runtime().ok().as_ref())
     }
     #[cfg(feature = "vnext-network-runtime")]
     fn share_record_key(&self, id: [u8; 32]) -> [u8; 32] {
@@ -547,22 +563,22 @@ impl KuStore {
         let view = self
             .get(principal, cid)
             .map_err(|_| public_share_error(access_error))?;
-        self.public_share
-            .lock()
-            .map_err(|_| corrupt())?
-            .restore_view(
-                &record.prepared_id,
-                &record.object_cid,
-                &view,
-                &record.expected_node_id,
-                record.address,
-                &record.selector,
-                &record.namespace,
-                record.prepared_at,
-                record.preview_digest,
-                now,
-            )
-            .map_err(public_share_error)
+        let scope = self.share_peer_scope();
+        let mut share = self.public_share.lock().map_err(|_| corrupt())?;
+        share.set_peer_scope(scope);
+        let restored = share.restore_view(
+            &record.prepared_id,
+            &record.object_cid,
+            &view,
+            &record.expected_node_id,
+            record.address,
+            &record.selector,
+            &record.namespace,
+            record.prepared_at,
+            record.preview_digest,
+            now,
+        );
+        restored.map_err(public_share_error)
     }
     fn intake_key(&self, operation: [u8; 32]) -> [u8; 32] {
         let mut hash = blake3::Hasher::new_derive_key("onebrain:ku:private-text-intake:1");
@@ -612,11 +628,11 @@ impl KuStore {
                 let view = self
                     .get(principal, cid)
                     .map_err(|_| public_share_error("saved_ku_not_accessible"))?;
-                let preview = self
-                    .public_share
-                    .lock()
-                    .map_err(|_| corrupt())?
-                    .prepare_view(
+                let scope = self.share_peer_scope();
+                let preview = {
+                    let mut share = self.public_share.lock().map_err(|_| corrupt())?;
+                    share.set_peer_scope(scope);
+                    share.prepare_view(
                         &input.object_cid,
                         &view,
                         &input.expected_node_id,
@@ -625,7 +641,8 @@ impl KuStore {
                         &input.namespace,
                         now,
                     )
-                    .map_err(public_share_error)?;
+                }
+                .map_err(public_share_error)?;
                 // D-062: the preparation is durable before its preview is shown.
                 let prepared_id = preview["prepared_id"]
                     .as_str()

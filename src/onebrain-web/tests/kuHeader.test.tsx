@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter } from "react-router-dom";
 import { Header } from "../src/components/Header";
 import { KuWorkflowPage } from "../src/pages/KuWorkflow";
-import { setKuHeaderSummary } from "../src/pages/kuHeaderSummary";
+import { isLoopbackListen, setKuHeaderSummary } from "../src/pages/kuHeaderSummary";
 import { createKuClient } from "../src/api/ku";
 import type { StatusResponse } from "../src/api/types";
 
@@ -112,6 +112,22 @@ describe("/ku header badges", () => {
     act(() => setKuHeaderSummary({ private_saved: 3, network: { enabled: false } }));
     expect(screen.getByText("3 private KUs saved")).toBeTruthy();
     expect(screen.getByText("Peer network off · local only")).toBeTruthy();
+  });
+
+  it("labels a D-063 private-LAN share listener as DEV-ONLY, not loopback", () => {
+    renderHeader("/ku");
+    act(() =>
+      setKuHeaderSummary({
+        private_saved: 0,
+        network: { enabled: true, node_id: nodeId, listen_addr: "192.168.1.20:4442", active_sessions: 0, authenticated_sessions: 0, accepted_records: 0 },
+      }),
+    );
+    const peer = screen.getByText(/Private-LAN \(DEV-ONLY\) peer network · 0 active sessions$/);
+    expect(peer.getAttribute("title")).toContain("D-063");
+    expect(screen.queryByText(/Loopback peer network/)).toBeNull();
+    expect(isLoopbackListen("127.0.0.1:1")).toBe(true);
+    expect(isLoopbackListen("[::1]:1")).toBe(true);
+    expect(isLoopbackListen("10.0.0.2:1")).toBe(false);
   });
 
   it("keeps the legacy node badges on other pages", () => {

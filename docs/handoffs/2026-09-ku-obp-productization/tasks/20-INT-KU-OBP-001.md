@@ -6,7 +6,38 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — live two-node sender restart between prepare and confirm (D-062, t18, 2026-11-26)
+## Latest follow-up — opt-in private-LAN share network for two real machines (D-063, t19, 2026-11-26)
+
+After t18 the owner picked the task 20 backlog item “non-loopback” in its recommended narrow
+form, recorded as D-063: DEV-ONLY private-LAN bind with a second explicit opt-in; no NAT
+traversal, relay or public exposure.
+
+- **Host config:** `KuHostNetworkConfig.allow_private_lan` (serde default `false`, old configs
+  unchanged) and CLI `onebrain start --ku-network-allow-lan` (requires `--ku-network-bind`).
+  `validate()` accepts loopback, or with the LAN opt-in an RFC 1918 / IPv6 `fc00::/7` address;
+  `0.0.0.0`, `::`, public, link-local and IPv4-mapped addresses stay `ku_network_config_invalid`
+  before any Registry/Vault/dataset access. API/Web stay on `127.0.0.1`.
+- **Peer scope (node):** `ku_public_share::PeerAddressScope` (`LoopbackOnly` default /
+  `PrivateLan`); `prepare_public_ku` takes the scope. `start_host_loopback_network_runtime`
+  registers the runtime only when LAN-opted and actually bound to a private-LAN address;
+  `KuStore` sets the coordinator scope from its live runtime before every prepare and D-062
+  restore, so a host restarted without the opt-in fails closed instead of widening. The isolated
+  `ku_peer_demo` keeps the loopback rule.
+- **Visibility:** hosts print `Opt-in private-LAN OBP-RP (DEV-ONLY, D-063)` plus
+  `ku_host::LAN_SHARE_WARNING`; `/ku` header badge `Private-LAN (DEV-ONLY) peer network` and
+  host NodeID line derive the scope from `listen_addr`; the share field is now `Peer address`
+  and error/recovery texts mention the LAN option.
+- **Contributor path:** `bootstrap_ku_dev_demo.py --with-receiver --lan-ip <private ip>` writes
+  `{"network_opt_in":true,"bind_addr":"<ip>:0","allow_private_lan":true}` and prints the
+  two-machine steps + firewall note; `check_ku_public_share_demo.py` passes
+  `--ku-network-allow-lan` and accepts the LAN banner. CLI_REFERENCE documents the flag.
+
+Live run 2026-11-26, Windows, one machine, fresh DEV-ONLY bootstrap with `--lan-ip
+192.168.1.62` (both hosts on the Wi-Fi address): Web/Web 53/53, CLI/CLI `--cli-share` 55/55 (second
+run on the same root). Not covered: two physical machines, firewall prompts, NAT/relay,
+Internet, CI LAN lane (CI keeps loopback); DEV-ONLY, no network/platform qualification.
+
+## Earlier follow-up — live two-node sender restart between prepare and confirm (D-062, t18, 2026-11-26)
 
 After t17 the owner chose the recommended item: prove D-062 through real hosts, not only the
 in-process API restart test. No product behavior, decision, wire or DTO change.

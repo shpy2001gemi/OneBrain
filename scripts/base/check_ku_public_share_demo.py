@@ -197,7 +197,9 @@ def start_web_host(exe: Path, config: Path, api: Api, name: str,
 
 def wait_host_ready(proc: Proc, api: Api, *, with_network: bool = True) -> tuple[Proc, str, str]:
     if with_network:
-        line = proc.next_line(lambda l: "Opt-in loopback OBP-RP:" in l, 300)
+        # Loopback, or the D-063 DEV-ONLY private-LAN banner (Web and CLI hosts).
+        line = proc.next_line(lambda l: "OBP-RP" in l and "node_id=" in l
+                              and ("Opt-in loopback" in l or "Opt-in private-LAN" in l), 300)
         fields = dict(p.split("=", 1) for p in line.split() if "=" in p)
         node_id, listen_addr = fields["node_id"], fields["listen_addr"]
     else:
@@ -233,6 +235,8 @@ def build_cli_host_args(exe: Path, cfg: dict, *, with_network: bool = True) -> l
     if with_network:
         network = cfg["network"]
         args += ["--ku-network-bind", network["bind_addr"]]
+        if network.get("allow_private_lan"):
+            args.append("--ku-network-allow-lan")
     for source in cfg.get("sources", []):
         args += ["--ku-source", f"{source['label']}={source['canonical_file']}"]
     ollama = cfg.get("ollama") or {}
