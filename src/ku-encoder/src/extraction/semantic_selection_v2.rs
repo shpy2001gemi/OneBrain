@@ -838,10 +838,13 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["comparisons".into()])));
         }
-        if ["role_binding", "self_reference"].iter().any(|code| {
-            v.issues
-                .contains(&format!("selection[{i}].ellipses: {code}"))
-        }) && !ellipsis_choices(source, claim, b)?.is_empty()
+        if ["role_binding", "self_reference", "absent_or_ambiguous"]
+            .iter()
+            .any(|code| {
+                v.issues
+                    .contains(&format!("selection[{i}].ellipses: {code}"))
+            })
+            && !ellipsis_choices(source, claim, b)?.is_empty()
         {
             return Ok(Some((i, vec!["ellipses".into()])));
         }
@@ -853,11 +856,15 @@ pub fn repair_target(
 /// nor one of its arguments). Each may only be omitted, or have its surface
 /// rebound to an exact bound subject/argument that is a contiguous
 /// whitespace-bounded token extension of the emitted surface and resolves
-/// uniquely in the claim scope outside the borrowed span. Borrowed text is
-/// fixed; no role, borrowed text or new ellipsis is invented.
+/// uniquely in the claim scope outside a uniquely resolved borrowed span.
+/// Borrowed text is fixed; no role, borrowed text or new ellipsis is invented.
 /// D-068: a bound ellipsis flagged `self_reference` (its surface resolves to the
 /// very span it claims to borrow) may only be omitted; the bound role stays an
 /// explicit quote and no surface or borrowed text is substituted.
+/// D-074 (slice 1): a bound ellipsis flagged `absent_or_ambiguous` (`surface` or
+/// `borrowed` fails unique resolution while its bound role quote itself resolves
+/// uniquely in the claim scope) may likewise only be omitted, keeping the bound
+/// subject/argument as an explicit quote.
 fn ellipsis_choices(
     source: &str,
     claim: &Value,
@@ -871,19 +878,25 @@ fn ellipsis_choices(
         let surface = text(&ellipsis["surface"]["quote"]);
         let borrowed = span(source, &ellipsis["borrowed"], source, b)?;
         if roles.iter().any(|r| text(r) == surface) {
-            if borrowed.is_some() && span(source, &ellipsis["surface"], scope, b)? == borrowed {
+            let at = span(source, &ellipsis["surface"], scope, b)?;
+            if (at.is_some() && at == borrowed)
+                || ((at.is_none() || borrowed.is_none())
+                    && span(source, &json!({ "quote": surface }), scope, b)?.is_some())
+            {
                 out.insert(e, BTreeSet::new());
             }
             continue;
         }
         let mut options = BTreeSet::new();
-        for role in &roles {
-            let role = text(role);
-            if token_extension(surface, role)
-                && span(source, &json!({ "quote": role }), scope, b)?
-                    .is_some_and(|at| Some(at) != borrowed)
-            {
-                options.insert(role.to_owned());
+        if let Some(from) = borrowed {
+            for role in &roles {
+                let role = text(role);
+                if token_extension(surface, role)
+                    && span(source, &json!({ "quote": role }), scope, b)?
+                        .is_some_and(|at| at != from)
+                {
+                    options.insert(role.to_owned());
+                }
             }
         }
         out.insert(e, options);

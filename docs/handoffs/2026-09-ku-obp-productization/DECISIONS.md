@@ -1,5 +1,23 @@
 # Decisions and claim boundary
 
+## D-074 — Five-round autonomous continuation and bounded SEM-F03 slice selection
+
+On 2026-11-26 the owner instructed running five consecutive checkpoints and
+automatically choosing the best bounded option whenever a choice is needed
+("chạy liên tục 5 lượt . nếu cần phải lựa chọn, hãy tự chọn cái nào tốt nhất").
+Each selected slice stays within the approved `KU_SEMANTIC_SELECTION_PROFILE_V2`
+and MVP boundaries (deterministic host-derived finite local choices only, full
+revalidation, no model run, no fidelity claim, user host stays v1, no consent,
+trust, wire, DTO, mobile-authority or claim-boundary change).
+
+- **Slice 1 (`ellipses: absent_or_ambiguous`):** a bound ellipsis whose `surface`
+  or `borrowed` selector fails unique resolution while its bound `subject` or
+  `argument` quote resolves uniquely in the claim scope joins the bounded
+  `ellipses` repair with omission as its sole finite choice (keeping the bound
+  role as an explicit quote with no reconstruction asserted; `role_binding`
+  surface rebinds require `borrowed` to resolve uniquely; ellipses whose bound
+  role quote itself does not resolve uniquely do not dispatch).
+
 ## D-073 — Bounded bound-argument rebind for OR-group `argument_binding` (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: alternatives issue

@@ -178,15 +178,19 @@ An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
 ellipsis may only be omitted, or have its surface rebound to an exact bound
 subject/argument that is a contiguous whitespace-bounded token extension of the
-emitted surface and resolves uniquely in the claim scope outside the borrowed
-span. Borrowed text is fixed; unflagged ellipses stay byte-identical and in order;
-no role, borrowed text or ellipsis is added, and full revalidation still applies.
-Omission keeps the argument as an explicit quote and asserts no reconstruction.
-A bound ellipsis flagged `self_reference` (its surface resolves to the very span
-it borrows) may join that `ellipses`-only repair (D-068). Its only finite choice
-is omitting that ellipsis; the bound subject/argument stays an explicit quote, no
-surface or borrowed text is substituted, and full revalidation still applies. A
-self-reference whose spans do not resolve uniquely stays unrouted.
+emitted surface and resolves uniquely in the claim scope outside a uniquely
+resolved borrowed span. Borrowed text is fixed; unflagged ellipses stay
+byte-identical and in order; no role, borrowed text or ellipsis is added, and
+full revalidation still applies. Omission keeps the argument as an explicit quote
+and asserts no reconstruction. A bound ellipsis flagged `self_reference` (its
+surface resolves to the very span it borrows) may join that `ellipses`-only
+repair (D-068), and a bound ellipsis flagged `absent_or_ambiguous` (`surface` or
+`borrowed` fails unique resolution while its bound `subject`/`argument` quote
+resolves uniquely in the claim scope) likewise joins that repair (D-074). In
+both cases the only finite choice is omitting that ellipsis; the bound
+subject/argument stays an explicit quote, no surface, `within` scope or borrowed
+text is substituted, and full revalidation still applies. Bound ellipses whose
+own role quote does not resolve uniquely in the claim scope stay unrouted.
 
 ## Lifecycle, limits and compatibility
 

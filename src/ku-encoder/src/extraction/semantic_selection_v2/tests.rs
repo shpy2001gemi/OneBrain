@@ -2115,3 +2115,206 @@ fn alternatives_argument_binding_dispatches_only_bound_argument_rebind() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn ellipsis_absent_or_ambiguous_dispatches_only_omission() {
+    // D-074 (slice 1): a bound ellipsis whose `surface` or `borrowed` selector
+    // fails unique resolution while its bound subject/argument quote resolves
+    // uniquely in the claim scope may only be omitted; the bound role stays an
+    // explicit quote and nothing is substituted or added.
+    let mut selection = rocket();
+    selection["claims"][1]["ellipses"] =
+        json!([{"surface":{"quote":"nhiên liệu rắn"},"borrowed":{"quote":"nhiên liệu"}}]);
+    let (_, validation) = assemble(ROCKET, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec![
+            "selection[1].comparisons: target_unspecified",
+            "selection[1].ellipses: absent_or_ambiguous"
+        ]
+    );
+    assert!(
+        validation.uncovered.is_empty(),
+        "{:?}",
+        validation.uncovered
+    );
+    let (target, fields) = repair_target(ROCKET, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["ellipses".into()]));
+    let choices = repair_choices(
+        ROCKET,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["ellipses"],
+        json!({
+            "count": 1,
+            "surfaces": ["nhiên liệu rắn"],
+            "borrowed": ["nhiên liệu"],
+            "repairable": [{"ellipsis": 0, "surface": [], "may_omit": true}]
+        })
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(ROCKET, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let ell = &wire["properties"]["patch"]["properties"]["ellipses"];
+    assert_eq!(
+        (ell["minItems"].clone(), ell["maxItems"].clone()),
+        (json!(0), json!(1))
+    );
+    let apply = |sel: &Value, ellipses: Value| {
+        apply_repair(
+            ROCKET,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"ellipses":ellipses}}),
+            &mut budget(),
+        )
+    };
+    let (changed, draft, after) = apply(&selection, json!([])).unwrap();
+    assert_eq!(
+        after.issues,
+        vec!["selection[1].comparisons: target_unspecified"]
+    );
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][1]["subject"], json!("nhiên liệu rắn"));
+    assert_eq!(draft["statements"][1]["ellipses"], json!([]));
+    assert_eq!(
+        draft["statements"][1]["references"][0]["target_id"],
+        "claim-0-group-0"
+    );
+
+    // Rejected: no-op, adding `within`, substituting borrowed/surface, extra item.
+    let base = selection["claims"][1]["ellipses"].clone();
+    assert!(apply(&selection, base).is_err());
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"nhiên liệu rắn"},"borrowed":{"quote":"nhiên liệu","within":"nhiên liệu lỏng"}}])
+    )
+    .is_err());
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"nhiên liệu rắn"},"borrowed":{"quote":"nhiên liệu lỏng"}}])
+    )
+    .is_err());
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"an toàn"},"borrowed":{"quote":"nhiên liệu"}}])
+    )
+    .is_err());
+
+    // Invalid `surface.within` on a uniquely grounded bound argument: omission only.
+    let source = "An mua táo đỏ , Bình mua xanh .";
+    let ok = json!({"surface":{"quote":"xanh"},"borrowed":{"quote":"táo"}});
+    let bad_within =
+        json!({"surface":{"quote":"xanh","within":"An mua táo đỏ"},"borrowed":{"quote":"táo"}});
+    let claims = |ellipses: Value| {
+        json!({"claims":[
+            {"subject":"An","predicate":"mua","arguments":["táo đỏ"],"anchor":"An mua táo đỏ"},
+            {"subject":"Bình","predicate":"mua","arguments":["xanh"],"anchor":"Bình mua xanh","ellipses":ellipses}
+        ]})
+    };
+    let bad_surface = claims(json!([bad_within.clone()]));
+    let (_, bsv) = assemble(source, &bad_surface, &mut budget()).unwrap();
+    assert_eq!(
+        bsv.issues,
+        vec!["selection[1].ellipses: absent_or_ambiguous"]
+    );
+    assert!(apply_repair(
+        source,
+        &bad_surface,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[]}}),
+        &mut budget(),
+    )
+    .is_ok());
+    // Dropping `surface.within` to keep the ellipsis is rejected; only omission is allowed.
+    assert!(apply_repair(
+        source,
+        &bad_surface,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[ok.clone()]}}),
+        &mut budget(),
+    )
+    .is_err());
+
+    // Unflagged sibling stays byte-identical: only the unresolved ellipsis may go.
+    let bad_borrowed = json!({"surface":{"quote":"Bình"},"borrowed":{"quote":"mua"}});
+    let mixed = claims(json!([ok.clone(), bad_borrowed.clone()]));
+    let (_, mv) = assemble(source, &mixed, &mut budget()).unwrap();
+    assert_eq!(
+        mv.issues,
+        vec!["selection[1].ellipses: absent_or_ambiguous"]
+    );
+    assert!(apply_repair(
+        source,
+        &mixed,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[ok]}}),
+        &mut budget(),
+    )
+    .is_ok());
+    assert!(apply_repair(
+        source,
+        &mixed,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[bad_borrowed]}}),
+        &mut budget(),
+    )
+    .is_err());
+    assert!(apply_repair(
+        source,
+        &mixed,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[]}}),
+        &mut budget(),
+    )
+    .is_err());
+
+    // Combined `role_binding` + unresolved `borrowed`: no futile surface rebind
+    // is offered when `borrowed` itself fails unique resolution; omission clears both.
+    let combined = claims(json!([{"surface":{"quote":"mua xanh"},"borrowed":{"quote":"mua"}}]));
+    let (_, cv) = assemble(source, &combined, &mut budget()).unwrap();
+    assert_eq!(
+        cv.issues,
+        vec![
+            "selection[1].ellipses: absent_or_ambiguous",
+            "selection[1].ellipses: role_binding"
+        ]
+    );
+    let cc = repair_choices(source, &combined, 1, &fields, &cv, &mut budget()).unwrap();
+    assert_eq!(
+        cc["ellipses"]["repairable"],
+        json!([{"ellipsis": 0, "surface": [], "may_omit": true}])
+    );
+    assert!(apply_repair(
+        source,
+        &combined,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[]}}),
+        &mut budget(),
+    )
+    .is_ok());
+    assert!(apply_repair(
+        source,
+        &combined,
+        1,
+        &fields,
+        &json!({"patch":{"ellipses":[{"surface":{"quote":"xanh"},"borrowed":{"quote":"mua"}}]}}),
+        &mut budget(),
+    )
+    .is_err());
+}

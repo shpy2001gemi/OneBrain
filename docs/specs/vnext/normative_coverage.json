@@ -1125,6 +1125,10 @@
           "needle": "alternatives_argument_binding_dispatches_only_bound_argument_rebind"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "ellipsis_absent_or_ambiguous_dispatches_only_omission"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }
