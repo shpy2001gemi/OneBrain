@@ -1081,3 +1081,113 @@ fn comparison_binding_and_stray_target_dispatch_only_rebind_or_omission() {
             .is_none());
     }
 }
+
+#[test]
+fn ellipsis_role_binding_dispatches_only_bound_rebind_or_omission() {
+    // D-066: a flagged ellipsis surface may only become an exact bound
+    // token-extended subject/argument, or the flagged ellipsis is omitted.
+    let source = "An mua táo đỏ , Bình mua xanh .";
+    let ok = json!({"surface":{"quote":"xanh"},"borrowed":{"quote":"táo"}});
+    let flagged = json!({"surface":{"quote":"mua xanh"},"borrowed":{"quote":"táo"}});
+    let claims = |ellipses: Value| {
+        json!({"claims":[
+            {"subject":"An","predicate":"mua","arguments":["táo đỏ"],"anchor":"An mua táo đỏ"},
+            {"subject":"Bình","predicate":"mua","arguments":["xanh"],"anchor":"Bình mua xanh","ellipses":ellipses}]})
+    };
+    let selection = claims(json!([flagged]));
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[1].ellipses: role_binding"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["ellipses".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["ellipses"],
+        json!({"count":1,"surfaces":["mua xanh","xanh"],"borrowed":["táo"],"repairable":[{"ellipsis":0,"surface":["xanh"],"may_omit":true}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let ell = &wire["properties"]["patch"]["properties"]["ellipses"];
+    assert_eq!(
+        (ell["minItems"].clone(), ell["maxItems"].clone()),
+        (json!(0), json!(1))
+    );
+    assert_eq!(
+        ell["items"]["properties"]["surface"]["properties"]["quote"]["enum"],
+        json!(["mua xanh", "xanh"])
+    );
+    assert_eq!(
+        ell["items"]["properties"]["borrowed"]["properties"]["quote"]["enum"],
+        json!(["táo"])
+    );
+    let apply = |sel: &Value, ellipses: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"ellipses":ellipses}}),
+            &mut budget(),
+        )
+    };
+    // Accepted: rebind to the bound argument; borrowed text stays reconstructed.
+    let (changed, draft, after) = apply(&selection, json!([ok])).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][1]["arguments"], json!(["xanh"]));
+    assert_eq!(
+        draft["statements"][1]["ellipses"][0]["origin"],
+        "reconstructed"
+    );
+    // Accepted: omit the flagged ellipsis; the argument stays explicit.
+    let (changed, _, after) = apply(&selection, json!([])).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert_eq!(changed["claims"][1]["ellipses"], json!([]));
+    // Rejected: no-op, unbound/other surface, changed borrowed, selector, extra item.
+    assert!(apply(&selection, json!([flagged])).is_err());
+    for surface in [json!({"quote":"Bình"}), json!({"quote":"mua"})] {
+        assert!(apply(
+            &selection,
+            json!([{"surface":surface,"borrowed":{"quote":"táo"}}])
+        )
+        .is_err());
+    }
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"xanh"},"borrowed":{"quote":"táo đỏ"}}])
+    )
+    .is_err());
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"xanh","within":"Bình mua xanh"},"borrowed":{"quote":"táo"}}])
+    )
+    .is_err());
+    assert!(apply(&selection, json!([ok, ok])).is_err());
+    // Unflagged ellipses stay: only the flagged one may be omitted.
+    let mixed = claims(json!([ok, flagged]));
+    let (_, v) = assemble(source, &mixed, &mut budget()).unwrap();
+    assert_eq!(v.issues, vec!["selection[1].ellipses: role_binding"]);
+    assert!(apply(&mixed, json!([ok])).is_ok());
+    assert!(apply(&mixed, json!([flagged])).is_err());
+    assert!(apply(&mixed, json!([])).is_err());
+    // Unrouted: self_reference alone is not a role_binding repair.
+    let selfref = claims(json!([{"surface":{"quote":"xanh"},"borrowed":{"quote":"xanh"}}]));
+    let (_, v) = assemble(source, &selfref, &mut budget()).unwrap();
+    assert_eq!(v.issues, vec!["selection[1].ellipses: self_reference"]);
+    assert!(repair_target(source, &selfref, &v, &mut budget())
+        .unwrap()
+        .is_none());
+}

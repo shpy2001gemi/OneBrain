@@ -1,5 +1,18 @@
 # Decisions and claim boundary
 
+## D-066 — Bounded repair for ellipsis role binding (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: ellipsis issue
+`role_binding` (surface is neither the claim subject nor an argument) dispatches
+one bounded `ellipses` repair. A flagged ellipsis may only be omitted, or have its
+surface rebound to an exact bound subject/argument that is a contiguous
+whitespace-bounded token extension of the emitted surface and resolves uniquely
+in the claim scope outside the borrowed span. Borrowed text is fixed; unflagged
+ellipses stay byte-identical and in order; nothing is added; full host
+revalidation (no new issues, no coverage loss) applies. `self_reference` alone
+does not dispatch. Deterministic tests only; no model run, no fidelity claim, user
+host stays v1.
+
 ## D-065 — Bounded repair for comparison binding errors (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issues

@@ -113,6 +113,16 @@ emitted with `target_kind: unspecified`) may only omit that ungrounded target; t
 are fixed, no target is added, substituted or marked explicit, and full
 revalidation still applies. Unrelated properties stay unrouted.
 
+An ellipsis whose surface is neither the claim subject nor one of its arguments
+(`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged
+ellipsis may only be omitted, or have its surface rebound to an exact bound
+subject/argument that is a contiguous whitespace-bounded token extension of the
+emitted surface and resolves uniquely in the claim scope outside the borrowed
+span. Borrowed text is fixed; unflagged ellipses stay byte-identical and in order;
+no role, borrowed text or ellipsis is added, and full revalidation still applies.
+Omission keeps the argument as an explicit quote and asserts no reconstruction.
+`self_reference` alone stays unrouted.
+
 ## Lifecycle, limits and compatibility
 
 Use the existing durable reservations, cancel/restart fencing and consent boundary.

@@ -313,6 +313,23 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             props["target"]["properties"]["quote"]["enum"] = json!(targets);
         }
     }
+    if let Some(ell) = wire["properties"]["patch"]["properties"].get_mut("ellipses") {
+        // D-066: only flagged ellipses may be omitted; values from host choices.
+        let c = &choices["ellipses"];
+        let count = c["count"]
+            .as_u64()
+            .ok_or(ExtractionError("selection_repair_choice"))?;
+        let drops = c["repairable"].as_array().map_or(0, |r| r.len() as u64);
+        ell["minItems"] = json!(count.saturating_sub(drops));
+        ell["maxItems"] = json!(count);
+        for (key, choice) in [("surface", "surfaces"), ("borrowed", "borrowed")] {
+            let options = c[choice]
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!options.is_empty(), "selection_repair_choice")?;
+            ell["items"]["properties"][key]["properties"]["quote"]["enum"] = json!(options);
+        }
+    }
     for (key, choice) in [("arguments", "arguments"), ("links", "to")] {
         if wire["properties"]["patch"]["properties"].get(key).is_some() {
             let options = choices[choice]
@@ -753,8 +770,50 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["comparisons".into()])));
         }
+        if v.issues
+            .contains(&format!("selection[{i}].ellipses: role_binding"))
+            && !ellipsis_choices(source, claim, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["ellipses".into()])));
+        }
     }
     Ok(None)
+}
+
+/// D-066: ellipses flagged `role_binding` (surface is neither the claim subject
+/// nor one of its arguments). Each may only be omitted, or have its surface
+/// rebound to an exact bound subject/argument that is a contiguous
+/// whitespace-bounded token extension of the emitted surface and resolves
+/// uniquely in the claim scope outside the borrowed span. Borrowed text is
+/// fixed; no role, borrowed text or new ellipsis is invented.
+fn ellipsis_choices(
+    source: &str,
+    claim: &Value,
+    b: &mut WorkBudget,
+) -> Result<BTreeMap<usize, BTreeSet<String>>> {
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut roles = vec![&claim["subject"]];
+    roles.extend(items(claim, "arguments"));
+    let mut out = BTreeMap::new();
+    for (e, ellipsis) in items(claim, "ellipses").enumerate() {
+        let surface = text(&ellipsis["surface"]["quote"]);
+        if roles.iter().any(|r| text(r) == surface) {
+            continue;
+        }
+        let borrowed = span(source, &ellipsis["borrowed"], source, b)?;
+        let mut options = BTreeSet::new();
+        for role in &roles {
+            let role = text(role);
+            if token_extension(surface, role)
+                && span(source, &json!({ "quote": role }), scope, b)?
+                    .is_some_and(|at| Some(at) != borrowed)
+            {
+                options.insert(role.to_owned());
+            }
+        }
+        out.insert(e, options);
+    }
+    Ok(out)
 }
 
 /// D-065 finite choices for one flagged comparison.
@@ -1249,6 +1308,36 @@ pub fn repair_choices(
             "repairable": listed,
         });
     }
+    if fields.iter().any(|f| f == "ellipses") {
+        let claim = selection["claims"]
+            .as_array()
+            .and_then(|c| c.get(target))
+            .ok_or(ExtractionError("selection_repair_target"))?;
+        // D-066: borrowed text fixed; flagged surfaces only rebind to a bound
+        // token-extended subject/argument, or the flagged ellipsis is omitted.
+        let repairs = ellipsis_choices(source, claim, b)?;
+        let mut surfaces = BTreeSet::new();
+        let mut borrowed = BTreeSet::new();
+        for ellipsis in items(claim, "ellipses") {
+            if let Some(q) = ellipsis["surface"]["quote"].as_str() {
+                surfaces.insert(q.to_owned());
+            }
+            if let Some(q) = ellipsis["borrowed"]["quote"].as_str() {
+                borrowed.insert(q.to_owned());
+            }
+        }
+        let mut listed = Vec::new();
+        for (e, options) in &repairs {
+            surfaces.extend(options.iter().cloned());
+            listed.push(json!({ "ellipsis": e, "surface": options, "may_omit": true }));
+        }
+        choices["ellipses"] = json!({
+            "count": items(claim, "ellipses").count(),
+            "surfaces": surfaces,
+            "borrowed": borrowed,
+            "repairable": listed,
+        });
+    }
     Ok(choices)
 }
 pub fn apply_repair(
@@ -1307,6 +1396,36 @@ pub fn apply_repair(
                 result["claims"][target][key] = value.clone();
                 continue;
             }
+            if key == "ellipses" {
+                // D-066: unflagged ellipses stay byte-identical and in order; a
+                // flagged one may only be omitted or rebound to a listed surface
+                // with its borrowed text unchanged.
+                let flagged = ellipsis_choices(source, old, b)?;
+                let mut kept = next.iter().peekable();
+                for (e, before) in previous.iter().enumerate() {
+                    let options = flagged.get(&e);
+                    match kept.peek() {
+                        Some(after) if **after == *before => {
+                            kept.next();
+                        }
+                        Some(after)
+                            if options.is_some_and(|o| {
+                                after["borrowed"] == before["borrowed"]
+                                    && after["surface"].as_object().is_some_and(|s| s.len() == 1)
+                                    && after["surface"]["quote"]
+                                        .as_str()
+                                        .is_some_and(|q| o.contains(q))
+                            }) =>
+                        {
+                            kept.next();
+                        }
+                        _ => require(options.is_some(), "selection_repair_choice")?,
+                    }
+                }
+                require(kept.next().is_none(), "selection_repair_structure_loss")?;
+                result["claims"][target][key] = value.clone();
+                continue;
+            }
             require(
                 previous.len() == next.len(),
                 "selection_repair_structure_loss",
@@ -1342,7 +1461,6 @@ pub fn apply_repair(
                     "alternatives" => &["quote", "cue", "exclusivity"],
                     "comparisons" => &["property", "cue", "target_kind"],
                     "references" => &["via", "target_kind"],
-                    "ellipses" => &["surface"],
                     _ => return Err(ExtractionError("selection_repair_scope")),
                 };
                 require(
