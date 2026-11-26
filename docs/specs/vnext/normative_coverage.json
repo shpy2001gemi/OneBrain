@@ -1085,6 +1085,10 @@
           "needle": "branch_scope_or_order_dispatches_bounded_reorder_and_surface_narrowing"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "incompatible_or_cue_dispatches_only_whole_group_drop_keeping_exact_argument"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }

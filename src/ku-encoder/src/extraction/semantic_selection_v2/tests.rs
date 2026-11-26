@@ -864,3 +864,115 @@ fn ambiguous_branch_surface_narrows_locally_and_unrepairable_duplicate_group_ski
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn incompatible_or_cue_dispatches_only_whole_group_drop_keeping_exact_argument() {
+    // D-064: a conjunction emitted as an OR group may only be omitted as a whole.
+    let source = "Hộp chứa bi xanh và bi đỏ.";
+    let selection = json!({"claims":[{"subject":"Hộp","predicate":"chứa","arguments":["bi xanh và bi đỏ"],"alternatives":[{"quote":"bi xanh và bi đỏ","cue":"và","exclusivity":"unspecified","branches":[{"surface":{"quote":"bi xanh"}},{"surface":{"quote":"bi đỏ"}}]}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].alternatives: incompatible_or_cue"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["alternatives".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["alternatives"],
+        json!({"groups":1,"repairable":[],"borrowed":[],"drop":[0],"surfaces":["bi xanh","bi đỏ"]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let alt = &wire["properties"]["patch"]["properties"]["alternatives"];
+    assert_eq!(
+        (alt["minItems"].clone(), alt["maxItems"].clone()),
+        (json!(0), json!(1))
+    );
+    assert_eq!(
+        alt["items"]["properties"]["branches"]["items"]["properties"]["surface"]["properties"]
+            ["quote"]["enum"],
+        json!(["bi xanh", "bi đỏ"])
+    );
+    // Accepted: omit the group; the exact quote stays the bound argument.
+    let (changed, draft, after) = apply_repair(
+        source,
+        &selection,
+        target,
+        &fields,
+        &json!({"patch":{"alternatives":[]}}),
+        &mut budget(),
+    )
+    .unwrap();
+    assert!(after.clear(), "{:?} {:?}", after.issues, after.uncovered);
+    assert_eq!(changed["claims"][0]["alternatives"], json!([]));
+    assert_eq!(
+        changed["claims"][0]["arguments"],
+        json!(["bi xanh và bi đỏ"])
+    );
+    assert!(draft["statements"][0]["alternatives"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // Rejected: unchanged, re-labelled cue, dropped branch, substituted group.
+    let reject = |alternatives: Value| {
+        apply_repair(
+            source,
+            &selection,
+            target,
+            &fields,
+            &json!({"patch":{"alternatives":alternatives}}),
+            &mut budget(),
+        )
+        .is_err()
+    };
+    let groups = selection["claims"][0]["alternatives"].clone();
+    assert!(reject(groups.clone()));
+    let mut relabelled = groups.clone();
+    relabelled[0]["cue"] = json!("hoặc");
+    assert!(reject(relabelled));
+    let mut one_branch = groups.clone();
+    one_branch[0]["branches"].as_array_mut().unwrap().pop();
+    assert!(reject(one_branch));
+    let mut substituted = groups.clone();
+    substituted[0]["quote"] = json!("bi xanh");
+    assert!(reject(substituted));
+
+    // Unrouted: OR cue inside the quote, unbound quote, referenced group.
+    let with_or = json!({"claims":[{"subject":"Hộp","predicate":"chứa","arguments":["bi xanh và bi đỏ hoặc bi vàng"],"alternatives":[{"quote":"bi xanh và bi đỏ hoặc bi vàng","cue":"và","exclusivity":"unspecified","branches":[{"surface":{"quote":"bi xanh"}},{"surface":{"quote":"bi đỏ"}}]}]}]});
+    assert!(incompatible_cue_drops(
+        "Hộp chứa bi xanh và bi đỏ hoặc bi vàng.",
+        &with_or,
+        0,
+        &mut budget()
+    )
+    .unwrap()
+    .is_empty());
+    let mut unbound = selection.clone();
+    unbound["claims"][0]["arguments"] = json!(["bi xanh"]);
+    assert!(incompatible_cue_drops(source, &unbound, 0, &mut budget())
+        .unwrap()
+        .is_empty());
+    let ref_source = "Hộp chứa bi xanh và bi đỏ. Chúng nặng.";
+    let mut referenced = selection.clone();
+    referenced["claims"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"subject":"Chúng","predicate":"nặng","references":[{"via":{"quote":"Chúng"},"to":{"quote":"bi xanh và bi đỏ"},"target_kind":"group"}]}));
+    assert!(
+        incompatible_cue_drops(ref_source, &referenced, 0, &mut budget())
+            .unwrap()
+            .is_empty()
+    );
+}

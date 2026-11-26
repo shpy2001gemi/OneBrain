@@ -1,5 +1,19 @@
 # Decisions and claim boundary
 
+## D-064 — Bounded repair for a conjunction cue in an OR group (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: `incompatible_or_cue`
+(an OR group whose cue is `và`/`and`/`nhưng`/`but`) dispatches one bounded
+`alternatives` repair whose only finite choice is omitting that whole group. The
+exact group quote stays the claim's bound argument; no conjunction/contrast
+operator is asserted. Kept groups stay byte-identical and in order; relabelling the
+cue, partial branch removal or substituting a group is rejected, and full host
+revalidation (no new issues, no coverage loss) applies. Groups whose quote also has
+an OR cue, whose quote is not a bound argument, which do not resolve uniquely, or
+which contain a resolved reference target do not dispatch. Narrow exception to the
+"repairs cannot remove previous branches" rule for this case only. Deterministic
+tests only; no model run, no fidelity claim, user host stays v1.
+
 ## D-063 — Opt-in private-LAN bind for the `/ku` share network (DEV-ONLY)
 
 On 2026-11-26 the owner chose the recommended task 20 backlog item: let two real

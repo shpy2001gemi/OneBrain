@@ -56,7 +56,7 @@ raise an incompatible-cue issue. This is a negative guard, not a multilingual
 parser or proof that any other cue expresses disjunction.
 
 Repairs are claim/revision bound with field allow-lists. A repair cannot remove
-previous grounded roles/branches/qualifiers, change provenance to explicit without
+previous grounded roles/branches/qualifiers (sole exception: D-064 below), change provenance to explicit without
 source, increase uncovered byte positions or add issues. Structured fields are
 atomic. One extraction and at most two repairs per window; no-op stops. Raw
 proposals and prior revisions survive rejection. Host does not invent references,
@@ -92,6 +92,17 @@ fixed sibling spans); repaired groups satisfy left-to-right non-overlapping orde
 while group/branch counts, quote/cue/exclusivity and unflagged surfaces or
 reconstructions remain unchanged. Groups without a unique local token run or an
 unambiguous cue stay unrouted in `needs_review`.
+
+An OR group whose cue is a known conjunction/contrast cue (`incompatible_or_cue`)
+may dispatch an `alternatives`-only repair whose only finite choice is omitting
+that whole group (D-064). This is the sole exception to keeping previous branches:
+the group's branches only carried an OR operator the cue does not support, and the
+exact group quote stays the claim's bound argument. Kept groups stay byte-identical
+and in order; a relabelled cue, partial branch removal or substituted group is
+rejected, and full revalidation (no new issues, no coverage loss) still applies.
+Omission asserts no conjunction or contrast operator. Groups whose quote also
+contains an OR cue, whose quote is not a bound argument, which do not resolve
+uniquely, or which contain a resolved reference target stay unrouted.
 
 ## Lifecycle, limits and compatibility
 

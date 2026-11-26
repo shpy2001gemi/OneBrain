@@ -147,6 +147,17 @@ fn mark(covered: &mut BTreeSet<usize>, at: (usize, usize)) {
 fn contains(outer: (usize, usize), inner: (usize, usize)) -> bool {
     outer.0 <= inner.0 && inner.1 <= outer.1
 }
+/// Lexical OR cue: exposes missing structure, never assigns an operator.
+fn or_cue() -> Result<regex::Regex> {
+    regex::Regex::new(r"(?i)(?:^|\s)(?:hoặc|or)(?:\s|$)").map_err(|_| ExtractionError("schema"))
+}
+/// Known conjunction/contrast cues are a negative guard inside an OR group only.
+fn incompatible_cue(group: &Value) -> bool {
+    matches!(
+        text(&group["cue"]).to_lowercase().as_str(),
+        "và" | "and" | "nhưng" | "but"
+    )
+}
 
 pub fn node_count(selection: &Value) -> usize {
     items(selection, "claims")
@@ -251,7 +262,11 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             .as_array()
             .ok_or(ExtractionError("selection_repair_choice"))?
             .clone();
-        alt["minItems"] = json!(groups);
+        // D-064: only listed incompatible-cue groups may be omitted.
+        let drops = choices["alternatives"]["drop"]
+            .as_array()
+            .map_or(0, |d| d.len() as u64);
+        alt["minItems"] = json!(groups.saturating_sub(drops));
         alt["maxItems"] = json!(groups);
         let branch = &mut alt["items"]["properties"]["branches"]["items"];
         if let Some(surfaces) = choices["alternatives"].get("surfaces") {
@@ -306,8 +321,7 @@ pub fn assemble(
     let mut covered = BTreeSet::new();
     // Addressable objects have host-created identities, never model-assigned IDs.
     let mut targets: Vec<(usize, String, String, (usize, usize))> = Vec::new();
-    let cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hoặc|or)(?:\s|$)")
-        .map_err(|_| ExtractionError("schema"))?;
+    let cue = or_cue()?;
     let comparison_cue = regex::Regex::new(r"(?i)(?:^|\s)(?:hơn|than)(?:\s|$)")
         .map_err(|_| ExtractionError("schema"))?;
     for (i, c) in items(selection, "claims").enumerate() {
@@ -374,10 +388,7 @@ pub fn assemble(
             if group["exclusivity"] != "unspecified" {
                 issue(&mut v, i, "alternatives", "exclusivity_unassessed");
             }
-            if matches!(
-                text(&group["cue"]).to_lowercase().as_str(),
-                "và" | "and" | "nhưng" | "but"
-            ) {
+            if incompatible_cue(group) {
                 issue(&mut v, i, "alternatives", "incompatible_or_cue");
             }
             let id = format!("claim-{i}-group-{g}");
@@ -698,8 +709,58 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["alternatives".into()])));
         }
+        if v.issues
+            .contains(&format!("selection[{i}].alternatives: incompatible_or_cue"))
+            && !incompatible_cue_drops(source, selection, i, b)?.is_empty()
+        {
+            return Ok(Some((i, vec!["alternatives".into()])));
+        }
     }
     Ok(None)
+}
+
+/// D-064: OR groups flagged `incompatible_or_cue` (a known conjunction or
+/// contrast cue) whose only finite repair is omitting the whole group. The claim
+/// keeps the exact group quote as its bound argument; no conjunction or contrast
+/// operator is asserted. Groups whose quote also carries an OR cue, whose quote
+/// is not a bound argument, which do not resolve uniquely, or which contain a
+/// resolved reference target stay unrouted so futile repairs never dispatch.
+fn incompatible_cue_drops(
+    source: &str,
+    selection: &Value,
+    target: usize,
+    b: &mut WorkBudget,
+) -> Result<BTreeSet<usize>> {
+    let mut out = BTreeSet::new();
+    let Some(claim) = selection["claims"].as_array().and_then(|c| c.get(target)) else {
+        return Ok(out);
+    };
+    let or = or_cue()?;
+    let scope = claim["anchor"].as_str().unwrap_or(source);
+    let mut referenced = Vec::new();
+    for c in items(selection, "claims") {
+        for r in items(c, "references") {
+            if let Some(at) = span(source, &r["to"], source, b)? {
+                referenced.push(at);
+            }
+        }
+    }
+    for (g, group) in items(claim, "alternatives").enumerate() {
+        if !incompatible_cue(group)
+            || or.is_match(text(&group["quote"]))
+            || !items(claim, "arguments").any(|q| *q == group["quote"])
+        {
+            continue;
+        }
+        let Some(group_span) = span(source, &json!({ "quote": group["quote"] }), scope, b)? else {
+            continue;
+        };
+        if referenced.iter().any(|at| contains(group_span, *at)) {
+            continue;
+        }
+        out.insert(g);
+    }
+    Ok(out)
 }
 
 fn overlaps(a: (usize, usize), b: (usize, usize)) -> bool {
@@ -1049,6 +1110,18 @@ pub fn repair_choices(
             alt_choices["scope_or_order"] = json!(scope_listed);
             alt_choices["surfaces"] = json!(surfaces);
         }
+        let drops = incompatible_cue_drops(source, selection, target, b)?;
+        if !drops.is_empty() {
+            // D-064: whole flagged groups may be omitted; kept surfaces stay as emitted.
+            alt_choices["drop"] = json!(drops);
+            if alt_choices.get("surfaces").is_none() {
+                let surfaces: BTreeSet<String> = items(claim, "alternatives")
+                    .flat_map(|g| items(g, "branches"))
+                    .filter_map(|br| br["surface"]["quote"].as_str().map(str::to_owned))
+                    .collect();
+                alt_choices["surfaces"] = json!(surfaces);
+            }
+        }
         choices["alternatives"] = alt_choices;
     }
     Ok(choices)
@@ -1093,6 +1166,22 @@ pub fn apply_repair(
                 .as_array()
                 .ok_or(ExtractionError("selection_repair_scope"))?;
             let next = value.as_array().unwrap();
+            if key == "alternatives" && next.len() < previous.len() {
+                // D-064: only whole incompatible-cue groups may be omitted; every
+                // kept group stays byte-identical and in its original order.
+                let drops = incompatible_cue_drops(source, base, target, b)?;
+                let mut kept = next.iter().peekable();
+                for (g, before) in previous.iter().enumerate() {
+                    if kept.peek() == Some(&before) {
+                        kept.next();
+                    } else {
+                        require(drops.contains(&g), "selection_repair_choice")?;
+                    }
+                }
+                require(kept.next().is_none(), "selection_repair_structure_loss")?;
+                result["claims"][target][key] = value.clone();
+                continue;
+            }
             require(
                 previous.len() == next.len(),
                 "selection_repair_structure_loss",
