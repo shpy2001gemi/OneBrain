@@ -2748,6 +2748,12 @@ describe("local KU component journey", () => {
         "Published: false",
       ),
     );
+    // The stale "Nothing is saved until…" prefill note goes away after commit.
+    expect(
+      screen.queryByRole("note", {
+        name: "Draft prefilled from accepted Public KU",
+      }),
+    ).toBeNull();
     // New draft clears the Public origin note.
     fireEvent.click(screen.getByRole("button", { name: "New draft" }));
     expect(
@@ -2807,6 +2813,12 @@ describe("local KU component journey", () => {
     expect(card.textContent).toContain(
       "accepted_public_store_only; not adopted into private Saved local knowledge",
     );
+    expect(card.textContent).toContain(
+      "Scope: received Public KUs in this host's verified public store only",
+    );
+    expect(card.textContent).toContain(
+      "Showing 1 accepted Public KU (no filter).",
+    );
 
     const result = await axe.run(container, {
       rules: { "color-contrast": { enabled: false } },
@@ -2856,6 +2868,34 @@ describe("local KU component journey", () => {
     expect(emptyCard.textContent).toContain(
       "No accepted Public KUs matched in this host's verified public store.",
     );
+    expect(emptyCard.textContent).toContain(
+      "Showing 0 accepted Public KUs matching “steam”.",
+    );
+
+    // Clear filter empties the query and re-lists without a filter.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear filter and show all" }),
+    );
+    const allCard = await screen.findByRole("article", {
+      name: "Accepted Public KUs in local public store",
+    });
+    await waitFor(() =>
+      expect(allCard.textContent).toContain(
+        "Showing 1 accepted Public KU (no filter).",
+      ),
+    );
+    expect(
+      (
+        screen.getByLabelText(
+          "Filter accepted Public KUs (optional text, Registry label, or CID)",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
+    expect(
+      f.calls
+        .filter((c) => c.body?.request?.action === "share_list")
+        .at(-1)!.body.request.payload,
+    ).toEqual({});
 
     // Subsequent browse failure clears stale results and exposes SHARE_ERROR_FEEDBACK.
     options.shareListFailure = "public_store_unavailable";
@@ -2932,6 +2972,12 @@ describe("local KU component journey", () => {
     const confirmed = await screen.findByRole("article", {
       name: "Confirmed public share intent",
     });
+    // Step number stays visible after the preview card is replaced.
+    expect(
+      screen.getByRole("heading", {
+        name: "2. Public share confirmed — intent recorded",
+      }),
+    ).toBeTruthy();
     expect(confirmed.textContent).toContain(
       "Delivery: pending; inspect intent for acknowledgement",
     );
@@ -2940,7 +2986,10 @@ describe("local KU component journey", () => {
       name: "Outbound intent status: Acknowledged",
     });
     expect(confirmed.textContent).toContain(
-      "Delivery: Acknowledged (latest Inspect share intent below; at confirmation: pending; inspect intent for acknowledgement)",
+      "Delivery: Acknowledged (from Inspect share intent below)",
+    );
+    expect(confirmed.textContent).toContain(
+      "Delivery at confirmation: pending; inspect intent for acknowledgement",
     );
 
     // Browse → Use in step 4 fills both CID and the observed selector.

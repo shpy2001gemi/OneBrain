@@ -6,7 +6,31 @@
 > Local integration can use the available task-09 implementation before merge;
 > record that dependency. Strict ENC-003/NAT/platform qualification is not required.
 
-## Latest follow-up — browser click-test of `/ku` for D-057/D-058/D-062 and Web UX fixes (t20, 2026-11-26)
+## Latest follow-up — five small `/ku` UX fixes left by the t20 click-test (t21, 2026-11-26)
+
+Owner chose the recommended item: fix the five small UX nits recorded at the end of t20 in one
+Web-only change ([KuWorkflow.tsx](../../../../src/onebrain-web/src/pages/KuWorkflow.tsx),
+`kuWorkflow.css`). No host, API, DTO, consent, trust, wire or decision change.
+
+- **Scope wording:** browse shows a plain explanation (received Public KUs in this host's
+  verified public store only, not added to private Saved local knowledge); the raw host value
+  stays visible as `host scope: <code>` for audit.
+- **Filter count/clear:** the browse card states `Showing N accepted Public KU(s)` with the
+  filter text (or `no filter`) and a "more exist, refine the filter" hint when `has_more`;
+  new button `Clear filter and show all` empties the filter and re-lists without a query.
+- **Step heading:** after confirm the card heading keeps the step number:
+  `2. Public share confirmed — intent recorded`.
+- **Delivery line:** the long one-line sentence became a short fact list (Outbox, Delivery with
+  "(from Inspect share intent below)", Delivery at confirmation only when it differs, Reward).
+- **D-057 banner:** the "prefilled from an accepted Public KU … Nothing is saved until …" note is
+  cleared once the separate private KU save is committed.
+- **Tests:** existing vitest cases extended (scope text, counts, clear-filter re-list with empty
+  payload, step-2 heading, new Delivery wording, banner gone after committed save).
+
+Not covered: live browser re-click (vitest/jsdom + axe only), LAN badge in a browser, two
+physical machines, Desktop click (D-057), real Registry. DEV-ONLY, no qualification.
+
+## Earlier follow-up — browser click-test of `/ku` for D-057/D-058/D-062 and Web UX fixes (t20, 2026-11-26)
 
 After t19 the owner chose the recommended backlog item: click the `/ku` flows in a real browser
 on loopback and fix the UI problems found. Web-only fixes; no host, API, DTO, consent, trust or
@@ -37,7 +61,7 @@ decision change.
 - **Test:** vitest `labels concept candidates (display only) and re-lists saved knowledge after a
   committed save`.
 
-Not fixed (small, left for later): raw scope enum `accepted_public_store_only` in browse, no
+Not fixed in t20 (fixed in t21 above, except the retried request): raw scope enum `accepted_public_store_only` in browse, no
 filter count/clear, step `2.` heading disappears after confirm, verbose Delivery line, D-057 banner
 stays after save, one `status: 0` editor request retried after restart (succeeded). Not covered:
 LAN badge in a browser (D-063 checked by script only), two physical machines, Desktop click (D-057),

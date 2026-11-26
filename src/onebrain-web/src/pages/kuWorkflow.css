@@ -69,6 +69,13 @@
 .ku-workflow li {
   margin-block: 16px;
 }
+.ku-workflow .ku-facts {
+  padding-left: 20px;
+  margin-block: 8px;
+}
+.ku-workflow .ku-facts li {
+  margin-block: 2px;
+}
 .ku-workflow [role="alert"]:not(:empty) {
   border: 1px solid var(--ob-error);
   padding: 16px;

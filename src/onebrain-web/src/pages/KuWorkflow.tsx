@@ -138,6 +138,24 @@ function publicDraftSeed(
   if (!/^[0-9a-f]{32}$/.test(stmt.predicate_ccid)) return undefined;
   return { predicate_ccid: stmt.predicate_ccid, text };
 }
+/** Display-only wording for the host's browse scope; the raw value stays visible. */
+function describePublicListScope(scope: string): string {
+  return scope.startsWith("accepted_public_store_only")
+    ? "received Public KUs in this host's verified public store only — not added to your private Saved local knowledge"
+    : scope;
+}
+function describeBrowseCount(
+  count: number,
+  hasMore: boolean,
+  query: string,
+): string {
+  const noun = count === 1 ? "accepted Public KU" : "accepted Public KUs";
+  const filter = query ? ` matching “${query}”` : " (no filter)";
+  const more = hasMore
+    ? " — more exist; this is the first page, refine the filter to narrow it"
+    : "";
+  return `Showing ${count} ${noun}${filter}${more}.`;
+}
 function SavedStatementText({
   semantic,
 }: {
@@ -219,6 +237,8 @@ export function KuWorkflowPage({
     useState<PublicShareObjectView>();
   const [shareListQuery, setShareListQuery] = useState("");
   const [shareListView, setShareListView] = useState<PublicShareListView>();
+  /** Filter text the shown browse result was read with ("" = no filter). */
+  const [shareListShownQuery, setShareListShownQuery] = useState("");
   const [shareInspectSelectorNote, setShareInspectSelectorNote] = useState("");
   /** Accepted Public KU that seeded the current manual draft (display only). */
   const [draftOrigin, setDraftOrigin] = useState<{
@@ -262,6 +282,19 @@ export function KuWorkflowPage({
       lock.current = false;
       setBusy(false);
     }
+  }
+  async function browsePublic(rawQuery: string) {
+    setShareListView(undefined);
+    setShareListShownQuery("");
+    const current = await refresh();
+    const trimmed = rawQuery.trim();
+    const result = await client.shareList(
+      current,
+      trimmed ? { query: trimmed } : {},
+    );
+    setShareListView(result.data.payload);
+    setShareListShownQuery(trimmed);
+    setMetadata(result.meta);
   }
   async function refresh() {
     const result = await client.status();
@@ -1064,6 +1097,9 @@ export function KuWorkflowPage({
                 setMetadata(result.meta);
                 void refreshKuHeaderSummary(client, result.data.session);
                 if (result.data.payload.state === "committed") {
+                  // The D-057 prefill note ("Nothing is saved until…") is stale
+                  // once the separate private KU is committed.
+                  setDraftOrigin(undefined);
                   // Show the new item without a manual Search / list. Best
                   // effort: a failed read never marks the save uncertain.
                   try {
@@ -1424,24 +1460,33 @@ export function KuWorkflowPage({
         )}
         {shareConfirmed && (
           <article aria-label="Confirmed public share intent">
-            <h3>Public share intent recorded</h3>
+            <h3>2. Public share confirmed — intent recorded</h3>
             <p className="ku-id">
               Intent ID: {shareConfirmed.intent_id}
               <br />
               Public ObjectCID: {shareConfirmed.public_object_cid}
             </p>
-            <p>
-              Outbox: <strong>{shareConfirmed.outbox}</strong> · Delivery:{" "}
+            <ul className="ku-facts" aria-label="Share intent facts">
+              <li>
+                Outbox: <strong>{shareConfirmed.outbox}</strong>
+              </li>
               {shareIntentView?.intent_id === shareConfirmed.intent_id ? (
                 <>
-                  <strong>{shareIntentView.state}</strong> (latest Inspect share
-                  intent below; at confirmation: {shareConfirmed.delivery})
+                  <li>
+                    Delivery: <strong>{shareIntentView.state}</strong>{" "}
+                    <small>(from Inspect share intent below)</small>
+                  </li>
+                  <li>Delivery at confirmation: {shareConfirmed.delivery}</li>
                 </>
               ) : (
-                <strong>{shareConfirmed.delivery}</strong>
-              )}{" "}
-              · Reward authorized: {String(shareConfirmed.authorizes_reward)}
-            </p>
+                <li>
+                  Delivery: <strong>{shareConfirmed.delivery}</strong>
+                </li>
+              )}
+              <li>
+                Reward authorized: {String(shareConfirmed.authorizes_reward)}
+              </li>
+            </ul>
             <p>
               Confirmation records a durable outbound intent only. Inspect the
               outbound intent below to check peer acknowledgement.
@@ -1550,31 +1595,39 @@ export function KuWorkflowPage({
           />
           <button
             className="btn"
-            onClick={() =>
-              void run(async () => {
-                setShareListView(undefined);
-                const current = await refresh();
-                const trimmed = shareListQuery.trim();
-                const result = await client.shareList(
-                  current,
-                  trimmed ? { query: trimmed } : {},
-                );
-                setShareListView(result.data.payload);
-                setMetadata(result.meta);
-              })
-            }
+            onClick={() => void run(() => browsePublic(shareListQuery))}
           >
             Browse accepted Public KUs
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={!shareListQuery && !shareListShownQuery}
+            onClick={() => {
+              setShareListQuery("");
+              void run(() => browsePublic(""));
+            }}
+          >
+            Clear filter and show all
           </button>
         </fieldset>
         {shareListView && (
           <article aria-label="Accepted Public KUs in local public store">
             <h3>Accepted Public KUs in local public store</h3>
             <p>
-              Scope: {shareListView.scope} · Fidelity:{" "}
-              <strong>{shareListView.fidelity}</strong> · Reward authorized:{" "}
-              {String(shareListView.authorizes_reward)}
-              {shareListView.has_more ? " · Showing first 64 matches" : ""}
+              {describeBrowseCount(
+                shareListView.items.length,
+                shareListView.has_more,
+                shareListShownQuery,
+              )}
+            </p>
+            <p>
+              Scope: {describePublicListScope(shareListView.scope)}{" "}
+              <small>
+                (host scope: <code>{shareListView.scope}</code>)
+              </small>{" "}
+              · Fidelity: <strong>{shareListView.fidelity}</strong> · Reward
+              authorized: {String(shareListView.authorizes_reward)}
             </p>
             {shareListView.items.length === 0 ? (
               <p>
