@@ -1183,13 +1183,93 @@ fn ellipsis_role_binding_dispatches_only_bound_rebind_or_omission() {
     assert!(apply(&mixed, json!([ok])).is_ok());
     assert!(apply(&mixed, json!([flagged])).is_err());
     assert!(apply(&mixed, json!([])).is_err());
-    // Unrouted: self_reference alone is not a role_binding repair.
-    let selfref = claims(json!([{"surface":{"quote":"xanh"},"borrowed":{"quote":"xanh"}}]));
-    let (_, v) = assemble(source, &selfref, &mut budget()).unwrap();
-    assert_eq!(v.issues, vec!["selection[1].ellipses: self_reference"]);
-    assert!(repair_target(source, &selfref, &v, &mut budget())
+}
+
+#[test]
+fn ellipsis_self_reference_dispatches_only_omission() {
+    // D-068: a bound ellipsis whose surface is its own borrowed span may only be
+    // omitted; the argument stays explicit, nothing is substituted.
+    let source = "An mua táo đỏ , Bình mua xanh .";
+    let ok = json!({"surface":{"quote":"xanh"},"borrowed":{"quote":"táo"}});
+    let selfref = json!({"surface":{"quote":"xanh"},"borrowed":{"quote":"xanh"}});
+    let claims = |ellipses: Value| {
+        json!({"claims":[
+            {"subject":"An","predicate":"mua","arguments":["táo đỏ"],"anchor":"An mua táo đỏ"},
+            {"subject":"Bình","predicate":"mua","arguments":["xanh"],"anchor":"Bình mua xanh","ellipses":ellipses}]})
+    };
+    let selection = claims(json!([selfref]));
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[1].ellipses: self_reference"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
         .unwrap()
-        .is_none());
+        .unwrap();
+    assert_eq!((target, fields.clone()), (1, vec!["ellipses".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["ellipses"],
+        json!({"count":1,"surfaces":["xanh"],"borrowed":["xanh"],"repairable":[{"ellipsis":0,"surface":[],"may_omit":true}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let ell = &wire["properties"]["patch"]["properties"]["ellipses"];
+    assert_eq!(
+        (ell["minItems"].clone(), ell["maxItems"].clone()),
+        (json!(0), json!(1))
+    );
+    let apply = |sel: &Value, ellipses: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"ellipses":ellipses}}),
+            &mut budget(),
+        )
+    };
+    // Accepted: omit; the argument stays an explicit quote, nothing reconstructed.
+    let (changed, draft, after) = apply(&selection, json!([])).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][1]["arguments"], json!(["xanh"]));
+    assert_eq!(draft["statements"][1]["ellipses"], json!([]));
+    // Rejected: no-op, substituted borrowed text (even a valid one), other surface.
+    assert!(apply(&selection, json!([selfref])).is_err());
+    assert!(apply(&selection, json!([ok])).is_err());
+    assert!(apply(
+        &selection,
+        json!([{"surface":{"quote":"Bình"},"borrowed":{"quote":"xanh"}}])
+    )
+    .is_err());
+    // Unflagged ellipses stay byte-identical: only the self-reference may go.
+    let mixed = claims(json!([ok, selfref]));
+    let (_, v) = assemble(source, &mixed, &mut budget()).unwrap();
+    assert_eq!(v.issues, vec!["selection[1].ellipses: self_reference"]);
+    assert!(apply(&mixed, json!([ok])).is_ok());
+    assert!(apply(&mixed, json!([selfref])).is_err());
+    assert!(apply(&mixed, json!([])).is_err());
+    // Unrouted: a self-referencing borrowed span that does not resolve uniquely.
+    let ambiguous = json!({"claims":[{"subject":"Bình","predicate":"mua","arguments":["mua"],"ellipses":[{"surface":{"quote":"mua"},"borrowed":{"quote":"mua"}}]}]});
+    let (_, v) = assemble(source, &ambiguous, &mut budget()).unwrap();
+    assert!(!v
+        .issues
+        .contains(&"selection[0].ellipses: self_reference".to_string()));
+    assert!(
+        ellipsis_choices(source, &ambiguous["claims"][0], &mut budget())
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

@@ -131,7 +131,11 @@ emitted surface and resolves uniquely in the claim scope outside the borrowed
 span. Borrowed text is fixed; unflagged ellipses stay byte-identical and in order;
 no role, borrowed text or ellipsis is added, and full revalidation still applies.
 Omission keeps the argument as an explicit quote and asserts no reconstruction.
-`self_reference` alone stays unrouted.
+A bound ellipsis flagged `self_reference` (its surface resolves to the very span
+it borrows) may join that `ellipses`-only repair (D-068). Its only finite choice
+is omitting that ellipsis; the bound subject/argument stays an explicit quote, no
+surface or borrowed text is substituted, and full revalidation still applies. A
+self-reference whose spans do not resolve uniquely stays unrouted.
 
 ## Lifecycle, limits and compatibility
 

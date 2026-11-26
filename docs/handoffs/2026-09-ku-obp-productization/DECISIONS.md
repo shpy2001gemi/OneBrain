@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-068 — Bounded omission for a self-referencing ellipsis (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: ellipsis issue
+`self_reference` (a bound ellipsis whose surface resolves to the very span it
+borrows) dispatches the bounded `ellipses` repair. The only finite choice is
+omitting that ellipsis; the bound subject/argument stays an explicit quote, no
+surface or borrowed text is substituted, unflagged ellipses stay byte-identical
+and in order, and full host revalidation (no new issues, no coverage loss)
+applies. Self-references whose spans do not resolve uniquely do not dispatch.
+Supersedes only D-066's "`self_reference` alone does not dispatch" clause.
+Deterministic tests only; no model run, no fidelity claim, user host stays v1.
+
 ## D-067 — Bounded downgrade for an unresolved comparison target (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue

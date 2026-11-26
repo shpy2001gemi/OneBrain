@@ -773,9 +773,10 @@ pub fn repair_target(
         {
             return Ok(Some((i, vec!["comparisons".into()])));
         }
-        if v.issues
-            .contains(&format!("selection[{i}].ellipses: role_binding"))
-            && !ellipsis_choices(source, claim, b)?.is_empty()
+        if ["role_binding", "self_reference"].iter().any(|code| {
+            v.issues
+                .contains(&format!("selection[{i}].ellipses: {code}"))
+        }) && !ellipsis_choices(source, claim, b)?.is_empty()
         {
             return Ok(Some((i, vec!["ellipses".into()])));
         }
@@ -789,6 +790,9 @@ pub fn repair_target(
 /// whitespace-bounded token extension of the emitted surface and resolves
 /// uniquely in the claim scope outside the borrowed span. Borrowed text is
 /// fixed; no role, borrowed text or new ellipsis is invented.
+/// D-068: a bound ellipsis flagged `self_reference` (its surface resolves to the
+/// very span it claims to borrow) may only be omitted; the bound role stays an
+/// explicit quote and no surface or borrowed text is substituted.
 fn ellipsis_choices(
     source: &str,
     claim: &Value,
@@ -800,10 +804,13 @@ fn ellipsis_choices(
     let mut out = BTreeMap::new();
     for (e, ellipsis) in items(claim, "ellipses").enumerate() {
         let surface = text(&ellipsis["surface"]["quote"]);
+        let borrowed = span(source, &ellipsis["borrowed"], source, b)?;
         if roles.iter().any(|r| text(r) == surface) {
+            if borrowed.is_some() && span(source, &ellipsis["surface"], scope, b)? == borrowed {
+                out.insert(e, BTreeSet::new());
+            }
             continue;
         }
-        let borrowed = span(source, &ellipsis["borrowed"], source, b)?;
         let mut options = BTreeSet::new();
         for role in &roles {
             let role = text(role);
@@ -1345,6 +1352,7 @@ pub fn repair_choices(
             .ok_or(ExtractionError("selection_repair_target"))?;
         // D-066: borrowed text fixed; flagged surfaces only rebind to a bound
         // token-extended subject/argument, or the flagged ellipsis is omitted.
+        // D-068: a self-referencing ellipsis lists no surface: omission only.
         let repairs = ellipsis_choices(source, claim, b)?;
         let mut surfaces = BTreeSet::new();
         let mut borrowed = BTreeSet::new();
