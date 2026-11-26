@@ -301,6 +301,13 @@ pub fn repair_wire_schema(source: &str, fields: &Value, choices: &Value) -> Resu
             require(!options.is_empty(), "selection_repair_choice")?;
             props[key]["enum"] = json!(options);
         }
+        if let Some(cues) = c.get("cue") {
+            let options = cues
+                .as_array()
+                .ok_or(ExtractionError("selection_repair_choice"))?;
+            require(!options.is_empty(), "selection_repair_choice")?;
+            props["cue"]["enum"] = json!(options);
+        }
         let targets = c["targets"]
             .as_array()
             .ok_or(ExtractionError("selection_repair_choice"))?;
@@ -765,6 +772,7 @@ pub fn repair_target(
             "unexpected_target",
             "target_absent_or_ambiguous",
             "explicit_target_scope",
+            "cue_ambiguous",
         ]
         .iter()
         .any(|code| {
@@ -827,12 +835,15 @@ fn ellipsis_choices(
     Ok(out)
 }
 
-/// D-065 / D-067 finite choices for one flagged comparison.
+/// D-065 / D-067 / D-069 / D-070 finite choices for one flagged comparison.
 struct ComparisonRepair {
     rebind: bool,
+    /// D-070: whitespace-bounded token runs of an unresolved `cue` that resolve
+    /// uniquely in the claim scope.
+    cues: BTreeSet<String>,
     omit_target: bool,
-    /// D-067: an explicit/implicit target that does not resolve uniquely may
-    /// only become `target_kind: unspecified` with the target omitted.
+    /// D-067 / D-069: an unresolved or out-of-scope explicit target may only
+    /// become `target_kind: unspecified` with the target omitted.
     downgrade: bool,
 }
 
@@ -865,6 +876,11 @@ fn token_extension(a: &str, b: &str) -> bool {
 /// futile repairs never dispatch. D-069: an explicit target flagged
 /// `explicit_target_scope` (it resolves, but outside the claim's evidence span
 /// or inside a term owned by another claim) gets the same single downgrade.
+/// D-070: comparisons flagged `cue_ambiguous` (`cue` does not resolve uniquely
+/// in the claim scope) may only narrow `cue` to a contiguous whitespace-bounded
+/// token run of the emitted `cue` itself that resolves uniquely in the claim
+/// scope; comparisons without a valid run get no cue choice so unrepairable
+/// cues never dispatch.
 fn comparison_choices(
     source: &str,
     selection: &Value,
@@ -881,6 +897,30 @@ fn comparison_choices(
     for (j, cmp) in items(claim, "comparisons").enumerate() {
         let rebind = cmp["property"] != claim["predicate"]
             && token_extension(text(&cmp["property"]), predicate);
+        let mut cues = BTreeSet::new();
+        let cue = text(&cmp["cue"]);
+        if span(source, &json!({ "quote": cue }), scope, b)?.is_none() {
+            let tokens: Vec<(usize, usize)> = cue
+                .split_whitespace()
+                .take(16)
+                .map(|t| {
+                    let start = t.as_ptr() as usize - cue.as_ptr() as usize;
+                    (start, start + t.len())
+                })
+                .collect();
+            for s in 0..tokens.len() {
+                for e in s..tokens.len().min(s + 8) {
+                    let candidate = &cue[tokens[s].0..tokens[e].1];
+                    if candidate != cue
+                        && candidate.len() <= 128
+                        && cues.len() < 64
+                        && span(source, &json!({ "quote": candidate }), scope, b)?.is_some()
+                    {
+                        cues.insert(candidate.to_owned());
+                    }
+                }
+            }
+        }
         let kind = text(&cmp["target_kind"]);
         let omit_target = kind == "unspecified" && cmp.get("target").is_some();
         let downgrade = kind != "unspecified"
@@ -896,11 +936,12 @@ fn comparison_choices(
                         && explicit_out_of_scope(source, selection, i, at, &mut draft, b)?
                 }
             };
-        if rebind || omit_target || downgrade {
+        if rebind || !cues.is_empty() || omit_target || downgrade {
             out.insert(
                 j,
                 ComparisonRepair {
                     rebind,
+                    cues,
                     omit_target,
                     downgrade,
                 },
@@ -1368,12 +1409,18 @@ pub fn repair_choices(
         // plus the exact claim predicate for flagged property bindings.
         // D-067: plus `unspecified` for flagged unresolved targets.
         // D-069: and for flagged out-of-scope explicit targets.
+        // D-070: plus narrowed token runs of flagged unresolved cues.
         let repairs = comparison_choices(source, selection, target, b)?;
+        let has_cue_repair = repairs.values().any(|r| !r.cues.is_empty());
         let mut properties = BTreeSet::new();
+        let mut cues = BTreeSet::new();
         let mut kinds = BTreeSet::new();
         let mut targets = BTreeSet::new();
-        for cmp in items(claim, "comparisons") {
+        for (j, cmp) in items(claim, "comparisons").enumerate() {
             properties.insert(text(&cmp["property"]).to_owned());
+            if has_cue_repair && repairs.get(&j).is_none_or(|r| r.cues.is_empty()) {
+                cues.insert(text(&cmp["cue"]).to_owned());
+            }
             kinds.insert(text(&cmp["target_kind"]).to_owned());
             if let Some(q) = cmp["target"]["quote"].as_str() {
                 targets.insert(q.to_owned());
@@ -1386,6 +1433,10 @@ pub fn repair_choices(
                 properties.insert(text(&claim["predicate"]).to_owned());
                 entry["property"] = claim["predicate"].clone();
             }
+            if !r.cues.is_empty() {
+                cues.extend(r.cues.iter().cloned());
+                entry["cue"] = json!(r.cues);
+            }
             if r.downgrade {
                 kinds.insert("unspecified".to_owned());
                 entry["target_kind"] = json!("unspecified");
@@ -1395,13 +1446,17 @@ pub fn repair_choices(
             }
             listed.push(entry);
         }
-        choices["comparisons"] = json!({
+        let mut cmp_choices = json!({
             "count": items(claim, "comparisons").count(),
             "property": properties,
             "target_kind": kinds,
             "targets": targets,
             "repairable": listed,
         });
+        if has_cue_repair {
+            cmp_choices["cue"] = json!(cues);
+        }
+        choices["comparisons"] = cmp_choices;
     }
     if fields.iter().any(|f| f == "ellipses") {
         let claim = selection["claims"]
@@ -1530,18 +1585,26 @@ pub fn apply_repair(
                 "selection_repair_structure_loss",
             )?;
             if key == "comparisons" {
-                // D-065: cue fixed; a flagged property may only become the exact
-                // claim predicate and a flagged stray target may only be omitted.
-                // D-067: kind fixed unless a flagged unresolved target is
+                // D-065: cue fixed unless D-070 narrows a flagged unresolved cue
+                // to a listed local token run; a flagged property may only become
+                // the exact claim predicate and a flagged stray target may only be
+                // omitted. D-067: kind fixed unless a flagged unresolved target is
                 // downgraded to `unspecified` together with omitting it (D-069:
                 // likewise a flagged out-of-scope explicit target).
                 let repairs = comparison_choices(source, base, target, b)?;
                 for (j, (before, after)) in previous.iter().zip(next).enumerate() {
                     let r = repairs.get(&j);
-                    require(
-                        before["cue"] == after["cue"],
-                        "selection_repair_structure_loss",
-                    )?;
+                    if let Some(cues) = r.map(|r| &r.cues).filter(|c| !c.is_empty()) {
+                        require(
+                            after["cue"].as_str().is_some_and(|q| cues.contains(q)),
+                            "selection_repair_choice",
+                        )?;
+                    } else {
+                        require(
+                            before["cue"] == after["cue"],
+                            "selection_repair_structure_loss",
+                        )?;
+                    }
                     let downgraded = before["target_kind"] != after["target_kind"];
                     require(
                         !downgraded

@@ -1487,3 +1487,125 @@ fn comparison_explicit_target_scope_dispatches_only_unspecified_downgrade() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn comparison_cue_ambiguous_dispatches_only_local_token_run_narrowing() {
+    // D-070: an unresolved comparison `cue` may only narrow to a contiguous
+    // whitespace-bounded token run of the emitted `cue` that resolves uniquely
+    // in the claim scope; unrepairable cues do not dispatch.
+    let source = "Xe đỏ nhanh hơn xe xanh.";
+    let selection = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh","cue":"hơn so với","target_kind":"explicit","target":{"quote":"xe xanh"}}]}]});
+    let (_, validation) = assemble(source, &selection, &mut budget()).unwrap();
+    assert_eq!(
+        validation.issues,
+        vec!["selection[0].comparisons: cue_ambiguous"]
+    );
+    let (target, fields) = repair_target(source, &selection, &validation, &mut budget())
+        .unwrap()
+        .unwrap();
+    assert_eq!((target, fields.clone()), (0, vec!["comparisons".into()]));
+    let choices = repair_choices(
+        source,
+        &selection,
+        target,
+        &fields,
+        &validation,
+        &mut budget(),
+    )
+    .unwrap();
+    assert_eq!(
+        choices["comparisons"],
+        json!({"count":1,"cue":["hơn"],"property":["nhanh"],"target_kind":["explicit"],"targets":["xe xanh"],"repairable":[{"comparison":0,"cue":["hơn"]}]})
+    );
+    let wire: Value =
+        serde_json::from_str(&repair_wire_schema(source, &json!(fields), &choices).unwrap())
+            .unwrap();
+    let props = &wire["properties"]["patch"]["properties"]["comparisons"]["items"]["properties"];
+    assert_eq!(props["cue"]["enum"], json!(["hơn"]));
+    let apply = |sel: &Value, comparisons: Value| {
+        apply_repair(
+            source,
+            sel,
+            target,
+            &fields,
+            &json!({"patch":{"comparisons":comparisons}}),
+            &mut budget(),
+        )
+    };
+    let narrowed = json!([{"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}}]);
+    let (changed, draft, after) = apply(&selection, narrowed).unwrap();
+    assert!(after.issues.is_empty(), "{:?}", after.issues);
+    assert!(after.uncovered.is_empty(), "{:?}", after.uncovered);
+    assert_eq!(changed["claims"][0]["arguments"], json!(["xe xanh"]));
+    assert!(draft["statements"][0]["comparisons"][0]["cue_span"].is_array());
+
+    // Rejected: no-op, token outside emitted cue, non-whitespace character slice,
+    // altered target/kind/property, or dropped comparison.
+    let base = selection["claims"][0]["comparisons"].clone();
+    assert!(apply(&selection, base.clone()).is_err());
+    for bad_cue in ["nhanh hơn", "hơ", "ơ"] {
+        let mut bad = base.clone();
+        bad[0]["cue"] = json!(bad_cue);
+        assert!(apply(&selection, bad).is_err());
+    }
+    let mut downgraded = base.clone();
+    downgraded[0]["cue"] = json!("hơn");
+    downgraded[0]["target_kind"] = json!("unspecified");
+    downgraded[0].as_object_mut().unwrap().remove("target");
+    assert!(apply(&selection, downgraded).is_err());
+    assert!(apply(&selection, json!([])).is_err());
+
+    // Unflagged sibling comparison keeps its exact cue; only the flagged one narrows.
+    let source2 = "Xe đỏ nhanh hơn xe xanh và bền nhất đội.";
+    let mixed = json!({"claims":[{"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh","bền nhất đội"],"comparisons":[
+        {"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}},
+        {"property":"nhanh","cue":"nhất cả","target_kind":"explicit","target":{"quote":"bền nhất đội"}}
+    ]}]});
+    let (_, v2) = assemble(source2, &mixed, &mut budget()).unwrap();
+    assert_eq!(v2.issues, vec!["selection[0].comparisons: cue_ambiguous"]);
+    let choices2 = repair_choices(source2, &mixed, 0, &fields, &v2, &mut budget()).unwrap();
+    assert_eq!(choices2["comparisons"]["cue"], json!(["hơn", "nhất"]));
+    assert!(apply_repair(
+        source2,
+        &mixed,
+        0,
+        &fields,
+        &json!({"patch":{"comparisons":[
+            {"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}},
+            {"property":"nhanh","cue":"nhất","target_kind":"explicit","target":{"quote":"bền nhất đội"}}
+        ]}}),
+        &mut budget(),
+    )
+    .is_ok());
+    // Swapping the unflagged comparison's cue to the sibling's narrowed cue is rejected.
+    assert!(apply_repair(
+        source2,
+        &mixed,
+        0,
+        &fields,
+        &json!({"patch":{"comparisons":[
+            {"property":"nhanh","cue":"nhất","target_kind":"explicit","target":{"quote":"xe xanh"}},
+            {"property":"nhanh","cue":"nhất","target_kind":"explicit","target":{"quote":"bền nhất đội"}}
+        ]}}),
+        &mut budget(),
+    )
+    .is_err());
+
+    // Unrouted: duplicate single-token cue in scope has no unique token run.
+    let dup_source = "Xe đỏ nhanh hơn xe xanh, xe vàng cao hơn xe trắng.";
+    let dup_sel = json!({"claims":[
+        {"subject":"Xe đỏ","predicate":"nhanh","arguments":["xe xanh"],"comparisons":[{"property":"nhanh","cue":"hơn","target_kind":"explicit","target":{"quote":"xe xanh"}}]},
+        {"subject":"xe vàng","predicate":"cao","arguments":["xe trắng"],"anchor":"xe vàng cao hơn xe trắng"}
+    ]});
+    let (_, dup_v) = assemble(dup_source, &dup_sel, &mut budget()).unwrap();
+    assert_eq!(
+        dup_v.issues,
+        vec!["selection[0].comparisons: cue_ambiguous"]
+    );
+    assert!(comparison_choices(dup_source, &dup_sel, 0, &mut budget())
+        .unwrap()
+        .is_empty());
+    assert!(repair_target(dup_source, &dup_sel, &dup_v, &mut budget())
+        .unwrap()
+        .is_none());
+}

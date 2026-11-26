@@ -1,5 +1,20 @@
 # Decisions and claim boundary
 
+## D-070 — Bounded narrowing for an unresolved comparison cue (SEM-F03 narrow)
+
+On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue
+`cue_ambiguous` (`cue` does not resolve uniquely in the claim scope) dispatches
+the bounded `comparisons` repair when finite local choices exist. A flagged
+comparison may only narrow `cue` to a contiguous whitespace-bounded token run of
+the emitted `cue` itself that resolves uniquely in the claim scope. Unflagged
+cues, comparison count, properties, target kinds and targets stay fixed; tokens
+outside the emitted `cue` and non-whitespace character slices are rejected; full
+host revalidation (no new issues, no coverage loss) applies. Cues with no unique
+local token run (absent cues or duplicate single-token cues) do not dispatch.
+Supersedes only D-067's "`cue_ambiguous` does not dispatch" clause (and D-065's
+fixed-cue rule for flagged repairable cues only). Deterministic tests only; no
+model run, no fidelity claim, user host stays v1.
+
 ## D-069 — Bounded downgrade for an out-of-scope explicit comparison target (SEM-F03 narrow)
 
 On 2026-11-26 the owner chose the recommended KU-SEM-001 item: comparison issue

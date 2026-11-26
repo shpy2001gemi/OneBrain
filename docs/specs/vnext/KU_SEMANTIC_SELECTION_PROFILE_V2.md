@@ -119,8 +119,8 @@ that `comparisons`-only repair (D-067). Its only finite choice is downgrading to
 `target_kind: unspecified` with the unresolved target omitted; the resulting
 `target_unspecified` issue is the sole new issue revalidation admits and stays
 visible for review. No target is added, substituted or re-resolved, no other kind
-is chosen, cues stay fixed, and a target cannot be dropped without the downgrade.
-An unresolved cue alone (`cue_ambiguous`) stays unrouted.
+is chosen, unflagged cues stay fixed, and a target cannot be dropped without the
+downgrade.
 
 A comparison flagged `explicit_target_scope` (an explicit target that resolves
 in the claim scope but lies outside the claim's evidence span or inside a term
@@ -129,6 +129,16 @@ same single choice: downgrading to `target_kind: unspecified` with that target
 omitted, admitting only `target_unspecified` as a new issue. The target is not
 re-scoped, substituted or rebound, other claims and in-scope comparisons stay
 unchanged, and full revalidation still applies.
+
+A comparison flagged `cue_ambiguous` (`cue` does not resolve uniquely in the
+claim scope) may join that `comparisons`-only repair when finite local choices
+exist (D-070). A flagged comparison may only narrow `cue` to one contiguous
+whitespace-bounded token run of the emitted `cue` itself that resolves uniquely
+in the claim scope. Unflagged comparison cues, comparison count, properties,
+target kinds and targets stay unchanged, no token outside the emitted `cue` or
+sub-word slice is accepted, and full revalidation (no new issues, no coverage
+loss) applies. Cues with no unique local token run (such as an absent cue or a
+repeated single-token cue) stay unrouted in `needs_review`.
 
 An ellipsis whose surface is neither the claim subject nor one of its arguments
 (`role_binding`) may dispatch an `ellipses`-only repair (D-066). A flagged

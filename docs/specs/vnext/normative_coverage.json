@@ -1109,6 +1109,10 @@
           "needle": "comparison_explicit_target_scope_dispatches_only_unspecified_downgrade"
         },
         {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "comparison_cue_ambiguous_dispatches_only_local_token_run_narrowing"
+        },
+        {
           "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
           "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
         }
