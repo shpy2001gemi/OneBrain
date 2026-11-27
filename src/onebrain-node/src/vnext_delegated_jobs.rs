@@ -291,6 +291,7 @@ impl DelegatedJobCoordinator {
         Ok(active)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn complete_encode_job(
         &mut self,
         job_id: [u8; 32],

@@ -9,7 +9,6 @@ license = "MIT"
 base64 = "0.22"
 blake3 = "1"
 hex = "0.4"
-onebrain-base-contract = { path = "../onebrain-base-contract" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"

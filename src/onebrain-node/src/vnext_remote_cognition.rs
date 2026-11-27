@@ -190,6 +190,7 @@ impl RemoteCognitionRuntime {
     }
 
     /// Export durable `(task_id, task_commitment)` replay floors for `0x000F` archive snapshots.
+    #[allow(clippy::type_complexity)]
     pub fn durable_replay_entries(
         &mut self,
     ) -> Result<Vec<([u8; 32], [u8; 32])>, RemoteCognitionError> {

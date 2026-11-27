@@ -141,11 +141,11 @@ impl GroundedConceptEmbedding {
 
         let span = (2 * KGE_FIXED_POINT_SCALE + 1) as u64;
         let components_micros = raw
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|chunk| {
-                let mut bytes = [0u8; 4];
-                bytes.copy_from_slice(chunk);
-                let sample = u64::from(u32::from_le_bytes(bytes));
+                let sample = u64::from(u32::from_le_bytes(*chunk));
                 let centered = (sample % span) as i64 - KGE_FIXED_POINT_SCALE;
                 centered as i32
             })

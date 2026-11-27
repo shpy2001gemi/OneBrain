@@ -449,6 +449,7 @@ pub fn manifest_entries_for_diff(
 // ─── RIBLT-1 Fast-Path & Seamless Radix Fallback (`RIB-001` / `RIB-002`) ─────
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum FastPathDiffResolution {
     RibltCandidate {
         remote_only: Vec<(InventoryRecordKind, [u8; 32])>,

@@ -280,12 +280,14 @@ pub fn lower_draft_v2(
     )?;
     budget.charge(source.len().saturating_mul(2) + statements_json.len() * 256)?;
 
-    let mut state = LoweringStateV2::default();
     // Reserve statement IDs 0..statements_json.len() for the primary claims so cross-claim
-    // condition relations (`relations[].statement`) map deterministically before auxiliary frames.
-    state.next_stmt_id = statements_json.len() as u32;
-    // Start fresh lowering variables above 1000; `alpha_normalized()` canonicalizes them to 0..k.
-    state.next_var_id = 1_000;
+    // condition relations (`relations[].statement`) map deterministically before auxiliary frames;
+    // start fresh lowering variables above 1000 (`alpha_normalized()` canonicalizes them to 0..k).
+    let mut state = LoweringStateV2 {
+        next_stmt_id: statements_json.len() as u32,
+        next_var_id: 1_000,
+        ..Default::default()
+    };
 
     if draft["unresolved"]
         .as_array()
@@ -476,7 +478,7 @@ pub fn lower_draft_v2(
         .iter()
         .any(|b| b.field == "references" && b.code == "cycle")
     {
-        for (&via_span, _) in &ref_span_parent {
+        for &via_span in ref_span_parent.keys() {
             let mut cur = via_span;
             let mut guard = 0usize;
             while let Some(&next) = ref_span_parent.get(&cur) {
@@ -637,7 +639,7 @@ pub fn lower_draft_v2(
         if let Some(alts) = stmt["alternatives"].as_array() {
             for group in alts {
                 let gq = group["quote"].as_str().unwrap_or("");
-                let bound_to_arg_or_subj = gq == subject_quote || raw_args.iter().any(|a| *a == gq);
+                let bound_to_arg_or_subj = gq == subject_quote || raw_args.contains(&gq);
                 if !bound_to_arg_or_subj {
                     state.push_blocker(i, "alternatives", "argument_binding");
                 }
@@ -1290,7 +1292,7 @@ fn sort_terms_canonically(terms: &mut [TermRef]) -> Result<()> {
         keyed.push((bytes, term.clone()));
     }
     keyed.sort_by(|a, b| a.0.cmp(&b.0));
-    for (slot, (_, term)) in terms.iter_mut().zip(keyed.into_iter()) {
+    for (slot, (_, term)) in terms.iter_mut().zip(keyed) {
         *slot = term;
     }
     Ok(())

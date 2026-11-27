@@ -126,6 +126,12 @@ pub trait InventoryForestArchivePort {
     ) -> Result<(), InventoryForestError>;
 }
 
+pub type FeedPrefixCursorKey = ([u8; 32], u64, [u8; 32]);
+pub type FeedPrefixPage = (
+    Vec<onebrain_protocol::FrontierSummaryEntryV1>,
+    Option<FeedPrefixCursorKey>,
+);
+
 impl HybridInventoryForest {
     pub fn new(selector: SelectorCid) -> Self {
         Self {
@@ -217,22 +223,16 @@ impl HybridInventoryForest {
     /// Conflicting heads at the same `(feed_id, covered_sequence)` are preserved (`NEG-NET-006`).
     pub fn feed_prefix_page(
         &self,
-        after_key: Option<([u8; 32], u64, [u8; 32])>,
+        after_key: Option<FeedPrefixCursorKey>,
         max_entries: usize,
         equivocation_proofs: &BTreeMap<([u8; 32], u64), [u8; 32]>,
-    ) -> Result<
-        (
-            Vec<onebrain_protocol::FrontierSummaryEntryV1>,
-            Option<([u8; 32], u64, [u8; 32])>,
-        ),
-        InventoryForestError,
-    > {
+    ) -> Result<FeedPrefixPage, InventoryForestError> {
         if max_entries == 0 || max_entries > onebrain_protocol::MAX_FRONTIER_ENTRIES_PER_PAGE {
             return Err(InventoryForestError::Limit);
         }
-        let iter: Box<
-            dyn Iterator<Item = (&([u8; 32], u64, [u8; 32]), &FeedPrefixInventory)> + '_,
-        > = match after_key {
+        type FeedPrefixIter<'a> =
+            Box<dyn Iterator<Item = (&'a FeedPrefixCursorKey, &'a FeedPrefixInventory)> + 'a>;
+        let iter: FeedPrefixIter<'_> = match after_key {
             Some(bound) => Box::new(
                 self.feed_prefixes
                     .range((std::ops::Bound::Excluded(bound), std::ops::Bound::Unbounded)),

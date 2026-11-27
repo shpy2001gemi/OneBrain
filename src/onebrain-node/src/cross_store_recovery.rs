@@ -396,10 +396,7 @@ impl CrossStoreRecoveryCoordinator {
         };
         let scan = RedbAcceptedRecordScan::new(canonical_db_path);
         let (r4_derived_index_state, _) = manager.open_or_rebuild(&scan);
-        if matches!(
-            r4_derived_index_state,
-            DerivedIndexOpenState::Rebuilt { .. }
-        ) {
+        if matches!(r4_derived_index_state, DerivedIndexOpenState::Rebuilt) {
             r4_rebuilt_derived_lanes.push("0x0015_derived_index_rebuilt".to_string());
         }
 

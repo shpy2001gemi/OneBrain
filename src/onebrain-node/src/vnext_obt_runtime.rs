@@ -234,12 +234,10 @@ impl ObtRuntimeCoordinator {
             };
         }
         let obt_notice = notice.to_obt_notice();
-        if self.store.is_none() {
-            if self.ensure_store_open().is_err() {
-                return NoticeIngestOutcome::DroppedFirewallSafe {
-                    reason: FirewallDropReason::BackendUnavailableOrCorrupt,
-                };
-            }
+        if self.store.is_none() && self.ensure_store_open().is_err() {
+            return NoticeIngestOutcome::DroppedFirewallSafe {
+                reason: FirewallDropReason::BackendUnavailableOrCorrupt,
+            };
         }
         let store_opt = self
             .store

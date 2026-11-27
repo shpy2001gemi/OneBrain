@@ -443,6 +443,7 @@ impl PersonalMeshRuntime {
 
     // ─── Encrypted Record Export & Import (`FW-04`, `FW-10`) ─────────────────
 
+    #[allow(clippy::type_complexity)]
     pub fn export_encrypted_records(
         &mut self,
         items: &[(PersonalMeshRecordClass, [u8; 32], [u8; 24], Vec<u8>)],
@@ -492,6 +493,7 @@ impl PersonalMeshRuntime {
         Ok(sealed_records)
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn import_encrypted_records(
         &mut self,
         records: &[EncryptedPersonalMeshRecord],

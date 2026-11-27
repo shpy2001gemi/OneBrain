@@ -851,6 +851,7 @@ impl DistributedKqlRuntime {
 
     /// Lookup active providers under `provider_dht_key(selector, target_ccid_or_tuple)`,
     /// pairing each active `ValidatedProviderLease` with its `LOCAL_ONLY` `first_seen_monotonic`.
+    #[allow(clippy::type_complexity)]
     pub fn lookup_providers_by_dht_key(
         &self,
         selector: SelectorCid,

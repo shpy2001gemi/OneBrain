@@ -6,16 +6,16 @@
 ## Current checkpoint
 
 <!-- CURRENT_CHECKPOINT_START -->
-**Cập nhật: 27/11/2026 ~05:30 (Asia/Saigon). Hoàn tất đồng bộ 7 đợt phụ thuộc ngang (`Waves 1–7`) lấp đầy `Core + Runtime + Software Prod-Readiness` cho 9/10 trụ cột hoạt động (`P1`–`P8`, `P10`; giữ `P9` BCI ở `0` LOC), hoàn tất `ARCH-10` (`onebrain-core`), đóng đủ phần mềm `MOB-04..09`, kiểm chứng xanh toàn bộ CI validators & test suites, commit/push lên `main` theo `D-050`.**
+**Cập nhật: 27/11/2026 ~06:05 (Asia/Saigon). Hoàn tất đồng bộ 7 đợt phụ thuộc ngang (`Waves 1–7`) lấp đầy `Core + Runtime + Software Prod-Readiness` cho 9/10 trụ cột hoạt động (`P1`–`P8`, `P10`; giữ `P9` BCI ở `0` LOC), hoàn tất `ARCH-10` (`onebrain-core`), đóng đủ phần mềm `MOB-04..09`, tích hợp bộ công cụ chuẩn bị `KU-ENC-003` (`67/67` Python tests), xử lý sạch Clippy `1.100` `--workspace --all-targets`, commit và push toàn bộ lên `main` theo `D-050`.**
 
-- **Mục tiêu hiện tại:** Thực thi đồng bộ 7 đợt cài đặt ngang xuyên 9 trụ cột hoạt động (`P1`–`P8`, `P10`) bảo đảm tương thích liên trụ cột và 10 tường lửa `FW-01..FW-10`, không phải viết lại giữa các trụ cột, kiểm chứng 100% trong phần mềm và giữ trung thực các cổng máy vật lý/operator/reviewer bên ngoài.
-- **Vừa xong (`Waves 1–7` — `25` crate Rust, `461.0k` `src/` LOC, `4,147+` tests):** (1) **Wave 1 (`P1` + `ARCH-10`):** `ConceptLifecycleTable` (`concept_lifecycle.rs`), `CONCEPT_REGISTRY_RELEASE_PROFILE_V2` + cô lập va chạm CCID (`build_obr.py`), `ScopedConceptCcid`/`KnowledgeSupersessionEvent`/`PersonalMesh` (`ku-core`), hạ v2 `D-011` (`review_lowering_v2.rs`), và tách crate đồng bộ `src/onebrain-core` (`0` `tokio`, `0` `std::net`) dùng chung cho cả `onebrain-node` và `onebrain-mobile-core` (đóng `ARCH-10`, nâng `D-051` lên `14/15` Done). (2) **Wave 2 (`P2`):** `RIBLT-1` fast set-sketch + fallback Merkle, `FrontierSummaryPage`, hộp thư mù E2EE bền vững `obp/mailbox/1` (`mailbox.redb`), truyền khối `obp/blob-chunks/1` & `obp/registry-chunks/1` (`D-012`), phong bì `pillar_wire.rs`. (3) **Wave 3 (`P3` + `P7`):** trình biên dịch tất định `FIND → KnowledgeNeedIr` (`vnext_compiler.rs`, gỡ giới hạn `hash-derived` qua `/api/vnext/kql/compile`), đồ thị khả hủy 5 mặt phẳng `OBKG-002`, chuỗi 5 bước `vnext_discovery_pipeline.rs`, `GroundedKgeRecallAdapter` + `FedRQuarantineValidator` + `DreamConsolidatorV1` (`ku-ai`). (4) **Wave 4 (`P4` + `P6`):** publisher 2 bước `M6B` `Derivation`/`Outcome`/`Benefit` + `DeferredEvidenceStaging` + nhóm Sybil 4 chiều, thực thi từ xa `RUN-003` (`obp/cognition/1` vào `QuarantineRecord`), hợp đồng thuê mù `D-013`, và cầu nối 4 tầng `PamVaultRuntime` (`M0–M3`, tường lửa RAG `ExposureObservation`). (5) **Wave 5 (`P5`):** crate mới `src/onebrain-obt` cấm số thực ở mức biên dịch (`u128`, `1 OBT = 10^12 sparks`), tường lửa một chiều `RewardEvidenceNoticeV2` (`FW-07`), `ScopedNullifier`, luồng kép `D-014` + `M7`, mặc định an toàn ở `M7.1` Shadow Mode. (6) **Wave 6 (`P8` + `onebrain-node`):** đóng đủ `OBARV002` `0x0002ns2` & `0x000B..0x000F` (gồm sàn chống ký phân nhánh `highest_issued_seq` `0x000C`), 4 pha recovery Redb (`cross_store_recovery.rs`), xoay vòng `TombstoneEpochAccumulatorV1` `>65,536`, dọn rác cục bộ `CHK-003..006`, và bộ test đầu-cuối `nine_pillar_cross_runtime_suite` (`6/6` PASS). (7) **Wave 7 (`P10` Surfaces & Mobile):** đồng bộ API (`p10_api.rs` + middleware trần quyền `obc_surface1` `FW-10`), CLI (`mesh`/`surfaces`/`obt`/`obkg`), Desktop IPC, Web (`Devices`/`Wallet`/`Explorer`/`OneHopDiscovery`/`Chat`/`KuWorkflow`, `163/163` vitest, `0` `oxlint` warnings), hoàn tất phần mềm `MOB-04..09` (`108` evidence rows, `190` IDs, `49` Rust + `30` Flutter tests PASS), và cài đặt đủ `onebrain-extension` (`9/9`), `onebrain-bot` (`4/4`), `onebrain-glasses` (`7/7`).
+- **Mục tiêu hiện tại:** Thực thi đồng bộ 7 đợt cài đặt ngang xuyên 9 trụ cột hoạt động (`P1`–`P8`, `P10`) bảo đảm tương thích liên trụ cột và 10 tường lửa `FW-01..FW-10`, không phải viết lại giữa các trụ cột, kiểm chứng 100% trong phần mềm và trên GitHub Actions CI, giữ trung thực các cổng máy vật lý/operator/reviewer bên ngoài.
+- **Vừa xong (`Waves 1–7` — `25` crate Rust, `461.0k` `src/` LOC, `4,147+` tests):** (1) **Wave 1 (`P1` + `ARCH-10`):** `ConceptLifecycleTable` (`concept_lifecycle.rs`), `CONCEPT_REGISTRY_RELEASE_PROFILE_V2` + cô lập va chạm CCID (`build_obr.py`), `ScopedConceptCcid`/`KnowledgeSupersessionEvent`/`PersonalMesh` (`ku-core`), hạ v2 `D-011` (`review_lowering_v2.rs`), và tách crate đồng bộ `src/onebrain-core` (`0` `tokio`, `0` `std::net`) dùng chung cho cả `onebrain-node` và `onebrain-mobile-core` (đóng `ARCH-10`, nâng `D-051` lên `14/15` Done). (2) **Wave 2 (`P2`):** `RIBLT-1` fast set-sketch + fallback Merkle, `FrontierSummaryPage`, hộp thư mù E2EE bền vững `obp/mailbox/1` (`mailbox.redb`), truyền khối `obp/blob-chunks/1` & `obp/registry-chunks/1` (`D-012`), phong bì `pillar_wire.rs`. (3) **Wave 3 (`P3` + `P7`):** trình biên dịch tất định `FIND → KnowledgeNeedIr` (`vnext_compiler.rs`, gỡ giới hạn `hash-derived` qua `/api/vnext/kql/compile`), đồ thị khả hủy 5 mặt phẳng `OBKG-002`, chuỗi 5 bước `vnext_discovery_pipeline.rs`, `GroundedKgeRecallAdapter` + `FedRQuarantineValidator` + `DreamConsolidatorV1` (`ku-ai`). (4) **Wave 4 (`P4` + `P6`):** publisher 2 bước `M6B` `Derivation`/`Outcome`/`Benefit` + `DeferredEvidenceStaging` + nhóm Sybil 4 chiều, thực thi từ xa `RUN-003` (`obp/cognition/1` vào `QuarantineRecord`), hợp đồng thuê mù `D-013`, và cầu nối 4 tầng `PamVaultRuntime` (`M0–M3`, tường lửa RAG `ExposureObservation`). (5) **Wave 5 (`P5`):** crate mới `src/onebrain-obt` cấm số thực ở mức biên dịch (`u128`, `1 OBT = 10^12 sparks`), tường lửa một chiều `RewardEvidenceNoticeV2` (`FW-07`), `ScopedNullifier`, luồng kép `D-014` + `M7`, mặc định an toàn ở `M7.1` Shadow Mode. (6) **Wave 6 (`P8` + `onebrain-node`):** đóng đủ `OBARV002` `0x0002ns2` & `0x000B..0x000F` (gồm sàn chống ký phân nhánh `highest_issued_seq` `0x000C`), 4 pha recovery Redb (`cross_store_recovery.rs`), xoay vòng `TombstoneEpochAccumulatorV1` `>65,536`, dọn rác cục bộ `CHK-003..006`, và bộ test đầu-cuối `nine_pillar_cross_runtime_suite` (`6/6` PASS). (7) **Wave 7 (`P10` Surfaces & Mobile):** đồng bộ API (`p10_api.rs` + middleware trần quyền `obc_surface1` `FW-10`), CLI (`mesh`/`surfaces`/`obt`/`obkg`), Desktop IPC, Web (`Devices`/`Wallet`/`Explorer`/`OneHopDiscovery`/`Chat`/`KuWorkflow`, `163/163` vitest, `0` `oxlint` warnings), hoàn tất phần mềm `MOB-04..09` (`108` evidence rows, `190` IDs, `49` Rust + `30` Flutter tests PASS), cài đặt đủ `onebrain-extension` (`9/9`), `onebrain-bot` (`4/4`), `onebrain-glasses` (`7/7`), và tích hợp bộ script/báo cáo chuẩn bị `KU-ENC-003` (`67/67` Python tests PASS).
 - **Còn lại / cổng ngoài phần mềm:** Giữ nguyên trung thực các cổng phụ thuộc phần cứng/con người bên ngoài: `ARCH-14` (`consumer_nat_qualified=false`, chờ cụm VPS vật lý mới), `D-063` (thử trên 2 máy vật lý qua LAN), lễ ký khóa operator cho gói `.obr` 2,2 GB thật (`production_qualified=false`), `KU-ENC-003` (`model_qualified=false`, chờ reviewer độc lập chấm 200 mẫu VI/EN), đo kiểm điện thoại vật lý & ký store Mobile (`ReadyOffline` chưa claim), mở khóa phát hành `P5` từ Shadow Mode sang `M7.3`, và `P9` BCI (chủ đích giữ `0` LOC runtime).
-- **Bước tiếp theo:** Kiểm tra `gh run list --branch main --limit 5` xác nhận các workflow GitHub Actions (`vNext foundation contract`, `Base v1 three-OS`, `KU dev demo scripts`) xanh trên commit mới; khi có máy vật lý/VPS/reviewer, tiến hành từng cổng nghiệm thu ngoài phần mềm tương ứng (`D-063`, `ARCH-14`, `KU-ENC-003` hoặc đo kiểm Mobile thiết bị thật).
+- **Bước tiếp theo:** Theo dõi và xác nhận cả 4 workflow GitHub Actions (`Mobile build contracts`, `KU dev demo scripts`, `vNext foundation contract`, `Base v1 three-OS qualification candidate`) xanh trên HEAD mới; khi có máy vật lý/VPS/reviewer, tiến hành từng cổng nghiệm thu ngoài phần mềm tương ứng.
 - **Đọc tiếp:** [specs/vnext/README.md](../../specs/vnext/README.md), [PROJECT_STATUS.vi.md](../../PROJECT_STATUS.vi.md), [MASTER_PLAN.md](MASTER_PLAN.md).
-- **Workspace/Git:** root `C:/Users/shpy2/Documents/OneBrain`, `main` (tích hợp đồng bộ 7 đợt 9 trụ cột + cập nhật tài liệu, push và xác minh trực tiếp `origin/main` theo `D-050`). Bốn hunk local chưa commit của `PROGRESS.md`, `tasks/23-KU-ENC-003.md` dirty, 15 file untracked, EOL-only `base_v1.ts`/`base_v1.dart` và worktree `798eabf` giữ nguyên tuyệt đối ngoài commit.
-- **Cần giữ:** 16 retained hashes và exact prep; backup `%LOCALAPPDATA%/Temp/onebrain_preserved_backup_fe220690/`. Qualification `4a8f29d`, Registry `6bc146c`, secrets `f3780c7`, source `4d01775`, MVP `0b050a4`, first-run `1c4c78a`, detached `798eabf`, `src/onebrain_data/*`, `Documents/OneBrainLocal/peer-mvp-20261118/` giữ nguyên.
-- **Kiểm tra (27/11, Windows):** `cargo fmt --all -- --check` sạch, `cargo clippy` `-D warnings` sạch trên toàn bộ crate mới/sửa, `cargo check --workspace --all-targets` + `--features onebrain-node/legacy` + `vnext-outbound-first` **PASS**, `nine_pillar_cross_runtime_suite` `6/6`, `p5_obt_economy_suite` `11/11`, `p10_surfaces_api` **PASS**, `onebrain-web` (`lint` 0 warnings, `build`, `test:ku` `163/163`) **PASS**, Mobile (`49/49` Rust, `16/16` unit/widget, `14/14` golden, `verify_native_release_guards.py`) **PASS**, `validate_vnext_contracts.py` + `validate_ten_pillar_contracts.py` + `validate_mobile_build_contracts.py` + `check_node_layering.py` **PASS**.
+- **Workspace/Git:** `main` == `origin/main`, cây làm việc sạch hoàn toàn (`git status` byte-clean; toàn bộ script/báo cáo chuẩn bị `KU-ENC-003` và `PROJECT_OVERVIEW_2026-09-28.vi.md` đã commit lên `main` theo yêu cầu owner); worktree phụ `798eabf` và các nhánh tham chiếu giữ nguyên.
+- **Cần giữ:** 16 retained hashes và exact prep ngoài Git (`Documents/OneBrainLocal/`, `src/onebrain_data/*`, nhánh `4a8f29d`, `6bc146c`, `f3780c7`, `4d01775`, `0b050a4`, `1c4c78a`, detached `798eabf`).
+- **Kiểm tra (27/11, Windows + GitHub Actions):** `cargo fmt --all -- --check` sạch, `cargo clippy --workspace --all-targets -- -D warnings` sạch (gồm các lint Rust `1.100`: `is_multiple_of`, `as_chunks`, `field_reassign_with_default`), `nine_pillar_cross_runtime_suite` `6/6`, `p5_obt_economy_suite` `11/11`, `p10_surfaces_api` **PASS**, `scripts/encoder` `67/67` **PASS**, `validate_vnext_contracts.py` + `validate_ten_pillar_contracts.py` + `validate_mobile_build_contracts.py` + `check_node_layering.py` **PASS**; GitHub Actions `Mobile build contracts` (`45906233868`) & `KU dev demo scripts` (`45906233798`) **success**.
 - **Quyết định/giới hạn:** D-011..D-015, D-017, D-024, D-029, D-044, D-045, D-050 merge/push, D-051..D-075. Không thêm dependency ngoài mới vào `Cargo.lock`/`package-lock.json`; không sửa 11 tệp thẩm quyền mobile hay 12 tệp OBP/REST/WS bị ghim SHA-256; các lane mở rộng mặc định tắt và `P5` mặc định ở Shadow Mode.
 <!-- CURRENT_CHECKPOINT_END -->
 
@@ -511,6 +511,11 @@ Remaining ARCH-09: API `ku-kql`/`ku-core`, Ollama/HTTP host split, `node.rs`.
 `ku-core` (now a dev-dependency for fixtures), CLI `legacy` relies on node `legacy`; layering
 ratchet has 3 API bypasses left. CLI 43/OBP 8/run002 1, workspace default + `legacy`, validators PASS.
 Remaining ARCH-09: API `ku-encoder`/`ku-kql`/`ku-core`, Ollama/HTTP host split, `node.rs`.
+
+### 2026-10-19 — local Rust debug cache cleanup
+
+- Dọn đúng `src/target/debug` bằng Cargo sau dry-run và kiểm tra không có Cargo/Rust đang chạy; xóa 75.650 tệp (86,0 GiB logical), thu hồi khoảng 79,1 GiB trên C.
+- Giữ `src/target/base-v1` và source/data; SHA-256 của 2 tệp `base-v1` và các dirty/untracked ngoài handoff không đổi. Không build lại vì sẽ tái tạo cache; ARCH-09 tiếp tục theo checkpoint trên.
 
 ### 2026-10-19 — ARCH-09 slices 2–3: simulation harness gate, CLI `ku-kql` bypass removed, published
 
@@ -1010,6 +1015,114 @@ checkpoint boundaries. Task states and runtime are unchanged; no Git publication
 Dated notes below retain their original observations, including old Blocked,
 current-task and next-action wording. D-044, the Current checkpoint above and
 Task ledger below govern current work. Do not resume an old blocker automatically.
+- 2026-09-27 source export/accounting continuation: [actual result and next work](outputs/KU_ENC_003_SOURCE_ACCOUNTING.md).
+  Exact private UTF-8 export now verifies 200 sources against original workbook
+  cells, with transformation records and separate NFC hashes. Final directory
+  ACL check covers 206 files/directories, owner/SYSTEM only; zero grants issued.
+  Added durable outer metadata ledger and operational reducer, tested only on
+  synthetic data; no real attempt rows or model calls. 85 Python tests pass,
+  including process-exit accounting and native Windows ACL regression. Eight
+  generated artifacts and aggregate vNext validator pass; 13 pins/18 bundle
+  artifacts reverify. Native Registry signature/status were not rerun.
+  Final checks: 228 handoff links and changed/untracked whitespace pass;
+  application runtime and canonical specs remain unchanged.
+  [Analysis draft](outputs/KU_ENC_003_ANALYSIS_DRAFT.md) is unacknowledged/unlocked.
+  Full native harness, second-family tokenizer/worker, collectors, statistical
+  and independent grading/FID integration remain incomplete. Source custody and
+  reviewer evidence remain external gates. `Blocked`, `model_qualified=false`.
+  All incoming edits/auditor files and retained branches preserved; no remote
+  check, Git publication, live-host, tuning, mobile or remote-host action.
+
+- 2026-09-27 executable offline preparation: completed the task-23 required
+  read set and added a preparation-only package auditor with 16 synthetic
+  regression tests. [Result and next work](outputs/KU_ENC_003_OFFLINE_PREPARATION.md):
+  13 input/contract pins and 18 bundle artifacts verify; 100 VI / 100 EN declared
+  sources and 200 missing reviewer fields remain. NFC comparison hashes do not
+  bind exact UTF-8 exports. Fresh native Registry build, signature/integrity
+  verification and read-only status pass; all eight checked host/Registry files
+  are unchanged. This does not establish qualification scope/source grants.
+  34 Python tests, eight generated artifacts and aggregate vNext validator pass.
+  Final checks: 214 local handoff links and tracked/untracked text whitespace
+  pass; tracked application runtime and canonical specifications are unchanged.
+  The auditor always blocks execution; complete inference/resource/grading
+  integration and custodian/reviewer evidence remain missing. Task stays
+  `Blocked`, `model_qualified=false`; no model run or downstream acceptance.
+  Original branch and all incoming handoff edits remain, plus the new local
+  auditor/tests/report. Retained refs remain `bf3edb1` / `4a8f29d`; no remote
+  check, commit, push, merge, deletion, tuning, mobile or remote-host action.
+
+- 2026-09-27 autonomous input recovery: owner directed agent-owned discovery
+  and preparation. [Recovery report](outputs/KU_ENC_003_INPUT_RECOVERY.md)
+  records both actual VI/EN holdout paths, 100 rows each, matching source/label
+  IDs, no NFC exact overlaps with three recovered development workbooks, and
+  200 blank reviewer/provenance fields. Created private intake commitments and
+  an explicitly unlocked run-package draft; located existing host/Registry
+  artifacts without changing them. No source or expected meaning was printed
+  to chat, and no model call occurred. Earlier requests for workbook locations
+  are superseded: the agent owns remaining technical preparation. Independent
+  reviewer evidence, provenance checks and executable qualification harness
+  remain incomplete. Task 23 stays `Blocked`, `model_qualified=false`.
+  Original branch/local changes and retained refs are preserved; no Git
+  publication, tuning, mobile or remote-host work occurred.
+  Created a private reviewer procedure packet without assigning fictitious
+  reviewers. Verified 13 private pins, 204 handoff links, vNext contracts and
+  whitespace; tracked src/scripts/specs remain unchanged.
+
+- 2026-09-27 admission-preparation follow-up: reread the requested handoff
+  and all four historical qualification files through `git show`, preserving
+  the seven incoming local handoff changes on `codex/ku-enc-003-handoff`.
+  Local HEAD/main/origin-main remain `689efd5`; retained Desktop/qualification
+  refs remain `bf3edb1` / `4a8f29d`; no fresh remote observation is claimed.
+  Extended [harness preparation](outputs/KU_ENC_003_HARNESS_PREPARATION.md)
+  with twelve planned admission/accounting checks and a metadata reply form.
+  These are unimplemented test scenarios, not a completed harness. Requested
+  private input references remain unsupplied; no workbook, label or private
+  inventory was opened. Task 23 remains `Blocked`, `model_qualified=false`.
+  Next: receive custody/split/reviewer references, finish the full required
+  read set and isolated harness, then lock its exact run package with reviewer
+  evidence before any model call. No runtime/spec edit, model run, tuning,
+  mobile/remote-host action or Git publication/branch operation occurred.
+  Fresh verification: aggregate vNext validator and `git diff --check` pass;
+  all 198 local links in the seven changed/new Markdown files resolve.
+  `git diff --quiet HEAD -- src scripts docs/specs` passes. Earlier 18-test
+  encoder results remain historical; no runtime suite was rerun this turn.
+
+- 2026-09-27 input/harness continuation: preserved all incoming local changes
+  on `codex/ku-enc-003-handoff`, HEAD `689efd5`; retained Desktop and qualification
+  refs remain `bf3edb1` / `4a8f29d`. Read the historical reports/runner with
+  `git show` and inspected current provider/tokenizer/worker/node seams.
+  [Harness preparation](outputs/KU_ENC_003_HARNESS_PREPARATION.md) records the
+  compatibility map, exact missing-input checklist and assembly sequence.
+  Qwen tokenizer/Windows owned-worker mechanisms now exist; second-family
+  admission, cold/warm/resource collection, independent evaluation and the
+  executable qualification harness remain incomplete. Corpus local paths,
+  custody, reviewer evidence and a locked run package remain unsupplied.
+  Task 23 stays `Blocked`, `model_qualified=false`; this is preparation only.
+  Fresh checks: 18 encoder contract tests, eight generated artifacts and
+  aggregate vNext validation pass; tracked src/scripts/specs unchanged.
+  Final handoff verification: all 197 local file links across seven changed/new
+  Markdown files resolve; `git diff --check` passes.
+  No holdout read, inference/worker run, tuning, mobile/remote-host action,
+  commit/push/merge or branch deletion. Next: obtain metadata-only private input
+  references, finish isolated harness admission/measurement integration, then
+  lock the complete run package with reviewer evidence before any model run.
+
+- 2026-09-27 continuation handoff: verified a clean original tree with
+  `HEAD == main == origin/main == 689efd5`, matching remote main directly.
+  D-043 merge `6449446` is in its ancestry; the remote Desktop branch remains
+  at `bf3edb1`. The local/remote qualification branch remains at `4a8f29d`.
+  [Resume map](outputs/KU_ENC_003_RESUME.md) recovers its historical preflight
+  reports without replacing current decisions. Current dependency to resolve:
+  `KU-ENC-003`, still `Blocked` on unverified corpus/reviewer/locked-run inputs
+  and unfinished qualification harness. `model_qualified=false`; downstream
+  KU-QA/INT acceptance remains unavailable. Documentation maintenance is local
+  on `codex/ku-enc-003-handoff` from `689efd5`; no model run, holdout read,
+  runtime edit, remote host action, merge or branch deletion occurred.
+  README, task 23 and continuation prompts now use this checkpoint.
+  Verification: aggregate vNext contract validator passed; all 181 local
+  Markdown links in the six changed/new handoff files resolve; whitespace
+  checks passed. Runtime suites were not rerun for this documentation update.
+
 
 The entries below retain their original observation dates. Older `Current task`,
 branch and next-action statements are historical; use this checkpoint and the

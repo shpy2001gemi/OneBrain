@@ -35,19 +35,10 @@ pub const CODED_SYMBOL_WIRE_BYTES: u64 = 64;
 pub const RADIX_SUMMARY_NODE_WIRE_BYTES: u64 = 56;
 
 /// Default-off runtime gate (`FND-006`) and independent kill switch for `RIBLT-1`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RibltRuntimeGate {
     pub reconcile_riblt_v1: bool,
     pub kill_switch_tripped: bool,
-}
-
-impl Default for RibltRuntimeGate {
-    fn default() -> Self {
-        Self {
-            reconcile_riblt_v1: false,
-            kill_switch_tripped: false,
-        }
-    }
 }
 
 impl RibltRuntimeGate {

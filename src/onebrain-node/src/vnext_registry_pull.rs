@@ -83,7 +83,7 @@ impl NodeRegistryPullCoordinator {
         approved_signers: Vec<[u8; 32]>,
         generation_manager: Option<Arc<ConceptRegistryGenerationManager>>,
     ) -> Result<Self, NodeRegistryPullError> {
-        if approved_signers.is_empty() || approved_signers.iter().any(|k| *k == [0u8; 32]) {
+        if approved_signers.is_empty() || approved_signers.contains(&[0u8; 32]) {
             return Err(NodeRegistryPullError::NoApprovedSigners);
         }
         Ok(Self {

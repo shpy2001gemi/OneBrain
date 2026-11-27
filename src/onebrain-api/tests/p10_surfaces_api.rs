@@ -35,8 +35,10 @@ async fn call_json(
 #[tokio::test]
 async fn p10_personal_mesh_spake2_revocation_need_compiler_and_surface_ceilings_work() {
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = NodeConfig::default();
-    cfg.data_dir = dir.path().to_path_buf();
+    let cfg = NodeConfig {
+        data_dir: dir.path().to_path_buf(),
+        ..Default::default()
+    };
     let node = OneBrainNode::new(cfg).await.unwrap();
     let host_token = "test-host-owner-token-1234567890abcdef".to_owned();
     let router = ApiServer::new(node, host_token.clone(), 0).build_router();

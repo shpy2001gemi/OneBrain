@@ -1521,17 +1521,10 @@ fn encode_identity_value(overflowed: bool, cids: &[[u8; 32]]) -> Vec<u8> {
 }
 
 fn decode_identity_value(value: &[u8]) -> Result<(bool, Vec<[u8; 32]>), DistributedPomvError> {
-    if value.is_empty() || !matches!(value[0], 0 | 1) || (value.len() - 1) % 32 != 0 {
+    if value.is_empty() || !matches!(value[0], 0 | 1) || !(value.len() - 1).is_multiple_of(32) {
         return Err(DistributedPomvError::IdentityIndexCorrupt);
     }
-    let mut cids = value[1..]
-        .chunks_exact(32)
-        .map(|bytes| {
-            bytes
-                .try_into()
-                .map_err(|_| DistributedPomvError::IdentityIndexCorrupt)
-        })
-        .collect::<Result<Vec<[u8; 32]>, _>>()?;
+    let mut cids = value[1..].as_chunks::<32>().0.to_vec();
     if cids.is_empty() || cids.len() > MAX_IDENTITY_VARIANTS {
         return Err(DistributedPomvError::IdentityIndexCorrupt);
     }

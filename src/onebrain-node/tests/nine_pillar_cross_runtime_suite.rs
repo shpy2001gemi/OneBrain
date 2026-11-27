@@ -181,9 +181,11 @@ const fn assert_frozen_12_vnext_features(f: VNextFeature) -> usize {
 #[tokio::test]
 async fn default_node_startup_preserves_frozen_invariants_and_creates_zero_extra_redb_files() {
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = NodeConfig::default();
-    cfg.data_dir = dir.path().to_path_buf();
-    cfg.concept_registry_mode = ConceptRegistryMode::Disabled;
+    let cfg = NodeConfig {
+        data_dir: dir.path().to_path_buf(),
+        concept_registry_mode: ConceptRegistryMode::Disabled,
+        ..Default::default()
+    };
 
     // Frozen compatibility invariants:
     assert_eq!(
@@ -1226,8 +1228,13 @@ fn p4_p6_and_p5_causal_closure_remote_cognition_delegated_jobs_pam_and_isolated_
     );
     assert_eq!(obt.economic_status_label(), "simulated_non_economic");
 
-    let mut obt_ext = VNextExtendedFeatureConfig::default();
-    obt_ext.enabled.obt_ledger_v1 = true;
+    let obt_ext = VNextExtendedFeatureConfig {
+        enabled: onebrain_node::VNextExtendedFeatureFlags {
+            obt_ledger_v1: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
     obt.sync_feature_flags(true, false, &obt_ext);
 
     let policy = RewardPolicyV1::default_v1();
@@ -1314,14 +1321,26 @@ fn p8_and_p10_rollout_merge_cold_tombstones_startup_recovery_personal_mesh_and_s
     let dir = tempfile::tempdir().unwrap();
 
     // 1. `P8` `0x000E` conservative union of kill switches & max version fence + `0x000F` salt rotation + `0x000C` anti-equivocation sequence floor (`NEG-P8-001`)
-    let mut local_ext = VNextExtendedFeatureConfig::default();
-    local_ext.kill_switches.obt_ledger_v1 = true;
-    local_ext.version_fence = 5;
-    let mut archive_ext = VNextExtendedFeatureConfig::default();
-    archive_ext.enabled.obt_ledger_v1 = true;
-    archive_ext.enabled.personal_mesh_v1 = true;
-    archive_ext.kill_switches.remote_cognition_executor = true;
-    archive_ext.version_fence = 3;
+    let local_ext = VNextExtendedFeatureConfig {
+        kill_switches: onebrain_node::VNextExtendedKillSwitches {
+            obt_ledger_v1: true,
+            ..Default::default()
+        },
+        version_fence: 5,
+        ..Default::default()
+    };
+    let archive_ext = VNextExtendedFeatureConfig {
+        enabled: onebrain_node::VNextExtendedFeatureFlags {
+            obt_ledger_v1: true,
+            personal_mesh_v1: true,
+            ..Default::default()
+        },
+        kill_switches: onebrain_node::VNextExtendedKillSwitches {
+            remote_cognition_executor: true,
+            ..Default::default()
+        },
+        version_fence: 3,
+    };
 
     let merged_ext = local_ext.merge_conservative_restore(&archive_ext);
     assert_eq!(merged_ext.version_fence, 5);

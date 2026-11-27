@@ -467,7 +467,7 @@ pub fn build_registry_chunk_merkle_proof(
     let mut pos = idx;
     let mut siblings = Vec::new();
     while level.len() > 1 {
-        let sibling = if pos % 2 == 0 {
+        let sibling = if pos.is_multiple_of(2) {
             if pos + 1 < level.len() {
                 level[pos + 1]
             } else {
@@ -514,10 +514,10 @@ pub fn verify_registry_chunk_merkle_proof(
         let Some(sibling) = proof.siblings.get(step) else {
             return false;
         };
-        if pos % 2 == 0 && pos + 1 == width && sibling != &current {
+        if pos.is_multiple_of(2) && pos + 1 == width && sibling != &current {
             return false;
         }
-        current = if pos % 2 == 0 {
+        current = if pos.is_multiple_of(2) {
             merkle_branch(
                 b"onebrain:vnext:registry-chunk-branch:1\0",
                 &current,

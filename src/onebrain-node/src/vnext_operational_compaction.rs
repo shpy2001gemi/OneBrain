@@ -749,6 +749,7 @@ impl OperationalCompactionStore {
         Ok((epoch_seq, root))
     }
 
+    #[allow(clippy::type_complexity)]
     fn rollover_hot_tombstones_with_list(
         &self,
         write: &redb::WriteTransaction,
@@ -873,6 +874,7 @@ fn encode_cold_tombstone_list(
         .map_err(|_| OperationalCompactionError::CorruptEvidence)
 }
 
+#[allow(clippy::type_complexity)]
 fn decode_cold_tombstone_list(
     bytes: &[u8],
 ) -> Result<(u64, [u8; 32], Vec<[u8; 32]>), OperationalCompactionError> {

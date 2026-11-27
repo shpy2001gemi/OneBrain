@@ -1236,6 +1236,7 @@ impl VNextNetworkRuntime {
     }
 
     /// Build a canonically ordered `FrontierSummaryPage` for `selector` (`P2` §3).
+    #[allow(clippy::type_complexity)]
     pub fn frontier_summary_page(
         &self,
         selector: ku_core::foundation::SelectorCid,
